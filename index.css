@@ -1,0 +1,111 @@
+
+:root {
+  --bg-color: #1a1a1a;
+  --surface-color: #222;
+  --surface-header: #2a2a2a;
+  --surface-active: #333;
+  --text-color: #b0b0b0;
+  --text-heading: #ffffff;
+  --text-muted: #666;
+  --border-color: #000;
+  --border-active: #333;
+  --accent-color: #3dffab;
+  --accent-secondary: #ff4444;
+  
+  --panel-bg: #1c1511; 
+  --bezel-color: #111;
+  --inner-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+  --outer-shadow: 0 4px 8px rgba(0,0,0,0.4);
+
+  /* Vibrant distinct colors for both modes */
+  --ch-lead: #00ff88;
+  --ch-alto: #bb88ff;
+  --ch-harmonic: #00ccff;
+  --ch-bass: #ff8c00; 
+  --ch-rhythm: #ffff00;
+  --ch-vocal: #ff00ff;
+  --master-label-color: #c0c0c0;
+}
+
+body.light-theme {
+  --bg-color: #d8d8d8;
+  --surface-color: #e8e8e8;
+  --surface-header: #dddddd;
+  --surface-active: #f5f5f5;
+  --text-color: #444444;
+  --text-heading: #000000;
+  --text-muted: #777777;
+  --border-color: #bbbbbb;
+  --border-active: #aaaaaa;
+  --accent-color: #008f5d;
+  --accent-secondary: #c02b2b;
+  
+  --panel-bg: #e5e0d8; 
+  --bezel-color: #ccc;
+  --inner-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+  --outer-shadow: 0 4px 8px rgba(0,0,0,0.05);
+
+  /* Keep them vibrant in light mode too */
+  --ch-lead: #00d26a;
+  --ch-alto: #9b59b6;
+  --ch-harmonic: #00a3cc;
+  --ch-bass: #e67e00;
+  --ch-rhythm: #d4c100;
+  --ch-vocal: #d100d1;
+  --master-label-color: #444444;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Google Sans', sans-serif;
+  font-size: 14px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  
+  display: grid;
+  grid-template-areas:
+    "left header right"
+    "left main right"
+    "left timeline right";
+  grid-template-rows: 44px minmax(0, 1fr) 80px; 
+  grid-template-columns: 50px 1fr 220px;
+}
+
+top-toolbar, left-sidebar, right-sidebar, bottom-timeline {
+  background: var(--surface-color);
+  box-shadow: var(--outer-shadow);
+}
+
+body.dragging { cursor: ns-resize; }
+body.dragging * { user-select: none; pointer-events: none; }
+
+top-toolbar { grid-area: header; z-index: 10; border-bottom: 1px solid var(--border-color); }
+left-sidebar { grid-area: left; z-index: 5; border-right: 1px solid var(--border-color); }
+right-sidebar { grid-area: right; z-index: 5; border-left: 1px solid var(--border-color); }
+bottom-timeline { grid-area: timeline; z-index: 10; background: var(--bg-color); }
+
+prompt-dj-midi {
+  grid-area: main;
+  width: 100%;
+  height: 100%;
+}
+toast-message { z-index: 9999; }
+
+@media (max-width: 600px) {
+    body {
+        grid-template-columns: 40px 1fr 160px;
+        grid-template-rows: 40px minmax(0, 1fr) 70px;
+    }
+}
