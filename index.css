@@ -22,7 +22,7 @@
   --ch-alto: #bb88ff;
   --ch-harmonic: #00ccff;
   --ch-bass: #ff8c00; 
-  --ch-rhythm: #ffff00;
+  --ch-rhythm: #cc0000;
   --ch-vocal: #ff00ff;
   --master-label-color: #c0c0c0;
 }
@@ -50,7 +50,7 @@ body.light-theme {
   --ch-alto: #9b59b6;
   --ch-harmonic: #00a3cc;
   --ch-bass: #e67e00;
-  --ch-rhythm: #d4c100;
+  --ch-rhythm: #c00000;
   --ch-vocal: #d100d1;
   --master-label-color: #444444;
 }
@@ -79,7 +79,7 @@ body {
     "left header right"
     "left main right"
     "left timeline right";
-  grid-template-rows: 44px minmax(0, 1fr) 80px; 
+  grid-template-rows: 49px minmax(0, 1fr) 80px; 
   grid-template-columns: 50px 1fr 220px;
 }
 
@@ -106,6 +106,6 @@ toast-message { z-index: 9999; }
 @media (max-width: 600px) {
     body {
         grid-template-columns: 40px 1fr 160px;
-        grid-template-rows: 40px minmax(0, 1fr) 70px;
+        grid-template-rows: 45px minmax(0, 1fr) 70px;
     }
 }

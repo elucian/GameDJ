@@ -302,12 +302,11 @@ export class WeightKnob extends LitElement {
         preserveAspectRatio="xMidYMid meet">
         
         <defs>
-          <linearGradient id="aluminum-linear" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" style="stop-color:#a0a0a0" />
-            <stop offset="45%" style="stop-color:#dcdcdc" />
-            <stop offset="50%" style="stop-color:#fefefe" />
-            <stop offset="55%" style="stop-color:#dcdcdc" />
-            <stop offset="100%" style="stop-color:#a0a0a0" />
+          <linearGradient id="aluminum-linear" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#ebebeb" />
+            <stop offset="30%" style="stop-color:#dcdcdc" />
+            <stop offset="70%" style="stop-color:#cccccc" />
+            <stop offset="100%" style="stop-color:#bebebe" />
           </linearGradient>
           <filter id="knob-depth" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
@@ -335,7 +334,8 @@ export class WeightKnob extends LitElement {
         </g>
         
         <g style=${rotationStyle} class="pointer-g">
-          <line x1="12" y1="0" x2="26" y2="0" stroke="#333" stroke-width="3" stroke-linecap="round" />
+          <line x1="18" y1="1" x2="25" y2="1" stroke="rgba(255,255,255,0.7)" stroke-width="3" stroke-linecap="round" />
+          <line x1="18" y1="0" x2="25" y2="0" stroke="#444" stroke-width="3" stroke-linecap="round" />
         </g>
 
         <g class="increment-zone">

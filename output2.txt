@@ -1,0 +1,46 @@
+325-        } else {
+326-            mutedDefs.push(labels[i].toUpperCase());
+327-        }
+328-    });
+329-
+330:    // Determine Strict Formation
+331-    const count = activeNames.length;
+332-    let formation = 'Ensemble';
+333-    if (count === 0) formation = 'Silence';
+334-    else if (count === 1) formation = 'Solo';
+335-    else if (count === 2) formation = 'Duet';
+336-    else if (count === 3) formation = 'Trio';
+337-    else if (count === 4) formation = 'Quartet';
+338-    else if (count === 5) formation = 'Quintet';
+339-
+340-    masterText += `FORMATION: ${formation}. `;
+341-
+342-    if (activeDefs.length > 0) {
+343-        masterText += `ACTIVE_INSTRUMENTS: [${activeDefs.join(' + ')}]. `;
+344-    } else {
+345-        masterText += `PLAYING: [Silence]. `;
+346-    }
+347-    
+348-    if (mutedDefs.length > 0) {
+349-        masterText += `CRITICAL_EXCLUSION: DO NOT PLAY [${mutedDefs.join(', ')}]. ZERO AUDIO FOR THESE ROLES. `;
+350-    }
+351-
+352-    // Explicit Exclusion and Strict Constraints
+353-    masterText += `CRITICAL_CONSTRAINT: EXCLUSIVELY USE THE EXACT ACTIVE_INSTRUMENTS SPECIFIED. ZERO BACKING TRACKS. ZERO UNLISTED INSTRUMENTS. `;
+354-    masterText += `MIX: Clear separation. Strictly ${formation} arrangement. `;
+355-
+356-    const common = ['Piano', 'Drums', 'Guitar', 'Bass', 'Synth', 'Strings', 'Percussion', 'Vocals'];
+357-    const activeUpper = activeNames.map(n => n.toUpperCase());
+358-    const strictlyForbidden = common.filter(c => !activeUpper.some(a => a.includes(c.toUpperCase())));
+359-    if (strictlyForbidden.length > 0) {
+360-        masterText += `FORBIDDEN_INSTRUMENTS: [${strictlyForbidden.join(', ')}]. STRICTLY PROHIBITED. `;
+361-    }
+362-
+363-    // NEW: STRICT MUSICAL RULES FOR COHERENCE
+364-    masterText += `MUSICAL_RULES: [
+365-      1. HARMONY: STRICT_GLOBAL_CONSONANCE. ALL CHANNELS MUST SHARE THE SAME HARMONIC STRUCTURE.
+366-      2. MELODY: LEAD and ALTO must play the SAME MELODY line (Unison or Octaves) if both are active.
+367-      3. FOUNDATION: BASS and HARMONIC must follow the EXACT SAME CHORD PROGRESSION.
+368-      4. RHYTHM: BASS must sync strictly with RHYTHM/DRUMS. UNIFIED GROOVE.
+369-      5. ORCHESTRATION: LEAD channel represents a SECTION/ENSEMBLE of 2-3 instruments.
+370-      6. COHERENCE: NO POLYTONALITY. NO POLYRHYTHM CLASH. AVOID CACOPHONY.

@@ -10,11 +10,13 @@ import { uiSounds } from '../utils/UISounds';
 import './MasterVolumePanel';
 
 const LEAD_INSTRUMENTS = [
-  'Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Harmonica', 'Diatonic Harmonica', 'Chromatic Harmonica', 'Tremolo Harmonica', 'Blues Harp', 'Vocal Chops', 'Choir', 'Accordion', 'Banjo', 'Mandolin', 'Sitar', 'Koto', 'Erhu', 'Oud', 'Bagpipes', 'Bell Synth', 'Whistle', 'Didgeridoo', 'Recorder', 'Sopranino Recorder', 'Soprano Recorder', 'Alto Recorder', 'Pan Flute', 'Pipe Flute'
+  'Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Viola', 'Oboe', 'English Horn', 'French Horn', 'Bassoon',
+  'Harmonica', 'Chromatic Harmonica', 'Vocal Chops', 'Choir', 'Accordion', 'Banjo', 'Mandolin', 'Sitar', 'Koto', 'Erhu', 'Oud', 'Bagpipes', 'Bell Synth', 'Whistle', 'Didgeridoo', 'Recorder', 'Pan Flute', 'Pipe Flute', 'Ocarina'
 ].sort();
 
 const ALTO_INSTRUMENTS = [
-  'Saxophone', 'Trumpet', 'Clarinet', 'Viola', 'French Horn', 'Trombone', 'Brass Section', 'Strings', 'Flute', 'Recorder', 'Alto Recorder', 'Tenor Recorder', 'Accordion', 'Synthesizer', 'Electric Piano', 'Vibraphone', 'Harp', 'Low Whistle', 'Mandocello', 'Pan Flute', 'Harmonica', 'Chromatic Harmonica', 'Tremolo Harmonica', 'Electric Violin', 'Pipe Flute'
+  'Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Viola', 'Violin', 'Cello', 'French Horn', 'English Horn', 'Bassoon', 'Oboe',
+  'Brass Section', 'Strings', 'Flute', 'Recorder', 'Accordion', 'Synthesizer', 'Electric Piano', 'Vibraphone', 'Harp', 'Low Whistle', 'Mandocello', 'Pan Flute', 'Harmonica', 'Chromatic Harmonica', 'Electric Violin', 'Pipe Flute'
 ].sort();
 
 const HARMONIC_INSTRUMENTS = [
@@ -22,11 +24,12 @@ const HARMONIC_INSTRUMENTS = [
 ].sort();
 
 const BASS_INSTRUMENTS = [
-  'Electric Bass', 'Synth Bass', 'Double Bass', 'Tuba', 'Cello', 'Bassoon', 'Trombone', 'Didgeridoo', 'Timpani', 'Harmonica', 'Bass Harmonica', 'Recorder', 'Bass Recorder', 'Great Bass Recorder'
+  'Electric Bass', 'Synth Bass', 'Double Bass', 'Tuba', 'Trombone', 'French Horn', 'Cello', 'Bassoon', 'Bass Clarinet', 'Baritone Saxophone',
+  'Didgeridoo', 'Timpani', 'Bass Harmonica', 'Bass Recorder', 'Mandocello', 'Electric Violin'
 ].sort();
 
 const RHYTHM_INSTRUMENTS = [
-  'Drum Kit', 'Electronic Drums', 'Hand Drum', 'Tabla', 'Djembe', 'Congas', 'Bongos', 'Timbales', 'Taiko Drums', 'Percussion', 'Shakers', 'Tambourine', 'Bells', 'Stomps', 'Industrial Percussion', 'Woodblock', 'Cowbell'
+  'Drum Kit', 'Electronic Drums', 'Hand Drum', 'Tabla', 'Djembe', 'Congas', 'Bongos', 'Timbales', 'Taiko Drums', 'Percussion', 'Shakers', 'Tambourine', 'Bells', 'Stomps', 'Industrial Percussion', 'Woodblock', 'Cowbell', 'Snare Drum', 'Bass Drum', 'Cymbals'
 ].sort();
 
 const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34, 55];
@@ -157,6 +160,7 @@ export class RightSidebar extends LitElement {
       font-family: monospace;
       border-radius: 2px;
       height: 18px;
+      display: flex; align-items: center; line-height: 16px;
     }
     
     select:disabled {
@@ -295,7 +299,7 @@ export class RightSidebar extends LitElement {
   @state() private channelsLocked = false;
   @state() private manifestLocked = false;
   @state() private durationIndex = 2; 
-  @state() private evolution = 0; 
+  @property({ type: Number }) evolution = 0; 
   
   @state() private dynamicLead = [...LEAD_INSTRUMENTS];
   @state() private dynamicAlto = [...ALTO_INSTRUMENTS];
@@ -383,12 +387,24 @@ export class RightSidebar extends LitElement {
 
       const newSettings = { ...this.settings };
       channels.forEach(ch => {
+          const inManifest = detail.manifest[ch] === true;
+          
           if (!this.manifestLocked) {
-              newSettings[ch].visible = detail.manifest[ch] === true;
+              newSettings[ch].visible = inManifest;
           }
+          
           if (!this.channelsLocked) {
               const recommended = detail.instruments[ch];
               newSettings[ch].instrument = recommended || "";
+              
+              // Force activation for authentic performance if visible (in manifest)
+              if (newSettings[ch].visible) {
+                  newSettings[ch].active = true;
+                  newSettings[ch].weight = 1.0; 
+              } else {
+                  newSettings[ch].active = false;
+                  newSettings[ch].weight = 0;
+              }
           }
       });
       this.auditAndCommit(newSettings);

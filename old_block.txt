@@ -1,0 +1,107 @@
+    // 2. Build Authoritative Master Prompt
+    let masterText = `CONTEXT: ${this.genre} ${this.style}. `;
+    if (this.bpm) masterText += `TEMPO: ${this.bpm} BPM. `;
+    if (this.meter) masterText += `METER: ${this.meter}. `;
+    if (this.key) masterText += `KEY: ${this.key} ${this.mode}. `;
+    
+    if (this.currentSeed !== 0) masterText += `SEED: ${this.currentSeed}. `;
+    if (this.mood && this.mood !== 'None') masterText += `MOOD: ${this.mood}. `;
+    
+    // Conductor Stage - High Priority Context for Storytelling
+    if (this.conductorMode && this.currentStatusMessage) {
+        masterText += `SECTION_CONTEXT: ${this.currentStatusMessage.toUpperCase()}. `;
+    }
+
+    // Instrumentation Rules - Explicit White-listing
+    const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+    const labels = ['Lead', 'Alto', 'Harmonic', 'Bass', 'Rhythm'];
+    
+    const activeDefs: string[] = [];
+    const activeNames: string[] = [];
+    const mutedDefs: string[] = [];
+
+    keys.forEach((k, i) => {
+        const ch = this.instruments[k];
+        let instName = ch.instrument || 'None';
+        
+        // ORCHESTRAL STACKING LOGIC
+        // If Lead is active, instruct AI to treat it as an ensemble to satisfy "2-3 instruments" rule
+        if (k === 'lead' && ch.active && instName !== 'None') {
+            if (!instName.toLowerCase().includes('section') && !instName.toLowerCase().includes('ensemble')) {
+                instName = `${instName} (Ensemble Section)`;
+            }
+        }
+        
+        // Check active AND weight. If weight is very low, treat as muted for the master prompt
+        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+            activeDefs.push(`${labels[i]}: ${instName}`);
+            activeNames.push(instName);
+        } else {
+            mutedDefs.push(labels[i].toUpperCase());
+        }
+    });
+
+    // Determine Strict Formation
+    const count = activeNames.length;
+    let formation = 'Ensemble';
+    if (count === 0) formation = 'Silence';
+    else if (count === 1) formation = 'Solo';
+    else if (count === 2) formation = 'Duet';
+    else if (count === 3) formation = 'Trio';
+    else if (count === 4) formation = 'Quartet';
+    else if (count === 5) formation = 'Quintet';
+
+    masterText += `FORMATION: ${formation}. `;
+
+    if (activeDefs.length > 0) {
+        masterText += `ACTIVE_INSTRUMENTS: [${activeDefs.join(' + ')}]. `;
+    } else {
+        masterText += `PLAYING: [Silence]. `;
+    }
+    
+    if (mutedDefs.length > 0) {
+        masterText += `CRITICAL_EXCLUSION: DO NOT PLAY [${mutedDefs.join(', ')}]. ZERO AUDIO FOR THESE ROLES. `;
+    }
+
+    // Explicit Exclusion and Strict Constraints
+    masterText += `CRITICAL_CONSTRAINT: EXCLUSIVELY USE THE EXACT ACTIVE_INSTRUMENTS SPECIFIED. ZERO BACKING TRACKS. ZERO UNLISTED INSTRUMENTS. `;
+    masterText += `MIX: Clear separation. Strictly ${formation} arrangement. `;
+
+    const common = ['Piano', 'Drums', 'Guitar', 'Bass', 'Synth', 'Strings', 'Percussion', 'Vocals'];
+    const activeUpper = activeNames.map(n => n.toUpperCase());
+    const strictlyForbidden = common.filter(c => !activeUpper.some(a => a.includes(c.toUpperCase())));
+    if (strictlyForbidden.length > 0) {
+        masterText += `FORBIDDEN_INSTRUMENTS: [${strictlyForbidden.join(', ')}]. STRICTLY PROHIBITED. `;
+    }
+
+    // NEW: STRICT MUSICAL RULES FOR COHERENCE
+    masterText += `MUSICAL_RULES: [
+      1. HARMONY: STRICT_GLOBAL_CONSONANCE. ALL CHANNELS MUST SHARE THE SAME HARMONIC STRUCTURE.
+      2. MELODY: LEAD and ALTO must play the SAME MELODY line (Unison or Octaves) if both are active.
+      3. FOUNDATION: BASS and HARMONIC must follow the EXACT SAME CHORD PROGRESSION.
+      4. RHYTHM: BASS must sync strictly with RHYTHM/DRUMS. UNIFIED GROOVE.
+      5. ORCHESTRATION: LEAD channel represents a SECTION/ENSEMBLE of 2-3 instruments.
+      6. COHERENCE: NO POLYTONALITY. NO POLYRHYTHM CLASH. AVOID CACOPHONY.
+    ]. `;
+
+    if (this.instruments.rhythm.active && this.instruments.rhythm.weight > 0) {
+        masterText += `GROOVE_SOURCE: RHYTHM_TRACK. `;
+    } else {
+        masterText += `GROOVE_SOURCE: BASS_OR_HARMONIC. `;
+    }
+
+    // Guidance / References
+    const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
+    const guidanceWeight = guidancePrompt?.weight ?? 1.0; 
+
+    if (guidanceWeight < 0.5) {
+        masterText += `CREATIVITY: PURE_ORIGINAL. NO_REFERENCES. `;
+    } else {
+        const ref = this.specialInstruction || 'Popular genre standard';
+        masterText += `STYLE_REFERENCE: "${ref}". `;
+    }
+
+    // Vocal Override
+    if (this.generationMode === 'VOCALIZATION') {
+         masterText += `MODE: VOCAL_PERFORMANCE. LANGUAGE: ${this.getRegionalLanguage()}. `;
+         if (this.currentVocalSignal) masterText += `VOCAL_CUE: ${this.currentVocalSignal}. `;

@@ -5,8 +5,10 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { PlaybackState, MusicGenerationMode } from '../types';
+import type { PlaybackState, MusicGenerationMode, ChannelState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
+import { SONG_REFERENCES, VOCAL_STRINGS } from '../utils/LiveMusicHelper';
+import { MUSIC_DATA } from './TopToolbar'; // Import MUSIC_DATA to access genre/style info if needed directly
 
 @customElement('left-sidebar')
 export class LeftSidebar extends LitElement {

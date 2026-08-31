@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, PlaybackSnapshot } from '../types';
-import { AudioChunk, GoogleGenAI, LiveMusicServerMessage, LiveMusicSession, Type } from '@google/genai';
+import { AudioChunk, GoogleGenAI, LiveMusicSession } from '@google/genai';
 import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
 import { uiSounds } from './UISounds';
@@ -38,7 +38,7 @@ const KNOWN_INSTRUMENTS = [
   'Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Harmonica', 
   'Piano', 'Electric Piano', 'Organ', 'Strings', 'Pads', 'Brass Section', 'Choir', 'Bass Guitar', 'Double Bass', 'Synth Bass', 'Tuba',
   'Drum Kit', 'Electronic Drums', 'Percussion', 'Tabla', 'Djembe', 'Taiko Drums', 'Recorder', 'Mandocello', 'Banjo', 'Sitar', 'Koto', 
-  'Accordion', 'Oboe', 'Bassoon', 'Timpani', 'Kalimba', 'Didgeridoo', 'Whistle', 'Bell Synth', 'Electric Violin', 'Pan Flute', 'Pipe Flute'
+  'Accordion', 'Oboe', 'Bassoon', 'Timpani', 'Kalimba', 'Didgeridoo', 'Whistle', 'Bell Synth', 'Electric Violin', 'Pan Flute', 'Pipe Flute', 'Ocarina'
 ];
 
 export const SONG_REFERENCES: Record<string, string[]> = {
@@ -85,7 +85,6 @@ export class LiveMusicHelper extends EventTarget {
   };
   private guidance = 3; public conductorMode = false; private isStereo = true; 
   private evolutionValue = 0; 
-  private aiAvailable = true;
   private conductorTimer: number | null = null;
   private currentPlan: PerformancePlanStage[] = [];
   private currentPlanIdx = 0;
@@ -124,7 +123,6 @@ export class LiveMusicHelper extends EventTarget {
 
   // Track the current phase message for recording
   private currentStatusMessage: string = '';
-  private currentIsAiPhase: boolean = false;
   private lastAppliedStatusMessage: string = '';
 
   constructor(ai: GoogleGenAI, model: string) {
@@ -208,19 +206,23 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh();
   }
 
-  public async setConductorMode(active: boolean) {
+  public setConductorMode(active: boolean) {
       this.conductorMode = active;
       if (active) {
           this.conductorActivationTime = Date.now();
           const isLive = this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
-          if (isLive) {
-              this.aiAvailable = false; 
-              this.dispatchEvent(new CustomEvent('handshake-result', { detail: false }));
-              if (this.currentPlan.length === 0) this.runFallbackRoutine();
+          const isPlaying = this.playbackState === 'playing';
+          
+          // Generate plan based on current state (Start offset is 0 if fresh, else current time)
+          const offset = (isLive || isPlaying) ? this.elapsedSeconds : 0;
+          this.generatePerformancePlan(offset);
+
+          if (isLive || isPlaying) {
               this.startConductor();
-          } else {
-              await this.checkHandshake();
+              // Force immediate update to apply "Takeover" stage
+              this.updateConductor();
           }
+          this.dispatchEvent(new CustomEvent('handshake-result', { detail: true }));
       } else {
           this.stopConductor();
       }
@@ -264,9 +266,9 @@ export class LiveMusicHelper extends EventTarget {
   private async refreshSessionPrompts() {
     if (!this.session) return;
     
-    const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
-    const guidanceWeight = guidancePrompt?.weight ?? 1.0; 
-
+    // 1. Gather Nuance Prompts (Density, etc.)
+    const nuanceScale = 1.3; 
+    
     const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
         let dynamicScale = 0.5;
         if (this.generationMode === 'QUALITY') {
@@ -274,68 +276,144 @@ export class LiveMusicHelper extends EventTarget {
             if (highFidelityPrompts.includes(p.text)) dynamicScale = 1.0;
         } else if (this.generationMode === 'DIVERSITY') {
             const highDiversityPrompts = ['Variation', 'Ornamentation', 'Complexity', 'Groove', 'Atmosphere'];
-            // Fix: Use correct local variable highDiversityPrompts instead of highFidelityPrompts
             if (highDiversityPrompts.includes(p.text)) dynamicScale = 1.0;
         } else if (this.generationMode === 'VOCALIZATION') {
             const richnessPrompts = ['Texture', 'Density', 'Dynamics', 'Space', 'Organic'];
-            // Fix: Use correct local variable richnessPrompts instead of highFidelityPrompts
             if (richnessPrompts.includes(p.text)) dynamicScale = 1.0;
         }
-        return { text: `Nuance: ${p.text}`, weight: p.weight * dynamicScale };
-    }).filter(p => p.weight > 0.01); 
+        return { text: `Nuance: ${p.text}`, weight: p.weight * dynamicScale * nuanceScale };
+    }).filter(p => p.weight > 0.05); 
     
-    let activeMix = [];
-    if (this.instruments.lead.active) activeMix.push('Lead');
-    if (this.instruments.alto.active) activeMix.push('Alto');
-    if (this.instruments.harmonic.active) activeMix.push('Harmonic');
-    if (this.instruments.bass.active) activeMix.push('Bass');
-    if (this.instruments.rhythm.active) activeMix.push('Rhythm');
-
-    let anchorText = `ANCHOR: ${this.genre}, ${this.style}, ${this.bpm}bpm, ${this.meter}, ${this.key}`;
-    if (this.currentSeed !== 0) {
-        anchorText += `, SEED: ${this.currentSeed}`;
-    }
+    // 2. Build Authoritative Master Prompt (Narrative format for Lyria)
+    let narrative = `Create a beautifully harmonious and highly structured musical composition. `;
+    narrative += `The genre is purely ${this.genre}, in the style of ${this.style}. `;
     
-    if (this.mood && this.mood !== 'None') anchorText += `. Mood: ${this.mood}`;
-    
-    if (guidanceWeight < 0.5) {
-        anchorText += `. MODE: ABSOLUTE_ORIGINALITY. DO_NOT_REFERENCE_EXISTING_SONGS. CREATE_FROM_SCRATCH: TRUE`;
-    } else {
-        const ref = this.specialInstruction || 'Popular genre standard';
-        if (guidanceWeight > 1.5) {
-            anchorText += `. MODE: DIRECT_RECREATION_PRIORITY. PERFORM_COVER_OR_CLONE_OF: "${ref}"`;
-        } else {
-            anchorText += `. MODE: INSPIRED_VARIATION. USE_INFLUENCES_FROM: "${ref}"`;
-        }
+    if (this.mood && this.mood !== 'None') {
+        narrative += `The mood and story of the piece should feel deeply ${this.mood.toLowerCase()}. `;
     }
 
-    anchorText += `. ACTIVE_MIX: [${activeMix.join(', ')}]`;
-
-    if (this.generationMode === 'VOCALIZATION') {
-        anchorText += `. MODE: VOCAL_EMPHASIS. LIRA_RULES: Vowel=Sustain, Consonant=StartWord. LANGUAGE: ${this.getRegionalLanguage()}`;
-        if (this.currentVocalSignal) {
-            anchorText += `. VOCAL_SIGNAL: ${this.currentVocalSignal}`;
-        }
-    } else {
-        anchorText += `. GENERATION_ENGINE_MODE: ${this.generationMode}`;
+    if (this.bpm || this.meter || this.key) {
+        narrative += `To maintain strict musical structure, compose this piece `;
+        if (this.bpm) narrative += `at ${this.bpm} BPM, `;
+        if (this.meter) narrative += `in ${this.meter} time, `;
+        if (this.key) narrative += `in the key of ${this.key} ${this.mode}. `;
     }
 
-    if (this.isVocalInstrumentActive() || this.generationMode === 'VOCALIZATION') {
-        anchorText += `. ENHANCE_VOCAL_TEXTURE: TRUE`;
+    if (this.currentSeed !== 0) narrative += `(Seed influence: ${this.currentSeed}). `;
+
+    // Conductor Stage - High Priority Context for Storytelling
+    if (this.conductorMode && this.currentStatusMessage) {
+        narrative += `The music must evolve to tell a dynamic story. Right now, the arrangement should reflect this section: "${this.currentStatusMessage}". `;
     }
 
-    const finalPayload = [ { text: anchorText, weight: 5.0 } ];
-    
+    // Instrumentation Rules - Explicit White-listing
     const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
     const labels = ['Lead', 'Alto', 'Harmonic', 'Bass', 'Rhythm'];
     
+    const activeDefs: string[] = [];
+    const activeNames: string[] = [];
+    const mutedDefs: string[] = [];
+
     keys.forEach((k, i) => {
         const ch = this.instruments[k];
-        const effectiveWeight = ch.active ? (ch.weight * 3.5) : 0.0;
-        finalPayload.push({ 
-            text: `INSTRUMENT ${labels[i]}: ${ch.instrument || 'None'}`, 
-            weight: effectiveWeight 
-        });
+        let instName = ch.instrument || 'None';
+        
+        // ORCHESTRAL STACKING LOGIC
+        if (k === 'lead' && ch.active && instName !== 'None') {
+            if (!instName.toLowerCase().includes('section') && !instName.toLowerCase().includes('ensemble')) {
+                instName = `${instName} (Ensemble Section)`;
+            }
+        }
+        
+        // Check active AND weight. If weight is very low, treat as muted
+        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+            activeDefs.push(`${labels[i]} (${instName})`);
+            activeNames.push(instName);
+        } else {
+            mutedDefs.push(labels[i]);
+        }
+    });
+
+    // Determine Strict Formation
+    const count = activeNames.length;
+    let formation = 'an ensemble';
+    if (count === 0) formation = 'complete silence';
+    else if (count === 1) formation = 'a solo performance';
+    else if (count === 2) formation = 'a duet';
+    else if (count === 3) formation = 'a trio';
+    else if (count === 4) formation = 'a quartet';
+    else if (count === 5) formation = 'a quintet';
+
+    narrative += `The arrangement must be beautifully orchestrated as ${formation}. `;
+    
+    if (activeDefs.length > 0) {
+        narrative += `It is absolutely critical that ONLY the following instruments are playing: ${activeDefs.join(' and ')}. `;
+    }
+
+    if (mutedDefs.length > 0) {
+        narrative += `The following roles are muted and must be completely silent: ${mutedDefs.join(', ')}. `;
+    }
+
+    // Anti-Ghost Instruments Logic
+    const common = ['Piano', 'Drums', 'Guitar', 'Bass', 'Synth', 'Strings', 'Percussion', 'Vocals'];
+    const activeUpper = activeNames.map(n => n.toUpperCase());
+    const strictlyForbidden = common.filter(c => !activeUpper.some(a => a.includes(c.toUpperCase())));
+    if (strictlyForbidden.length > 0) {
+        narrative += `Do NOT add any backing tracks or default instruments. Specifically, there must be NO ${strictlyForbidden.join(', NO ')} unless explicitly requested above. `;
+    }
+
+    narrative += `All instruments must play together harmoniously with perfect consonance, sharing the same chord progression and unified groove. Avoid polytonality and dissonance. Make it sound professional, structured, and emotionally resonant. `;
+
+    if (this.instruments.rhythm.active && this.instruments.rhythm.weight > 0) {
+        narrative += `The rhythm track provides the main groove. `;
+    } else {
+        narrative += `The bass or harmonic foundation provides the main groove since there are no drums. `;
+    }
+
+    // Guidance / References
+    const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
+    const guidanceWeight = guidancePrompt?.weight ?? 1.0; 
+
+    if (guidanceWeight < 0.5) {
+        narrative += `This should be a purely original, highly creative interpretation. `;
+    } else {
+        const ref = this.specialInstruction || 'popular genre standard';
+        narrative += `Use "${ref}" as a stylistic reference for the composition. `;
+    }
+
+    // Vocal Override
+    if (this.generationMode === 'VOCALIZATION') {
+         narrative += `This is a vocal performance in ${this.getRegionalLanguage()}. `;
+         if (this.currentVocalSignal) narrative += `Vocal cue: ${this.currentVocalSignal}. `;
+    } else {
+        narrative += `Focus on the highest possible ${this.generationMode.toLowerCase()} for the audio generation. `;
+    }
+
+    // Construct Payload
+    // 10.0 weight ensures the structural rules are paramount
+    const finalPayload = [ { text: narrative, weight: 10.0 } ];
+    
+    // 3. Add Individual Instrument Prompts (Reinforcement)
+    keys.forEach((k, i) => {
+        const ch = this.instruments[k];
+        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+            let roleContext = "";
+            if (k === 'lead') roleContext = "Primary Melody (Ensemble)";
+            if (k === 'alto') roleContext = "Melodic Support (Doubling Lead)";
+            if (k === 'bass') roleContext = "Rhythmic Foundation (Lock with Drums)";
+            
+            // We give individual instruments a VERY high weight so the model picks up their timbre over hallucinations
+            finalPayload.push({ 
+                text: `MANDATORY ACTIVE INSTRUMENT -> ${labels[i]}: ${ch.instrument}. ${roleContext}`, 
+                weight: ch.weight * 10.0 // significantly boosted for strict adherence
+            });
+        } else {
+            // Actively instruct to mute
+            finalPayload.push({
+                text: `MANDATORY SILENCE FOR ${labels[i].toUpperCase()}. DO NOT GENERATE ANY AUDIO FOR THIS ROLE. DO NOT ADD DEFAULT INSTRUMENTS.`,
+                weight: 8.0
+            });
+        }
     });
     
     finalPayload.push(...weightedPrompts);
@@ -360,25 +438,9 @@ export class LiveMusicHelper extends EventTarget {
     return 'English';
   }
 
-  private async checkHandshake(): Promise<boolean> {
-    try {
-        const response = await this.ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: "Respond with ok if you can receive requests at this time.",
-            config: { maxOutputTokens: 5, temperature: 0 }
-        });
-        this.aiAvailable = (response.text || '').toLowerCase().includes('ok');
-        this.dispatchEvent(new CustomEvent('handshake-result', { detail: this.aiAvailable }));
-        return this.aiAvailable;
-    } catch (e: any) {
-        this.aiAvailable = false;
-        this.dispatchEvent(new CustomEvent('handshake-result', { detail: false }));
-        return false;
-    }
-  }
-
   private getActiveLimit() {
-      return 3 + Math.floor((this.evolutionValue + 10) * (9 / 20));
+      // Allow all 18 knobs to be used if required by the preset/style
+      return 18;
   }
 
   public isVocalInstrumentActive(): boolean {
@@ -419,20 +481,82 @@ export class LiveMusicHelper extends EventTarget {
           weights['Density'] += 0.8; weights['Attack'] += 0.5; weights['Groove'] += 0.7; weights['Brightness'] += 0.4; weights['Texture'] += 0.4; weights['Atmosphere'] += 0.5;
       } else if (g.includes('rock') || g.includes('pop')) {
           weights['Attack'] += 0.6; weights['Dynamics'] += 0.5; weights['Groove'] += 0.4; weights['Presence'] += 0.3; weights['Width'] += 0.3; weights['Authenticity'] += 0.2;
-      } else if (g.includes('spiritual') || g.includes('classic')) {
-          weights['Space'] += 0.5; weights['Atmosphere'] += 0.4; weights['Dynamics'] += 0.3; weights['Organic'] += 0.6; weights['Authenticity'] += 0.4;
+      } else if (g.includes('spiritual') || g.includes('classic') || g.includes('marching')) {
+          // Increase width and density for orchestral feeling
+          weights['Space'] += 0.3; weights['Atmosphere'] += 0.4; weights['Dynamics'] += 0.5; weights['Width'] += 0.7; weights['Density'] += 0.4;
       } else {
           weights['Dynamics'] += 0.3; weights['Space'] += 0.2; weights['Organic'] += 0.4; weights['Atmosphere'] += 0.1; weights['Variation'] += 0.2;
       }
 
       if (mood !== 'None') {
-          if (mood === 'Aggressive') { weights['Attack'] += 0.8; weights['Density'] += 0.6; }
-          else if (mood === 'Calm') { weights['Space'] += 0.8; weights['Dynamics'] -= 0.4; weights['Density'] -= 0.5; }
-          else if (mood === 'Epic' || mood === 'Cinematic') { weights['Width'] += 0.8; weights['Atmosphere'] += 0.8; weights['Dynamics'] += 0.6; }
-          else if (mood === 'Ethereal') { weights['Space'] += 0.9; weights['Atmosphere'] += 0.9; weights['Authenticity'] += 0.5; }
+          switch (mood) {
+              case 'Aggressive':
+              case 'Intense':
+              case 'Tense':
+                  weights['Attack'] += 0.9; weights['Density'] += 0.7; weights['Dynamics'] += 0.5;
+                  break;
+              case 'Calm':
+              case 'Peaceful':
+              case 'Meditative':
+                  weights['Space'] += 0.9; weights['Density'] -= 0.6; weights['Atmosphere'] += 0.4; weights['Dynamics'] -= 0.3;
+                  break;
+              case 'Epic':
+              case 'Heroic':
+              case 'Cinematic':
+              case 'Dramatic':
+                  weights['Width'] += 0.9; weights['Atmosphere'] += 0.7; weights['Dynamics'] += 0.8; weights['Density'] += 0.4;
+                  break;
+              case 'Ethereal':
+              case 'Dreamy':
+              case 'Spiritual':
+              case 'Mysterious':
+                  weights['Space'] += 0.9; weights['Atmosphere'] += 0.9; weights['Glide'] += 0.4; weights['Width'] += 0.5;
+                  break;
+              case 'Happy':
+              case 'Joyful':
+              case 'Uplifting':
+              case 'Energetic':
+              case 'Party':
+                  weights['Brightness'] += 0.7; weights['Groove'] += 0.6; weights['Attack'] += 0.4; weights['Presence'] += 0.5;
+                  break;
+              case 'Sad':
+              case 'Melancholic':
+              case 'Sentimental':
+              case 'Nostalgic':
+                  weights['Authenticity'] += 0.8; weights['Organic'] += 0.7; weights['Dynamics'] -= 0.2; weights['Space'] += 0.3;
+                  break;
+              case 'Dark':
+              case 'Ominous':
+                  weights['Atmosphere'] += 0.8; weights['Brightness'] -= 0.6; weights['Density'] += 0.3; weights['Space'] += 0.4;
+                  break;
+              case 'Groovy':
+              case 'Sexy':
+              case 'Hypnotic':
+                  weights['Groove'] += 0.9; weights['Texture'] += 0.5; weights['Presence'] += 0.4;
+                  break;
+              case 'Romantic':
+              case 'Elegant':
+                  weights['Organic'] += 0.8; weights['Dynamics'] += 0.4; weights['Authenticity'] += 0.6;
+                  break;
+              case 'Whimsical':
+              case 'Quirky':
+                  weights['Ornamentation'] += 0.8; weights['Staccato'] += 0.6; weights['Variation'] += 0.5;
+                  break;
+              case 'Soulful':
+                  weights['Authenticity'] += 0.9; weights['Organic'] += 0.7; weights['Dynamics'] += 0.5;
+                  break;
+              case 'Triumphal':
+                  weights['Brightness'] += 0.8; weights['Dynamics'] += 0.7; weights['Attack'] += 0.6; weights['Width'] += 0.5;
+                  break;
+          }
       }
 
       if (this.isVocalInstrumentActive()) weights['Authenticity'] += 0.8;
+
+      // Increase Guidance importance when channels are locked to ensure strict adherence
+      if (this.channelsLocked) {
+          weights['Guidance'] += 2.0; 
+      }
 
       const sorted = Object.entries(weights).filter(([k, v]) => v > 0 || k === 'Guidance').sort((a, b) => b[1] - a[1]);
       const chosen = new Set(sorted.slice(0, activeLimit).map(s => s[0]));
@@ -460,169 +584,326 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh();
   }
 
-  private async generateMusicPlan() {
-      if (!this.aiAvailable) { return; }
-      try {
-          const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-          const insts = {
-              lead: this.instruments.lead.instrument || "Lead",
-              alto: this.instruments.alto.instrument || "Alto",
-              harmonic: this.instruments.harmonic.instrument || "Harmonic",
-              bass: this.instruments.bass.instrument || "Bass",
-              rhythm: this.instruments.rhythm.instrument || "Rhythm"
-          };
-          
-          const enabledChannels = keys.filter(k => this.instruments[k].visible !== false);
-          const enabledDescription = enabledChannels.map(k => `${k.toUpperCase()} instrument is currently: "${insts[k]}"`).join('. ');
-          const hasVocals = this.isVocalInstrumentActive();
-
-          const response = await this.ai.models.generateContent({
-              model: 'gemini-3-flash-preview', 
-              contents: `Plan performance for ${this.maxDurationMinutes}m track. 
-              Goal: MUSICAL STORYTELLING with clear narrative progression (Introduction -> Development -> Climax/Bridge -> Resolution).
-              
-              STRICT INSTRUMENT RULE: You MUST only refer to the instruments provided in the ENABLED CHANNELS list. Do NOT invent or hallucinate other instruments. 
-              
-              ENABLED CHANNELS: ${enabledDescription}.
-              VOCAL INSTRUMENT STATUS: ${hasVocals ? 'AVAILABLE' : 'UNAVAILABLE'}.
-              
-              CRITICAL ARRANGEMENT RULES:
-              - Varied Formations: Frequently cycle between Solo, Duet, Trio, and Full Mix formations to improve storytelling.
-              - Solo: Exactly ONE enabled channel active. All others muted.
-              - Duet: Exactly TWO enabled channels active.
-              - Trio: Exactly THREE enabled channels active.
-              - Full Mix: All enabled channels active.
-              
-              In the "stageName" field, always use the specific instrument name provided. For example, if Lead is 'Electric Guitar', call it 'Electric Guitar Solo', NOT 'Lead Solo' and certainly not 'Piano Solo' if Piano is not listed.
-              
-              Respond with a JSON object containing a 'plan' array of stages.`,
-              config: { 
-                  responseMimeType: "application/json", 
-                  responseSchema: { 
-                      type: Type.OBJECT,
-                      properties: {
-                          plan: {
-                              type: Type.ARRAY, 
-                              items: { 
-                                  type: Type.OBJECT, 
-                                  properties: { 
-                                      stageName: { type: Type.STRING }, 
-                                      stageStartTimeSec: { type: Type.NUMBER }, 
-                                      activeChannels: {
-                                          type: Type.OBJECT,
-                                          properties: {
-                                              lead: { type: Type.BOOLEAN },
-                                              alto: { type: Type.BOOLEAN },
-                                              harmonic: { type: Type.BOOLEAN },
-                                              bass: { type: Type.BOOLEAN },
-                                              rhythm: { type: Type.BOOLEAN }
-                                          }
-                                      },
-                                      targets: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { parameterName: { type: Type.STRING }, targetValue: { type: Type.NUMBER } } } },
-                                      channelWeights: {
-                                          type: Type.OBJECT,
-                                          properties: {
-                                              lead: { type: Type.NUMBER },
-                                              alto: { type: Type.NUMBER },
-                                              harmonic: { type: Type.NUMBER },
-                                              bass: { type: Type.NUMBER },
-                                              rhythm: { type: Type.NUMBER }
-                                          }
-                                      }
-                                  } 
-                              }
-                          }
-                      }
-                  }
-              }
-          });
-          const result = JSON.parse(response.text); 
-          if (result && Array.isArray(result.plan)) { 
-              this.currentPlan = result.plan; 
-              this.currentPlanIdx = 0; 
+  private getNarrativeStructure(genre: string, style: string, totalSec: number): { name: string, type: string, durationPct: number }[] {
+      const templates: { name: string, type: string, durationPct: number }[][] = [];
+      
+      const isClassical = ['Classic', 'Cinematic', 'Spiritual', 'Victorian', 'Renascentist', 'Ambient', 'Oriental', 'Marching'].includes(genre);
+      const isJazz = ['Jazz', 'Blues', 'Western'].includes(genre);
+      const isElectronic = ['Electronic', 'Gaming'].includes(genre);
+      
+      // --- Classical / Traditional / Cinematic / Marching ---
+      if (isClassical) {
+          if (genre === 'Marching') {
+               // 1. Parade Approach (Drum Intro)
+               templates.push([
+                   { name: "Percussion Roll-off", type: 'percussion', durationPct: 0.15 },
+                   { name: "Woodwinds/High Brass", type: 'duet', durationPct: 0.2 },
+                   { name: "Full Band Inspection", type: 'climax', durationPct: 0.3 },
+                   { name: "Drum Break", type: 'percussion', durationPct: 0.15 },
+                   { name: "Final Pass", type: 'climax', durationPct: 0.2 }
+               ]);
+               // 2. Fanfare Approach (Brass Call)
+               templates.push([
+                   { name: "Trumpet Call", type: 'solo', durationPct: 0.15 },
+                   { name: "Brass Response", type: 'build', durationPct: 0.15 },
+                   { name: "Regimental March", type: 'main', durationPct: 0.4 },
+                   { name: "Victory Flourish", type: 'climax', durationPct: 0.3 }
+               ]);
+               // 3. Full Attack
+               templates.push([
+                   { name: "Attention!", type: 'climax', durationPct: 0.1 },
+                   { name: "The March", type: 'main', durationPct: 0.4 },
+                   { name: "Sectional Feature", type: 'duet', durationPct: 0.2 },
+                   { name: "Grand Review", type: 'climax', durationPct: 0.3 }
+               ]);
+          } else {
+              // 1. The Arc (Standard)
+              templates.push([
+                  { name: "Overture", type: 'intro', durationPct: 0.15 },
+                  { name: "Main Theme (Intimate)", type: 'duet', durationPct: 0.20 },
+                  { name: "Development", type: 'main', durationPct: 0.25 },
+                  { name: "Dramatic Tension", type: 'build', durationPct: 0.15 },
+                  { name: "Finale", type: 'climax', durationPct: 0.25 }
+              ]);
+              // 2. The Concerto (Solo Focus)
+              templates.push([
+                  { name: "Solo Introduction", type: 'solo', durationPct: 0.2 },
+                  { name: "Orchestral Response", type: 'main', durationPct: 0.2 },
+                  { name: "Dialogue", type: 'duet', durationPct: 0.2 },
+                  { name: "Virtuoso Cadenza", type: 'solo', durationPct: 0.15 },
+                  { name: "Tutti Finale", type: 'climax', durationPct: 0.25 }
+              ]);
+              // 3. In Media Res (Full Start)
+              templates.push([
+                  { name: "Impact Start", type: 'climax', durationPct: 0.15 },
+                  { name: "Receding Tide", type: 'breakdown', durationPct: 0.2 },
+                  { name: "Rebuilding", type: 'build', durationPct: 0.25 },
+                  { name: "Theme Return", type: 'main', durationPct: 0.4 }
+              ]);
+              // 4. Slow Burn (Ambient/Spiritual)
+              templates.push([
+                  { name: "Drone/Atmosphere", type: 'intro', durationPct: 0.25 },
+                  { name: "Whispers", type: 'duet', durationPct: 0.25 },
+                  { name: "Awakening", type: 'main', durationPct: 0.25 },
+                  { name: "Ascension", type: 'climax', durationPct: 0.25 }
+              ]);
           }
-      } catch (e) { /* Fallback plan is already running */ }
+      } 
+      // --- Jazz / Blues / Western ---
+      else if (isJazz) {
+          // 1. Standard Jazz Form
+          templates.push([
+              { name: "Intro", type: 'intro', durationPct: 0.1 },
+              { name: "Head", type: 'main', durationPct: 0.2 },
+              { name: "Solo 1", type: 'solo', durationPct: 0.2 },
+              { name: "Solo 2", type: 'solo', durationPct: 0.2 },
+              { name: "Head Out", type: 'climax', durationPct: 0.3 }
+          ]);
+          // 2. Trading Fours
+          templates.push([
+              { name: "Rhythm Start", type: 'groove', durationPct: 0.15 },
+              { name: "Head", type: 'main', durationPct: 0.25 },
+              { name: "Call & Response", type: 'duet', durationPct: 0.25 },
+              { name: "Collective Improv", type: 'climax', durationPct: 0.2 },
+              { name: "Cool Down", type: 'outro', durationPct: 0.15 }
+          ]);
+          // 3. Ballad (Feature)
+          templates.push([
+              { name: "Rubato Intro", type: 'solo', durationPct: 0.15 },
+              { name: "Ballad Theme", type: 'duet', durationPct: 0.35 },
+              { name: "Double Time Feel", type: 'main', durationPct: 0.3 },
+              { name: "Outro", type: 'outro', durationPct: 0.2 }
+          ]);
+      } 
+      // --- Pop / Rock / Electronic / Others ---
+      else {
+          // 1. Verse-Chorus Standard
+          templates.push([
+              { name: "Intro", type: 'intro', durationPct: 0.1 },
+              { name: "Verse 1", type: 'verse', durationPct: 0.15 },
+              { name: "Chorus", type: 'chorus', durationPct: 0.15 },
+              { name: "Verse 2", type: 'verse', durationPct: 0.15 },
+              { name: "Bridge", type: 'breakdown', durationPct: 0.15 },
+              { name: "Chorus Out", type: 'climax', durationPct: 0.3 }
+          ]);
+          // 2. The Build-Up (Electronic style)
+          templates.push([
+              { name: "Atmosphere", type: 'intro', durationPct: 0.15 },
+              { name: "The Pulse", type: 'groove', durationPct: 0.2 },
+              { name: "The Rise", type: 'build', durationPct: 0.2 },
+              { name: "THE DROP", type: 'climax', durationPct: 0.3 },
+              { name: "Outro", type: 'outro', durationPct: 0.15 }
+          ]);
+          // 3. Instrumental Breakdown
+          templates.push([
+              { name: "Riff Intro", type: 'main', durationPct: 0.15 },
+              { name: "Jam Section", type: 'main', durationPct: 0.25 },
+              { name: "Solo Feature", type: 'solo', durationPct: 0.2 },
+              { name: "Drum/Bass Break", type: 'percussion', durationPct: 0.15 },
+              { name: "Final Push", type: 'climax', durationPct: 0.25 }
+          ]);
+      }
+
+      // Random selection
+      return templates[Math.floor(Math.random() * templates.length)];
   }
 
-  private runFallbackRoutine() {
+  private generatePerformancePlan(startOffset: number = 0) {
       this.currentPlan = [];
       const totalSec = this.maxDurationMinutes * 60;
-      const stageDuration = 15; 
-      const numStages = Math.ceil(totalSec / stageDuration); 
-      const promptList = Array.from(this.prompts.values());
       
-      const allKeys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-      const instNames = {
-          lead: this.instruments.lead.instrument || "Lead",
-          alto: this.instruments.alto.instrument || "Alto",
-          harmonic: this.instruments.harmonic.instrument || "Harmonic",
-          bass: this.instruments.bass.instrument || "Bass",
-          rhythm: this.instruments.rhythm.instrument || "Rhythm"
+      // Get all available keys based on visibility (user preferences in RightSidebar)
+      const availableKeys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'].filter(k => 
+          this.instruments[k as keyof InstrumentSet].visible !== false
+      ) as Array<keyof InstrumentSet>;
+      
+      if (availableKeys.length === 0) return;
+
+      // If starting mid-stream (takeover), use the improvisation logic
+      if (startOffset >= 5) {
+          this.generateImprovPlan(startOffset, totalSec, availableKeys);
+          return;
+      }
+
+      // --- STORY GENERATION MODE ---
+      
+      // 1. Get Narrative Structure (Randomized based on Genre)
+      const story = this.getNarrativeStructure(this.genre, this.style, totalSec);
+
+      // 2. Build Stages
+      let currentTime = 0;
+      story.forEach(seg => {
+          // Normalize duration to avoid rounding gaps, though addStage handles timing
+          const dur = seg.durationPct * totalSec;
+          this.addStage(currentTime, seg.name, availableKeys, seg.type);
+          currentTime += dur;
+      });
+      
+      this.currentPlanIdx = 0;
+  }
+
+  private generateImprovPlan(startTime: number, totalSec: number, enabledKeys: Array<keyof InstrumentSet>) {
+      // Improvisation / Takeover Plan (Mid-Stream)
+      let currentTime = startTime;
+      
+      // Immediate Takeover Stage: Respect current activity mostly but transition
+      this.addStage(currentTime, "DJ Takeover", enabledKeys, 'groove'); 
+      
+      currentTime += 8; // Quick takeover transition time
+
+      // Generate variety blocks until near end
+      const remainingTime = totalSec - currentTime;
+      const blockDuration = Math.max(15, Math.min(30, remainingTime / 4)); 
+      
+      while (currentTime < totalSec - 10) {
+          const typeRoll = Math.random();
+          let name = "Improv Mix";
+          let type = 'main';
+          
+          if (typeRoll < 0.25 && enabledKeys.length >= 1) { name = "Solo Feature"; type = 'solo'; }
+          else if (typeRoll < 0.5 && enabledKeys.length >= 2) { name = "Duet Session"; type = 'duet'; }
+          else if (typeRoll < 0.75) { name = "Groove Breakdown"; type = 'breakdown'; }
+          
+          this.addStage(currentTime, name, enabledKeys, type);
+          currentTime += blockDuration;
+      }
+
+      // Ensure Outro if we have time
+      if (currentTime < totalSec) {
+          this.addStage(currentTime, "Fade Out", enabledKeys, 'outro');
+      }
+  }
+
+  private addStage(time: number, name: string, availableKeys: Array<keyof InstrumentSet>, type: string) {
+      const stage: PerformancePlanStage = {
+          stageName: name,
+          stageStartTimeSec: time,
+          activeChannels: { lead: false, alto: false, harmonic: false, bass: false, rhythm: false },
+          channelWeights: { lead: 0, alto: 0, harmonic: 0, bass: 0, rhythm: 0 },
+          targets: []
       };
 
-      const enabledKeys = allKeys.filter(k => this.instruments[k].visible !== false);
-      if (enabledKeys.length === 0) return; 
-
-      for (let i = 0; i < numStages; i++) {
-          const activeLimit = this.getActiveLimit();
-          const stageTargets = promptList.map(p => ({ parameterName: p.text, targetValue: 0 }));
-          const shuffledIndices = Array.from({length: promptList.length}, (_, k) => k).sort(() => Math.random() - 0.5);
-          for(let j = 0; j < Math.min(activeLimit, promptList.length); j++) stageTargets[shuffledIndices[j]].targetValue = 0.4 + Math.random() * 1.6;
-          
-          const soloProb = 0.15;
-          const duetProb = 0.2;
-          const trioProb = enabledKeys.length >= 3 ? 0.2 : 0;
-          const randAction = Math.random();
-
-          let cw = { lead: 0.0, alto: 0.0, harmonic: 0.0, bass: 0.0, rhythm: 0.0 };
-          let ac = { lead: false, alto: false, harmonic: false, bass: false, rhythm: false };
-          let stageName = `Full Mix Section`;
-
-          if (randAction < soloProb && i > 0) {
-              const soloKey = enabledKeys[Math.floor(Math.random() * enabledKeys.length)];
-              allKeys.forEach(k => {
-                  ac[k] = (k === soloKey);
-                  cw[k] = (k === soloKey) ? 2.0 : 0.0;
-              });
-              stageName = `${instNames[soloKey]} Solo`;
-          } else if (randAction < soloProb + duetProb && i > 0 && enabledKeys.length >= 2) {
-              const shuffled = [...enabledKeys].sort(() => Math.random() - 0.5);
-              const duetKeys = [shuffled[0], shuffled[1]];
-              allKeys.forEach(k => {
-                  ac[k] = duetKeys.includes(k);
-                  cw[k] = duetKeys.includes(k) ? 1.4 : 0.0;
-              });
-              stageName = `${instNames[duetKeys[0]]} & ${instNames[duetKeys[1]]} Duet`;
-          } else if (randAction < soloProb + duetProb + trioProb && i > 0 && enabledKeys.length >= 3) {
-              const shuffled = [...enabledKeys].sort(() => Math.random() - 0.5);
-              const trioKeys = [shuffled[0], shuffled[1], shuffled[2]];
-              allKeys.forEach(k => {
-                  ac[k] = trioKeys.includes(k);
-                  cw[k] = trioKeys.includes(k) ? 1.2 : 0.0;
-              });
-              stageName = `${instNames[trioKeys[0]]}, ${instNames[trioKeys[1]]} & ${instNames[trioKeys[2]]} Trio`;
-          } else {
-              enabledKeys.forEach(k => {
-                  ac[k] = true;
-                  cw[k] = 1.0;
-              });
-              const isDrop = Math.random() < 0.2 && i > 1;
-              if (isDrop && ac.rhythm) {
-                  ac.rhythm = false; cw.rhythm = 0.0;
-                  if (ac.bass) { ac.bass = false; cw.bass = 0.0; }
-                  stageName = "The Drop (Minimalist)";
-              }
-          }
-
-          this.currentPlan.push({ 
-            stageName: stageName, 
-            stageStartTimeSec: i * stageDuration, 
-            activeChannels: ac, 
-            targets: stageTargets,
-            channelWeights: cw
+      const setStrict = (keys: Array<keyof InstrumentSet>, weight: number = 1.0) => {
+          // Reset all first
+          (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(k => {
+              stage.activeChannels[k] = false;
+              stage.channelWeights[k] = 0;
           });
+          // Enable specific
+          keys.forEach(k => {
+              if (availableKeys.includes(k)) {
+                  stage.activeChannels[k] = true;
+                  stage.channelWeights[k] = weight;
+              }
+          });
+      };
+
+      // Helper to get random from available
+      const pick = (arr: Array<keyof InstrumentSet>) => {
+          const valid = arr.filter(k => availableKeys.includes(k));
+          return valid[Math.floor(Math.random() * valid.length)];
+      };
+
+      switch (type) {
+          case 'intro':
+              // Sparse: Harmonic or Rhythm or Lead solo
+              if (availableKeys.includes('harmonic')) setStrict(['harmonic'], 0.8);
+              else if (availableKeys.includes('lead')) setStrict(['lead'], 0.8);
+              else setStrict([availableKeys[0]], 0.8);
+              break;
+
+          case 'percussion':
+              // Drum/Percussion Only
+              {
+                  const drums = availableKeys.filter(k => k === 'rhythm');
+                  if (drums.length > 0) setStrict(drums, 1.2);
+                  else {
+                      // Fallback to bass groove or generic intro if no rhythm channel
+                      const groove = availableKeys.filter(k => k === 'bass');
+                      setStrict(groove.length > 0 ? groove : [availableKeys[0]], 1.0);
+                  }
+              }
+              break;
+
+          case 'verse':
+          case 'main':
+              // Standard: Rhythm section + Lead OR Alto (avoid muddy melody)
+              {
+                  const section = ['bass', 'rhythm', 'harmonic'] as Array<keyof InstrumentSet>;
+                  const melody = availableKeys.includes('lead') ? 'lead' : (availableKeys.includes('alto') ? 'alto' : null);
+                  if (melody) section.push(melody);
+                  setStrict(section, 1.0);
+              }
+              break;
+
+          case 'chorus':
+          case 'climax':
+          case 'build':
+              // Full: All available
+              setStrict(availableKeys, 1.0);
+              break;
+
+          case 'solo':
+              // STRICTLY ONE instrument + quiet backing
+              {
+                  const soloist = pick(['lead', 'alto', 'harmonic', 'bass']);
+                  if (soloist) {
+                      stage.stageName = `${this.instruments[soloist].instrument} Solo`;
+                      // Backing
+                      const backing = availableKeys.filter(k => k !== soloist && (k === 'bass' || k === 'rhythm' || k === 'harmonic'));
+                      setStrict([soloist, ...backing], 1.0);
+                      // Soloist gets 1.2, backing gets 0.5
+                      stage.channelWeights[soloist] = 1.2;
+                      backing.forEach(k => stage.channelWeights[k] = 0.5); // Quiet backing
+                  }
+              }
+              break;
+
+          case 'duet':
+              // STRICTLY TWO instruments
+              {
+                  const options = availableKeys.filter(k => k !== 'rhythm'); // Prefer melodic instruments for duet
+                  if (options.length >= 2) {
+                      const k1 = options[0];
+                      const k2 = options[1];
+                      setStrict([k1, k2], 1.1);
+                  } else if (availableKeys.length >= 2) {
+                      setStrict([availableKeys[0], availableKeys[1]], 1.1);
+                  } else {
+                      setStrict(availableKeys, 1.0); // Fallback
+                  }
+              }
+              break;
+
+          case 'breakdown':
+              // Remove Rhythm or Bass, focus on Harmonic/Alto
+              {
+                  const bridgeKeys = availableKeys.filter(k => k !== 'rhythm' && k !== 'lead');
+                  if (bridgeKeys.length > 0) setStrict(bridgeKeys, 0.9);
+                  else setStrict(availableKeys, 0.7); // Quiet full
+              }
+              break;
+              
+          case 'groove':
+              // Bass + Rhythm focus
+              {
+                  const groove = availableKeys.filter(k => k === 'bass' || k === 'rhythm');
+                  setStrict(groove.length > 0 ? groove : availableKeys, 1.1);
+              }
+              break;
+
+          case 'outro':
+              // Fade out texture, usually Harmonic or Lead
+              if (availableKeys.includes('harmonic')) setStrict(['harmonic'], 0.7);
+              else setStrict([availableKeys[0]], 0.7);
+              break;
+              
+          default:
+              setStrict(availableKeys, 1.0);
+              break;
       }
-      this.currentPlanIdx = 0;
+
+      this.currentPlan.push(stage);
   }
 
   private startConductor() { if (this.conductorTimer) clearInterval(this.conductorTimer); if (!this.conductorMode) return; this.conductorTimer = window.setInterval(() => this.updateConductor(), 200); }
@@ -631,17 +912,32 @@ export class LiveMusicHelper extends EventTarget {
   private updateConductor() {
       if (!this.conductorMode || (this.playbackState !== 'playing' && this.playbackState !== 'recording' && this.playbackState !== 'warmup' && this.playbackState !== 'preparing')) return;
       if (Date.now() - this.conductorActivationTime < 5000) return;
+      
       const elapsed = this.elapsedSeconds;
       const nextStage = this.currentPlan?.[this.currentPlanIdx + 1];
+      
+      // Anticipation Messaging
+      if (nextStage) {
+          const timeToNext = nextStage.stageStartTimeSec - elapsed;
+          if (timeToNext > 0 && timeToNext < 10) {
+              let msg = "";
+              if (timeToNext < 3) {
+                  msg = `PREPARING ${nextStage.stageName.toUpperCase()}...`;
+              } else {
+                  msg = `NEXT: ${nextStage.stageName.toUpperCase()} IN ${Math.ceil(timeToNext)}S...`;
+              }
+              this.dispatchEvent(new CustomEvent('conductor-anticipation', { detail: { msg } }));
+          }
+      }
+
       if (nextStage && elapsed >= nextStage.stageStartTimeSec) {
           this.currentPlanIdx++;
           const currentStage = this.currentPlan[this.currentPlanIdx];
           this.currentStatusMessage = currentStage.stageName;
-          this.currentIsAiPhase = this.aiAvailable;
 
           this.synchronizeInstrumentsWithStage(currentStage.stageName);
 
-          this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: this.aiAvailable } }));
+          this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false } }));
           this.interpolateParameters();
           this.scheduleRefresh();
       }
@@ -653,36 +949,25 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private synchronizeInstrumentsWithStage(stageName: string) {
-      const lowerStage = stageName.toLowerCase();
-      const mentionedInstruments = KNOWN_INSTRUMENTS.filter(inst => lowerStage.includes(inst.toLowerCase()));
-      if (mentionedInstruments.length === 0) return;
+      // Conductor STRICTLY controls weights and active state based on the Plan.
+      // It does NOT change instrument strings.
+      
+      const currentStage = this.currentPlan[this.currentPlanIdx];
+      if (!currentStage) return;
 
       let instrumentsModified = false;
       const currentSetup = { ...this.instruments };
+      const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
 
-      mentionedInstruments.forEach((mention, index) => {
-          const existingChannel = (Object.keys(currentSetup) as Array<keyof InstrumentSet>).find(k => currentSetup[k].instrument === mention);
+      channels.forEach(ch => {
+          // If channel is not visible in manifest, ignore it
+          if (currentSetup[ch].visible === false) return;
+
+          const targetActive = currentStage.activeChannels[ch];
           
-          if (existingChannel) {
-              if (!currentSetup[existingChannel].active || currentSetup[existingChannel].weight < 0.5) {
-                  currentSetup[existingChannel].active = true;
-                  currentSetup[existingChannel].weight = Math.max(currentSetup[existingChannel].weight, 1.0);
-                  instrumentsModified = true;
-              }
-          } else {
-              if (this.channelsLocked) return; 
-
-              let targetChannel: keyof InstrumentSet;
-              if (index === 0) targetChannel = 'lead';
-              else if (index === 1) targetChannel = 'alto';
-              else targetChannel = 'harmonic';
-
-              if (currentSetup[targetChannel].visible !== false) {
-                  currentSetup[targetChannel].instrument = mention;
-                  currentSetup[targetChannel].active = true;
-                  currentSetup[targetChannel].weight = 1.0;
-                  instrumentsModified = true;
-              }
+          if (currentSetup[ch].active !== targetActive) {
+              currentSetup[ch].active = targetActive;
+              instrumentsModified = true;
           }
       });
 
@@ -699,7 +984,8 @@ export class LiveMusicHelper extends EventTarget {
       if (!currentStage) return;
       
       const interactionCooldownMs = 10000 - (this.evolutionValue * 500); 
-      const baseStep = 0.05;
+      // Dynamic base step based on evolution. Higher evolution = faster cuts.
+      const baseStep = 0.05 + (this.evolutionValue > 5 ? 0.05 : 0);
       const step = baseStep * (1.0 + (this.evolutionValue / 10.0));
       
       if (currentStage.targets) {
@@ -752,16 +1038,16 @@ export class LiveMusicHelper extends EventTarget {
               const weightDiff = targetWeight - currentWeight;
               
               if (Math.abs(weightDiff) > 0.005) {
-                  const move = Math.sign(weightDiff) * Math.min(Math.abs(weightDiff), 0.05); 
+                  // For DJ, if target is 0, cut faster
+                  const cutBonus = (targetWeight === 0) ? 0.08 : 0;
+                  const move = Math.sign(weightDiff) * Math.min(Math.abs(weightDiff), 0.05 + cutBonus); 
                   this.instruments[ch].weight = Math.max(0, Math.min(2.0, currentWeight + move));
                   channelChanged = true;
               }
 
-              const targetActiveFromPlan = currentStage.activeChannels?.[ch] ?? true;
-              const effectiveTargetActive = (targetWeight > 0.01 && targetActiveFromPlan);
-              
-              if (this.instruments[ch].active !== effectiveTargetActive) {
-                  this.instruments[ch].active = effectiveTargetActive;
+              const targetActiveFromPlan = currentStage.activeChannels?.[ch];
+              if (targetActiveFromPlan !== undefined && this.instruments[ch].active !== targetActiveFromPlan) {
+                  this.instruments[ch].active = targetActiveFromPlan;
                   channelChanged = true;
               }
           });
@@ -827,7 +1113,7 @@ export class LiveMusicHelper extends EventTarget {
               rhythm: this.instruments.rhythm.active,
           },
           statusMessage: this.currentStatusMessage,
-          isAiPhase: this.currentIsAiPhase
+          isAiPhase: false
       };
       this.prompts.forEach((p, id) => snapshot.promptWeights.set(id, p.weight));
       this.automationLog.push(snapshot);
@@ -847,7 +1133,7 @@ export class LiveMusicHelper extends EventTarget {
       if (snapshot.statusMessage && snapshot.statusMessage !== this.lastAppliedStatusMessage) {
           this.lastAppliedStatusMessage = snapshot.statusMessage;
           this.dispatchEvent(new CustomEvent('conductor-stage-changed', { 
-              detail: { name: snapshot.statusMessage, isAi: snapshot.isAiPhase ?? false } 
+              detail: { name: snapshot.statusMessage, isAi: false } 
           }));
       }
 
@@ -882,16 +1168,15 @@ export class LiveMusicHelper extends EventTarget {
     this.currentRecordingStartTime = 0; this.dispatchEvent(new CustomEvent('recording-cleared'));
     this.audioContext.resume();
     this.currentStatusMessage = '';
-    this.currentIsAiPhase = false;
 
     if (this.conductorMode) {
         this.applyAuthenticPresets(this.genre, this.style, this.mood, this.generationMode);
     }
     
-    this.runFallbackRoutine();
+    // Always use fallback/procedural routine for standalone conductor
+    this.generatePerformancePlan(0);
+
     this.setPlaybackState('loading');
-    
-    const planPromise = (this.conductorMode && this.aiAvailable) ? this.generateMusicPlan() : Promise.resolve();
     
     await this.startSession();
 
@@ -903,13 +1188,15 @@ export class LiveMusicHelper extends EventTarget {
       
       this.dispatchEvent(new CustomEvent('warmup-started', { detail: { durationMs: totalPrepMs, warmupMs: warmupTimeMs } }));
       this.setPlaybackState('warmup');
+      
+      // During warmup, ensure the first stage setup is applied immediately
+      this.currentPlanIdx = 0;
+      this.synchronizeInstrumentsWithStage(this.currentPlan[0]?.stageName || 'Intro');
+      
       this.startConductor();
       this.startTimeTracking();
 
-      await Promise.race([
-          planPromise,
-          new Promise(resolve => setTimeout(resolve, warmupTimeMs))
-      ]);
+      await new Promise(resolve => setTimeout(resolve, warmupTimeMs));
 
       this.setPlaybackState('preparing');
       await new Promise(resolve => setTimeout(resolve, PREP_TRANSITION_MS));

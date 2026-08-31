@@ -1,0 +1,14 @@
+
+> gamedj-v26@0.0.0 dev
+> vite
+
+Port 3000 is in use, trying another one...
+Port 3001 is in use, trying another one...
+Port 3002 is in use, trying another one...
+
+  VITE v6.4.3  ready in 227 ms
+
+  ➜  Local:   http://localhost:3003/
+  ➜  Network: http://169.254.8.1:3003/
+  ➜  Network: http://169.254.9.1:3003/
+  ➜  Network: http://169.254.169.1:3003/

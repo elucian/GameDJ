@@ -1,0 +1,191 @@
+243-  
+244-  public notifyUserInteraction(id: string) { 
+245-      this.userInteractionCooldowns.set(id, Date.now()); 
+246-  }
+247-
+248:  private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 200);
+249-
+250-  public sendVocalSignal(signal: string) {
+251-    if (this.generationMode !== 'VOCALIZATION') return;
+252-    if (!this.isVocalInstrumentActive()) return;
+253-
+254-    this.currentVocalSignal = signal.toUpperCase();
+255-    this.dispatchEvent(new CustomEvent('vocal-signal-received', { detail: this.currentVocalSignal }));
+256-    this.scheduleRefresh();
+257-    
+258-    if (this.vocalSignalTimer) clearTimeout(this.vocalSignalTimer);
+259-    this.vocalSignalTimer = window.setTimeout(() => {
+260-        this.currentVocalSignal = null;
+261-        this.dispatchEvent(new CustomEvent('vocal-signal-received', { detail: null }));
+262-        this.scheduleRefresh();
+263-    }, 2000);
+264-  }
+265-
+266:  private async refreshSessionPrompts() {
+267-    if (!this.session) return;
+268-    
+269-    // 1. Gather Nuance Prompts (Density, etc.)
+270-    const nuanceScale = 1.3; 
+271-    
+272-    const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
+273-        let dynamicScale = 0.5;
+274-        if (this.generationMode === 'QUALITY') {
+275-            const highFidelityPrompts = ['Authenticity', 'Presence', 'Brightness', 'Dynamics', 'Guidance'];
+276-            if (highFidelityPrompts.includes(p.text)) dynamicScale = 1.0;
+277-        } else if (this.generationMode === 'DIVERSITY') {
+278-            const highDiversityPrompts = ['Variation', 'Ornamentation', 'Complexity', 'Groove', 'Atmosphere'];
+279-            if (highDiversityPrompts.includes(p.text)) dynamicScale = 1.0;
+280-        } else if (this.generationMode === 'VOCALIZATION') {
+281-            const richnessPrompts = ['Texture', 'Density', 'Dynamics', 'Space', 'Organic'];
+282-            if (richnessPrompts.includes(p.text)) dynamicScale = 1.0;
+283-        }
+284-        return { text: `Nuance: ${p.text}`, weight: p.weight * dynamicScale * nuanceScale };
+285-    }).filter(p => p.weight > 0.05); 
+286-    
+287-    // 2. Build Authoritative Master Prompt
+288-    let masterText = `CONTEXT: ${this.genre} ${this.style}. `;
+289-    if (this.bpm) masterText += `TEMPO: ${this.bpm} BPM. `;
+290-    if (this.meter) masterText += `METER: ${this.meter}. `;
+291-    if (this.key) masterText += `KEY: ${this.key} ${this.mode}. `;
+292-    
+293-    if (this.currentSeed !== 0) masterText += `SEED: ${this.currentSeed}. `;
+294-    if (this.mood && this.mood !== 'None') masterText += `MOOD: ${this.mood}. `;
+295-    
+296-    // Conductor Stage - High Priority Context for Storytelling
+297-    if (this.conductorMode && this.currentStatusMessage) {
+298-        masterText += `SECTION_CONTEXT: ${this.currentStatusMessage.toUpperCase()}. `;
+299-    }
+300-
+301-    // Instrumentation Rules - Explicit White-listing
+302-    const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+303-    const labels = ['Lead', 'Alto', 'Harmonic', 'Bass', 'Rhythm'];
+304-    
+305-    const activeDefs: string[] = [];
+306-    const activeNames: string[] = [];
+307-    const mutedDefs: string[] = [];
+308-
+309-    keys.forEach((k, i) => {
+310-        const ch = this.instruments[k];
+311-        let instName = ch.instrument || 'None';
+312-        
+313-        // ORCHESTRAL STACKING LOGIC
+314-        // If Lead is active, instruct AI to treat it as an ensemble to satisfy "2-3 instruments" rule
+315-        if (k === 'lead' && ch.active && instName !== 'None') {
+316-            if (!instName.toLowerCase().includes('section') && !instName.toLowerCase().includes('ensemble')) {
+317-                instName = `${instName} (Ensemble Section)`;
+318-            }
+319-        }
+320-        
+321-        // Check active AND weight. If weight is very low, treat as muted for the master prompt
+322-        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+323-            activeDefs.push(`${labels[i]}: ${instName}`);
+324-            activeNames.push(instName);
+325-        } else {
+326-            mutedDefs.push(labels[i].toUpperCase());
+327-        }
+328-    });
+329-
+330-    // Determine Strict Formation
+331-    const count = activeNames.length;
+332-    let formation = 'Ensemble';
+333-    if (count === 0) formation = 'Silence';
+334-    else if (count === 1) formation = 'Solo';
+335-    else if (count === 2) formation = 'Duet';
+336-    else if (count === 3) formation = 'Trio';
+337-    else if (count === 4) formation = 'Quartet';
+338-    else if (count === 5) formation = 'Quintet';
+339-
+340-    masterText += `FORMATION: ${formation}. `;
+341-
+342-    if (activeDefs.length > 0) {
+343-        masterText += `ACTIVE_INSTRUMENTS: [${activeDefs.join(' + ')}]. `;
+344-    } else {
+345-        masterText += `PLAYING: [Silence]. `;
+346-    }
+--
+1291-        this.dispatchEvent(new CustomEvent('recording-finished-auto')); 
+1292-        if (this.isLooping) { this.elapsedSeconds = 0; this.playRecording(0); }
+1293-    }, (this.maxDurationMinutes * 60 + 5) * 1000);
+1294-  }
+1295-
+1296:  private async startSession() { this.session = await this.connect(); await this.refreshSessionPrompts(); this.session.play(); }
+1297-
+1298-  public async stop(saveRecording = true, resetToZero = false) {
+1299-    this.stopConductor();
+1300-    this.stopTimeTracking(); uiSounds.stopRewindSound();
+1301-    this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
+1302-    if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }
+1303-    if (this.rewindFrame) cancelAnimationFrame(this.rewindFrame); this.isRewinding = false;
+1304-    if (this.autoStopTimer) clearTimeout(this.autoStopTimer); if (this.session) { try { (this.session as any).close(); } catch(e) {} }
+1305-    if (this.mediaRecorder?.state !== 'inactive') this.mediaRecorder?.stop();
+1306-    this.activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
+1307-    this.activeSources.clear();
+1308-    const totalSec = this.maxDurationMinutes * 60;
+1309-    const isAtEnd = this.elapsedSeconds >= (totalSec - 0.5);
+1310-    if (resetToZero) this.elapsedSeconds = 0;
+1311-    this.nextStartTime = 0; 
+1312-    if (!isAtEnd) {
+1313-        this.masterGain.gain.setTargetAtTime(this.userVolume, this.audioContext.currentTime, 0.05);
+1314-    } else {
+1315-        this.masterGain.gain.setTargetAtTime(0, this.audioContext.currentTime, 0.05);
+1316-    }
+1317-    this.setPlaybackState('stopped'); 
+1318-    this.session = null; this.sessionPromise = null;
+1319-    this.lastAppliedStatusMessage = '';
+1320-  }
+1321-
+1322-  public async startRewind() {
+1323-      if (this.playbackState !== 'stopped') return;
+1324-      if (this.elapsedSeconds <= 0.05 && !this.isRewinding) return;
+1325-      this.stopTimeTracking();
+1326-      if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }
+1327-      this.isRewinding = true; this.setPlaybackState('rewinding');
+1328-      uiSounds.startRewindSound();
+1329-      const rewindStartTime = performance.now();
+1330-      let lastFrameTime = rewindStartTime;
+1331-      const animateRewind = () => {
+1332-          const now = performance.now(); 
+1333-          const frameDelta = (now - lastFrameTime) / 1000; 
+1334-          lastFrameTime = now;
+1335-          const timeSinceStart = (now - rewindStartTime) / 1000;
+1336-          const currentSpeedMultiplier = 1.0 * Math.pow(50, Math.min(1, timeSinceStart / 4.0));
+1337-          this.elapsedSeconds = Math.max(0, this.elapsedSeconds - (frameDelta * currentSpeedMultiplier)); 
+1338-          if (this.elapsedSeconds > 0) { this.rewindFrame = requestAnimationFrame(animateRewind); }
+1339-          else { this.isRewinding = false; uiSounds.stopRewindSound(); this.setPlaybackState('stopped'); }
+1340-      };
+1341-      this.rewindFrame = requestAnimationFrame(animateRewind);
+1342-  }
+1343-
+1344-  public async clearRecording() { 
+1345-      this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
+1346-      await this.stop(false, true); this.segments = []; this.recordedAudioBlob = null; this.automationLog = [];
+1347-  }
+1348-  public get recordedDuration() { return this.segments.reduce((max, s) => Math.max(max, s.startTime + s.duration), 0); }
+1349-
+1350-  public async playRecording(startTimeOffset?: number) {
+1351-    if (this.segments.length === 0) return;
+1352-    this.lastAppliedStatusMessage = '';
+1353-    this.activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
+1354-    this.activeSources.clear();
+1355-    let offset = startTimeOffset !== undefined ? startTimeOffset : this.elapsedSeconds;
+1356-    if (this.recordedDuration > 0 && offset >= this.recordedDuration - 0.1) offset = 0;
+1357-    this.elapsedSeconds = offset;
+1358-    this.setPlaybackState('playing');
+1359-    const now = this.audioContext.currentTime;
+1360-    this.segments.forEach(segment => {
+1361-        const segmentEndTime = segment.startTime + segment.duration;
+1362-        if (segmentEndTime <= offset) return;
+1363-        const source = this.audioContext.createBufferSource();
+1364-        source.buffer = segment.buffer;
+1365-        const gain = this.audioContext.createGain();
+1366-        source.connect(gain); gain.connect(this.rawGain); 
+1367-        let segmentOffset = offset - segment.startTime;
+1368-        source.start(now, segmentOffset, segment.duration - segmentOffset);
+1369-        this.activeSources.add(source);
+1370-        source.onended = () => this.activeSources.delete(source);
+1371-    });
+1372-    if (this.conductorMode) this.startConductor();
+1373-    this.startTimeTracking();
+1374-  }
+1375-
+1376-  public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3') {

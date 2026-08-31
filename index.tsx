@@ -80,7 +80,6 @@ function main() {
   liveMusicHelper.masterDestination = audioAnalyser.node;
 
   let djEngagingCountdown = false;
-  let lastHandshakeIsAi = false;
   let warmupInterval: number | null = null;
 
   const deactivateDj = () => {
@@ -230,12 +229,9 @@ function main() {
   });
 
   liveMusicHelper.addEventListener('handshake-result', (e: any) => {
-      lastHandshakeIsAi = e.detail;
       if (djEngagingCountdown) return;
-      if (lastHandshakeIsAi) {
-          pdjMidi.setMessage("AI CONDUCTOR ACTIVE", "info");
-      } else {
-          pdjMidi.setMessage("SIMPLE DJ ACTIVE", "info");
+      if (e.detail) {
+          pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", "info");
       }
   });
 
@@ -319,11 +315,11 @@ function main() {
                 } else {
                     clearInterval(timer);
                     djEngagingCountdown = false;
-                    pdjMidi.setMessage(lastHandshakeIsAi ? "AI CONDUCTOR ACTIVE" : "SIMPLE DJ ACTIVE", "info");
+                    pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", "info");
                 }
               }, 1000);
           } else {
-              pdjMidi.setMessage("CONNECTING DJ...", "info");
+              pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", "info");
           }
       } else {
           pdjMidi.setMessage("DJ DEACTIVATED", "info");
@@ -340,7 +336,6 @@ function main() {
       liveMusicHelper.setGenerationMode(mode);
       pdjMidi.setMessage(`MODE: ${mode}`, "info");
       
-      // Update knobs immediately if stopped to avoid contradictions when starting next
       if (liveMusicHelper.playbackState === 'stopped') {
         liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, mode);
       }
@@ -362,10 +357,13 @@ function main() {
   });
 
   liveMusicHelper.addEventListener('conductor-stage-changed', (e: any) => {
-      const { name, isAi } = e.detail;
-      const sanitizedName = name.replace(/_/g, ' ');
-      const prefix = isAi ? 'Conductor' : 'DJ';
-      pdjMidi.setMessage(`${prefix}: ${sanitizedName}`, 'info');
+      const { name } = e.detail;
+      pdjMidi.setMessage(`DJ: ${name}`, 'info');
+  });
+  
+  liveMusicHelper.addEventListener('conductor-anticipation', (e: any) => {
+      const { msg } = e.detail;
+      pdjMidi.setMessage(msg, 'info');
   });
 
   liveMusicHelper.addEventListener('warmup-started', (e: any) => {
@@ -405,26 +403,22 @@ function main() {
       timeline.resetHistory(true);
       leftSidebar.isShuffling = true;
       
-      // 1. Get existing primary mode from switch
-      const currentPrimaryMode = leftSidebar.primaryMode;
-      
-      // 2. New Seed
+      // 1. New Seed
       activeMusicSeed = Math.floor(Math.random() * 2147483647);
       liveMusicHelper.setSeed(activeMusicSeed);
 
-      // 3. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
+      // 2. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
       const selectedGenre = topToolbar.randomize();
 
-      // 4. Randomize Evolution Value
-      const randomEvo = Math.floor(Math.random() * 11) - 5;
-      liveMusicHelper.setEvolution(randomEvo);
-      rightSidebar.setEvolution(randomEvo);
+      // 3. Use Current Evolution (Do not Randomize, just respect it)
+      const currentEvo = rightSidebar.evolution;
+      liveMusicHelper.setEvolution(currentEvo);
       
-      // 5. Update Instruments and Manifest based on Style Matrix and CURRENT MODE
+      // 4. Update Instruments and Manifest based on Style Matrix
       const rsLocks = (rightSidebar as any).locks;
-      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, currentPrimaryMode);
+      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode);
       
-      // 6. Final Mode Integrity Check
+      // 5. Intelligent Mode Selection based on Instruments
       const settings = rightSidebar.settings;
       const vocalChannels = (Object.values(settings) as ChannelState[]).filter(ch => {
           if (ch.visible === false) return false;
@@ -436,20 +430,30 @@ function main() {
                  inst.includes('soprano');
       });
       const hasVocalsInOutput = vocalChannels.length > 0;
-
-      // Ensure primary mode state matches the instruments if we switched away from VOC
       leftSidebar.hasVocalInstrument = hasVocalsInOutput;
-      liveMusicHelper.setGenerationMode(currentPrimaryMode);
 
-      // 7. Apply Special Reference Instruction
+      // Auto-switch mode if vocal instruments are present, otherwise default to Quality or preserve if compatible
+      let newMode: MusicGenerationMode = 'QUALITY';
+      if (hasVocalsInOutput) {
+          newMode = 'VOCALIZATION';
+      } else {
+          // If current was VOC but we lost vocals, fallback to QUALITY. If it was DIVERSITY, keep it.
+          if (leftSidebar.primaryMode === 'VOCALIZATION') newMode = 'QUALITY';
+          else newMode = leftSidebar.primaryMode;
+      }
+      
+      leftSidebar.primaryMode = newMode;
+      liveMusicHelper.setGenerationMode(newMode);
+
+      // 6. Apply Special Reference Instruction
       const genreRefs = SONG_REFERENCES[selectedGenre] || SONG_REFERENCES['Pop'];
       const ref = genreRefs[Math.floor(Math.random() * genreRefs.length)];
       liveMusicHelper.setSpecialInstruction(ref);
 
-      // 8. Apply Knobs for Authentic Style Presets CONSIDER MODE
-      liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, currentPrimaryMode);
+      // 7. Apply Knobs for Authentic Style Presets
+      liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, newMode);
       
-      pdjMidi.setMessage(`DICE ROLL: ${topToolbar.genre}, ${topToolbar.musicStyle} (${currentPrimaryMode})`, 'info');
+      pdjMidi.setMessage(`DICE ROLL: ${topToolbar.genre}, ${topToolbar.musicStyle} (${newMode})`, 'info');
       
       setTimeout(() => { leftSidebar.isShuffling = false; }, 800);
   });
@@ -579,13 +583,26 @@ function main() {
     timeline.isLooping = liveMusicHelper.isLooping;
     
     if (liveMusicHelper.playbackState === 'playing' || liveMusicHelper.playbackState === 'recording') {
-        timeline.activeChannels = {
-            lead: liveMusicHelper.instruments.lead.active && liveMusicHelper.instruments.lead.weight > 0,
-            alto: liveMusicHelper.instruments.alto.active && liveMusicHelper.instruments.alto.weight > 0,
-            harmonic: liveMusicHelper.instruments.harmonic.active && liveMusicHelper.instruments.harmonic.weight > 0,
-            bass: liveMusicHelper.instruments.bass.active && liveMusicHelper.instruments.bass.weight > 0,
-            rhythm: liveMusicHelper.instruments.rhythm.active && liveMusicHelper.instruments.rhythm.weight > 0,
+        // Rely only on ACTIVE state for recording bars, ignore weight to avoid cuts during low volume sections
+        const nextActive = {
+            lead: liveMusicHelper.instruments.lead.active,
+            alto: liveMusicHelper.instruments.alto.active,
+            harmonic: liveMusicHelper.instruments.harmonic.active,
+            bass: liveMusicHelper.instruments.bass.active,
+            rhythm: liveMusicHelper.instruments.rhythm.active,
         };
+
+        // Shallow comparison to avoid redundant updates to timeline which causes bar interruption
+        const curr = timeline.activeChannels;
+        const changed = nextActive.lead !== curr.lead ||
+                        nextActive.alto !== curr.alto ||
+                        nextActive.harmonic !== curr.harmonic ||
+                        nextActive.bass !== curr.bass ||
+                        nextActive.rhythm !== curr.rhythm;
+        
+        if (changed) {
+            timeline.activeChannels = nextActive;
+        }
     }
 
     requestAnimationFrame(syncUI);
@@ -596,12 +613,12 @@ function main() {
 function buildInitialPrompts() {
   const prompts = new Map<string, Prompt>();
   [
-    { color: '#ffffff', text: 'Guidance' }, { color: '#ff6600', text: 'Density' }, { color: '#ff8800', text: 'Dynamics' }, 
-    { color: '#ffaa00', text: 'Groove' }, { color: '#ffcc00', text: 'Attack' }, { color: '#ffea00', text: 'Staccato' }, 
-    { color: '#00ccff', text: 'Brightness' }, { color: '#00aaff', text: 'Complexity' }, { color: '#0088ff', text: 'Ornamentation' }, 
-    { color: '#0066ff', text: 'Variation' }, { color: '#0044ff', text: 'Glide' }, { color: '#0022ff', text: 'Presence' },
-    { color: '#3dffab', text: 'Space' }, { color: '#d8ff3e', text: 'Organic' }, { color: '#ffdd28', text: 'Texture' }, 
-    { color: '#3dffab', text: 'Width' }, { color: '#d8ff3e', text: 'Atmosphere' }, { color: '#00ff88', text: 'Authenticity' }
+    { color: '#ff8800', text: 'Guidance' }, { color: '#ff8800', text: 'Density' }, { color: '#ff8800', text: 'Dynamics' }, 
+    { color: '#ff8800', text: 'Groove' }, { color: '#ff8800', text: 'Attack' }, { color: '#ff8800', text: 'Staccato' }, 
+    { color: '#00ccff', text: 'Brightness' }, { color: '#00ccff', text: 'Complexity' }, { color: '#00ccff', text: 'Ornamentation' }, 
+    { color: '#00ccff', text: 'Variation' }, { color: '#00ccff', text: 'Glide' }, { color: '#00ccff', text: 'Presence' },
+    { color: '#00ff88', text: 'Space' }, { color: '#00ff88', text: 'Organic' }, { color: '#00ff88', text: 'Texture' }, 
+    { color: '#00ff88', text: 'Width' }, { color: '#00ff88', text: 'Atmosphere' }, { color: '#00ff88', text: 'Authenticity' }
   ].forEach((p, i) => {
     const promptId = `prompt-${i}`;
     prompts.set(promptId, { promptId, text: p.text, weight: 0, volume: 0, cc: i, color: p.color });
