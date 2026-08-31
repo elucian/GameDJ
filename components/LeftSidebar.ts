@@ -13,6 +13,51 @@ import { MUSIC_DATA } from './TopToolbar'; // Import MUSIC_DATA to access genre/
 @customElement('left-sidebar')
 export class LeftSidebar extends LitElement {
   static styles = css`
+    .vocal-prompt-overlay {
+      position: absolute;
+      left: 60px;
+      bottom: 20px;
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
+      padding: 12px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: var(--outer-shadow);
+      border-radius: 8px;
+      width: 250px;
+      pointer-events: auto;
+    }
+    .vocal-prompt-overlay textarea {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      padding: 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+    }
+    .vocal-prompt-overlay textarea:focus {
+      border-color: var(--accent-color);
+    }
+    .vocal-prompt-overlay button.send-btn {
+      background: var(--accent-color);
+      color: #000;
+      border: none;
+      padding: 6px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      transition: opacity 0.2s;
+    }
+    .vocal-prompt-overlay button.send-btn:hover {
+      opacity: 0.8;
+    }
     :host {
       display: flex;
       flex-direction: column;
@@ -91,7 +136,8 @@ export class LeftSidebar extends LitElement {
     button.dj-btn { color: #0088ff; }
     button.stop-btn { color: #fff; }
     button.back-start-btn { color: #ff8c00; }
-    button.loop-btn { color: #00ccff; }
+    button.loop-btn { color: #00ff00; }
+    button.loop-btn:disabled:not(.active-green) { color: #005500 !important; opacity: 1 !important; }
     button.play-btn { color: #3dffab; }
     button.pause-btn { color: #fff; }
     button.download-btn { color: #3dffab; }
@@ -229,8 +275,26 @@ export class LeftSidebar extends LitElement {
       50% { fill: #cc0000; opacity: 0.8; }
     }
 
-    button.active-blue { background: #0088ff !important; color: #000 !important; }
-    button.active-green { background: #3dffab !important; color: #000 !important; box-shadow: 0 0 10px #3dffab !important; }
+    @keyframes icon-blink {
+      0%, 100% { opacity: 1; filter: drop-shadow(0 0 4px #3dffab) brightness(1.2); }
+      50% { opacity: 0.5; filter: drop-shadow(0 0 0px #3dffab) brightness(0.8); }
+    }
+
+    button.active-blue { 
+      color: #00aaff !important; 
+      background: rgba(0, 170, 255, 0.15) !important;
+      border-color: rgba(0, 170, 255, 0.5) !important;
+      box-shadow: 0 0 12px rgba(0, 170, 255, 0.6) !important; 
+    }
+    button.active-green { 
+      color: #3dffab !important; 
+      background: rgba(61, 255, 171, 0.15) !important; 
+      border-color: rgba(61, 255, 171, 0.5) !important;
+      box-shadow: 0 0 12px rgba(61, 255, 171, 0.6) !important; 
+    }
+    button.active-green .icon-span svg {
+      animation: icon-blink 1.5s infinite ease-in-out;
+    }
     
     button.active-recording .icon-span svg circle {
       animation: inner-circle-blink 1.0s infinite ease-in-out;
@@ -251,6 +315,9 @@ export class LeftSidebar extends LitElement {
   @property({ type: Boolean }) hasVocalInstrument = false;
   @property({ type: String }) primaryMode: MusicGenerationMode = 'QUALITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
+
+  @state() private showVocalPrompt = false;
+  @state() private vocalText = '';
 
   private toggleTheme() {
     uiSounds.playButton();
@@ -396,7 +463,7 @@ export class LeftSidebar extends LitElement {
         <button class="back-start-btn" @click=${this.onBackStartClick} ?disabled=${(isStopped && this.elapsedSeconds === 0) || isRecording} title="Back to Start">
             <span class="icon-span"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6,6h2v12H6V6zm3.5,6L18,6v12l-8.5-6z" fill="currentColor"/></svg></span>
         </button>
-        <button class="loop-btn ${this.isLooping ? 'active-green' : ''}" @click=${this.onLoopClick} ?disabled=${!this.hasRecording} title="Toggle Loop">
+        <button class="loop-btn ${this.isLooping ? 'active-green' : ''}" @click=${this.onLoopClick} ?disabled=${!this.hasRecording || !isStopped} title="Toggle Loop">
             <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M17,17H7V14L3,18l4,4V19H19V13H17V17ZM7,7h10v3l4-4L17,2V5H5V11H7V7Z" fill="currentColor"/></svg></span>
         </button>
         ${this.renderPlayPause()}
@@ -418,6 +485,12 @@ export class LeftSidebar extends LitElement {
           </button>
         </div>
         
+        ${this.primaryMode === 'VOCALIZATION' ? html`
+        <button class="theme-btn" style="position: relative;" @click=${() => this.showVocalPrompt = !this.showVocalPrompt} title="Vocal Commands">
+          <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+        </button>
+        ` : ''}
+
         <div class="rotary-container">
           <div class="status-dot dot-0 ${formatIdx === 0 ? 'active' : ''}"></div>
           <div class="status-dot dot-1 ${formatIdx === 1 ? 'active' : ''}"></div>
@@ -434,8 +507,28 @@ export class LeftSidebar extends LitElement {
             <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M19,9h-4V3H9v6H5l7,7L19,9z M5,18v2h14v-2H5z" fill="currentColor"/></svg></span>
         </button>
       </div>
+
+      ${this.showVocalPrompt && this.primaryMode === 'VOCALIZATION' ? html`
+      <div class="vocal-prompt-overlay">
+        <textarea 
+            rows="3" 
+            placeholder="Enter vocal lyrics, words, or letters..."
+            .value=${this.vocalText}
+            @input=${(e: any) => this.vocalText = e.target.value}
+        ></textarea>
+        <button class="send-btn" @click=${() => this.sendVocalCommand()}>Send Vocal</button>
+      </div>
+      ` : ''}
     `;
   }
-}
 
-declare global { interface HTMLElementTagNameMap { 'left-sidebar': LeftSidebar } }
+  private sendVocalCommand() {
+      if (!this.vocalText.trim()) return;
+      (this as any).dispatchEvent(new CustomEvent('send-vocal-command', { detail: this.vocalText.trim() }));
+      this.vocalText = '';
+      this.showVocalPrompt = false;
+  }
+}
+declare global {
+  interface HTMLElementTagNameMap { 'left-sidebar': LeftSidebar }
+}

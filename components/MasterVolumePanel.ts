@@ -7,7 +7,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
 
-const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34, 55];
+const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34];
 
 @customElement('master-volume-panel')
 export class MasterVolumePanel extends LitElement {

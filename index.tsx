@@ -292,6 +292,7 @@ function main() {
   (leftSidebar as any).addEventListener('play-recording', () => { cancelAutoLoop(); liveMusicHelper.playRecording(); });
   (leftSidebar as any).addEventListener('back-to-start', () => { cancelAutoLoop(); liveMusicHelper.startRewind(); });
   (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail); });
+  (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
   (leftSidebar as any).addEventListener('dj-changed', ((e: Event) => {
       cancelAutoLoop();

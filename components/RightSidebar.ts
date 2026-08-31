@@ -32,7 +32,13 @@ const RHYTHM_INSTRUMENTS = [
   'Drum Kit', 'Electronic Drums', 'Hand Drum', 'Tabla', 'Djembe', 'Congas', 'Bongos', 'Timbales', 'Taiko Drums', 'Percussion', 'Shakers', 'Tambourine', 'Bells', 'Stomps', 'Industrial Percussion', 'Woodblock', 'Cowbell', 'Snare Drum', 'Bass Drum', 'Cymbals'
 ].sort();
 
-const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34, 55];
+const LIRA_ORCHESTRA = ['String Orchestra', 'Chamber Strings', 'Symphony Strings', 'Violin Section', 'Cello Ensemble'].sort();
+const LIRA_SOLO = ['Solo Male', 'Solo Female', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Solo Cello', 'Solo Violin', 'Solo Piano', 'Solo Flute', 'Solo Trumpet', 'Solo Saxophone', 'Solo Guitar', 'Soloist'].sort();
+const LIRA_CHOIR = ['Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble'].sort();
+const LIRA_BRASS = ['Military Fanfare', 'Park Orchestra', 'Jazz Formation', 'Brass Section', 'Low Brass', 'Tuba', 'Trombones', 'French Horns', 'Cinematic Brass', 'Bass Saxophone', 'Brass Quintet'].sort();
+const LIRA_DRUMS = ['Timpani & Drums', 'Orchestral Percussion', 'Cinematic Drums', 'Taiko Drums', 'Snare Ensemble'].sort();
+
+const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34];
 
 @customElement('right-sidebar')
 export class RightSidebar extends LitElement {
@@ -48,6 +54,68 @@ export class RightSidebar extends LitElement {
       font-family: 'Google Sans', sans-serif;
       transition: background-color 0.3s ease, border-color 0.3s ease;
       overflow: hidden;
+    }
+    
+    .tabs-container {
+      display: flex;
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    .tab-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 0;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-bottom-color 0.2s;
+    }
+    .tab-btn.active {
+      color: var(--accent-color);
+      border-bottom-color: var(--accent-color);
+    }
+    .top-header {
+      text-align: center;
+      padding: 6px 0;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 1.2px;
+      color: var(--accent-color);
+      background: var(--surface-header);
+      text-transform: uppercase;
+    }
+    .lira-control {
+      background: var(--surface-active);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      --channel-color: #3dffab;
+    }
+    .lira-control.active {
+      border-color: #3dffab;
+      background: rgba(61, 255, 171, 0.1);
+      color: #3dffab;
+    }
+
+    .lira-control input[type="checkbox"].channel-toggle {
+      pointer-events: none;
     }
 
     .section-header {
@@ -301,6 +369,8 @@ export class RightSidebar extends LitElement {
   @state() private durationIndex = 2; 
   @property({ type: Number }) evolution = 0; 
   
+  @state() private currentTab: 'Band' | 'Lira' = 'Band';
+
   @state() private dynamicLead = [...LEAD_INSTRUMENTS];
   @state() private dynamicAlto = [...ALTO_INSTRUMENTS];
   @state() private dynamicHarmonic = [...HARMONIC_INSTRUMENTS];
@@ -356,6 +426,15 @@ export class RightSidebar extends LitElement {
   }
 
   private getDynamicList(channel: keyof InstrumentSet): string[] {
+    if (this.currentTab === 'Lira') {
+        switch(channel) {
+            case 'lead': return LIRA_ORCHESTRA;
+            case 'alto': return LIRA_SOLO;
+            case 'harmonic': return LIRA_CHOIR;
+            case 'bass': return LIRA_BRASS;
+            case 'rhythm': return LIRA_DRUMS;
+        }
+    }
     switch(channel) {
         case 'lead': return this.dynamicLead;
         case 'alto': return this.dynamicAlto;
@@ -551,20 +630,59 @@ export class RightSidebar extends LitElement {
     `;
   }
 
+  private switchTab(tab: 'Band' | 'Lira') {
+      if (this.currentTab === tab) return;
+      uiSounds.playTick();
+      this.currentTab = tab;
+      const newSettings = { ...this.settings };
+      if (tab === 'Lira') {
+         newSettings.lead.instrument = LIRA_ORCHESTRA[0];
+         newSettings.alto.instrument = LIRA_SOLO[0];
+         newSettings.harmonic.instrument = LIRA_CHOIR[0];
+         newSettings.bass.instrument = LIRA_BRASS[0];
+         newSettings.rhythm.instrument = LIRA_DRUMS[0];
+      } else {
+         newSettings.lead.instrument = LEAD_INSTRUMENTS[0];
+         newSettings.alto.instrument = ALTO_INSTRUMENTS[0];
+         newSettings.harmonic.instrument = HARMONIC_INSTRUMENTS[0];
+         newSettings.bass.instrument = BASS_INSTRUMENTS[0];
+         newSettings.rhythm.instrument = RHYTHM_INSTRUMENTS[0];
+      }
+      this.auditAndCommit(newSettings);
+      this.dispatchChannelsChanged();
+  }
+
   render() {
     const isEvolutionLocked = (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading') && this.conductorActive;
+    
+    const bandManifestLabels = { lead: 'LEAD', alto: 'ALTO', harmonic: 'HARM', bass: 'BASS', rhythm: 'RHYT' };
+    const liraManifestLabels = { lead: 'ORC', alto: 'SOL', harmonic: 'CHR', bass: 'BRS', rhythm: 'DRM' };
+    const manifestLabels = this.currentTab === 'Lira' ? liraManifestLabels : bandManifestLabels;
+
     return html`
-      <div class="section-header">
-          <span class="section-title">CHANNELS</span>
-          <div class="header-btns">${this.renderLock(this.channelsLocked, () => this.toggleChannelsLock())}</div>
+      <div class="top-header">CHANNELS</div>
+      <div class="tabs-container">
+          <button class="tab-btn ${this.currentTab === 'Band' ? 'active' : ''}" @click=${() => this.switchTab('Band')}>BAND</button>
+          <button class="tab-btn ${this.currentTab === 'Lira' ? 'active' : ''}" @click=${() => this.switchTab('Lira')}>LIRA</button>
+          <div class="header-btns" style="padding: 0 12px;">${this.renderLock(this.channelsLocked, () => this.toggleChannelsLock())}</div>
       </div>
+      
       <div class="content">
-        ${this.renderChannel('LEAD', 'lead', this.dynamicLead)}
-        ${this.renderChannel('ALTO', 'alto', this.dynamicAlto)}
-        ${this.renderChannel('HARMONIC', 'harmonic', this.dynamicHarmonic)}
-        ${this.renderChannel('BASS', 'bass', this.dynamicBass)}
-        ${this.renderChannel('RHYTHM', 'rhythm', this.dynamicRhythm)}
+        ${this.currentTab === 'Band' ? html`
+            ${this.renderChannel('LEAD', 'lead', this.dynamicLead)}
+            ${this.renderChannel('ALTO', 'alto', this.dynamicAlto)}
+            ${this.renderChannel('HARMONIC', 'harmonic', this.dynamicHarmonic)}
+            ${this.renderChannel('BASS', 'bass', this.dynamicBass)}
+            ${this.renderChannel('RHYTHM', 'rhythm', this.dynamicRhythm)}
+        ` : html`
+            ${this.renderChannel('ORCHESTRA', 'lead', LIRA_ORCHESTRA)}
+            ${this.renderChannel('SOLO', 'alto', LIRA_SOLO)}
+            ${this.renderChannel('CHOIR', 'harmonic', LIRA_CHOIR)}
+            ${this.renderChannel('BRASS', 'bass', LIRA_BRASS)}
+            ${this.renderChannel('DRUMS', 'rhythm', LIRA_DRUMS)}
+        `}
       </div>
+
       <div class="bottom-controls">
         <div class="section-header">
           <span class="section-title">MANIFEST</span>
@@ -573,16 +691,16 @@ export class RightSidebar extends LitElement {
           </div>
         </div>
         <div class="manifest-panel">
-           ${['lead', 'alto', 'harmonic', 'bass', 'rhythm'].map(key => {
-               const isOn = this.settings[key as keyof InstrumentSet].visible !== false;
+           ${(['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).map(key => {
+               const isOn = this.settings[key].visible !== false;
                const isInteractionDisabled = this.playbackState === 'playing' || this.playbackState === 'recording';
                return html`
-                <div class="switch-unit ${isOn ? 'on' : ''} ${isInteractionDisabled ? 'disabled' : ''}" @click=${() => this.onVisibilityChange(key as keyof InstrumentSet)}>
+                <div class="switch-unit ${isOn ? 'on' : ''} ${isInteractionDisabled ? 'disabled' : ''}" @click=${() => this.onVisibilityChange(key)}>
                     <div class="switch-integrated-box">
                         <div class="led-dot"></div>
                         <div class="switch-recess"><div class="toggle-handle"></div></div>
                     </div>
-                    <div class="switch-label">${key.substring(0, 4).toUpperCase()}</div>
+                    <div class="switch-label">${manifestLabels[key]}</div>
                 </div>`;
            })}
         </div>

@@ -182,14 +182,18 @@ export class Timeline extends LitElement {
     }
     .ghost-segment {
       position: absolute;
-      top: 5%; 
-      bottom: 5%;
-      background: rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(1px);
-      border-radius: 1px;
+      top: 15%; 
+      bottom: 15%;
+      background: rgba(192, 192, 192, 0.4);
+      backdrop-filter: blur(2px);
+      border-radius: 4px;
+      box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     :host-context(body.light-theme) .ghost-segment {
-      background: rgba(0, 0, 0, 0.08);
+      background: rgba(160, 160, 160, 0.3);
+      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(0, 0, 0, 0.1);
     }
 
     .label-gutter {
@@ -308,7 +312,7 @@ export class Timeline extends LitElement {
   `;
 
   @property({ type: String }) playbackState = 'stopped';
-  @property({ type: Number }) maxDuration = 55; 
+  @property({ type: Number }) maxDuration = 34; 
   @property({ type: Number }) recordedDuration = 0; 
   @property({ type: Boolean, reflect: true }) hasRecording = false;
   @property({ type: Boolean }) isLooping = false;
@@ -470,7 +474,7 @@ export class Timeline extends LitElement {
         const rect = this.laneElement.getBoundingClientRect();
         let x = e.clientX - rect.left - 20; 
         const pct = Math.max(0.05, Math.min(1, x / (rect.width - 40)));
-        const finalSeconds = Math.max(1, Math.round(pct * 55));
+        const finalSeconds = Math.max(1, Math.round(pct * 34));
         (this as any).dispatchEvent(new CustomEvent('duration-changed-manually', { detail: finalSeconds }));
     } else if (this.dragTarget === 'playhead') {
       const bpmSnap = 60 / this.bpm;
@@ -534,6 +538,7 @@ export class Timeline extends LitElement {
   }
 
   render() {
+    const isManifestEmpty = !this.visibleChannels.lead && !this.visibleChannels.alto && !this.visibleChannels.harmonic && !this.visibleChannels.bass && !this.visibleChannels.rhythm;
     const duration = this.effectiveDuration;
     const playheadPct = (this.elapsedSeconds / duration) * 100;
     const fadeInPct = (this.fadeIn / duration) * 100;
@@ -551,14 +556,15 @@ export class Timeline extends LitElement {
              ${this.renderStatus()}
            </div>
            <div class="track-lane" @pointerdown=${this.handlePointerDown}>
-             ${this.renderGhostLayer()}
-             <div class="bars-area">
-               <div class="channel-row ${!this.visibleChannels.lead ? 'hidden' : ''}">${this.renderChannelHistory('lead', 'var(--ch-lead)')}</div>
-               <div class="channel-row ${!this.visibleChannels.alto ? 'hidden' : ''}">${this.renderChannelHistory('alto', 'var(--ch-alto)')}</div>
-               <div class="channel-row ${!this.visibleChannels.harmonic ? 'hidden' : ''}">${this.renderChannelHistory('harmonic', 'var(--ch-harmonic)')}</div>
-               <div class="channel-row ${!this.visibleChannels.bass ? 'hidden' : ''}">${this.renderChannelHistory('bass', 'var(--ch-bass)')}</div>
-               <div class="channel-row ${!this.visibleChannels.rhythm ? 'hidden' : ''}">${this.renderChannelHistory('rhythm', 'var(--ch-rhythm)')}</div>
-             </div>
+             ${isManifestEmpty ? this.renderGhostLayer() : html`
+               <div class="bars-area">
+                 <div class="channel-row ${!this.visibleChannels.lead ? 'hidden' : ''}">${this.renderChannelHistory('lead', 'var(--ch-lead)')}</div>
+                 <div class="channel-row ${!this.visibleChannels.alto ? 'hidden' : ''}">${this.renderChannelHistory('alto', 'var(--ch-alto)')}</div>
+                 <div class="channel-row ${!this.visibleChannels.harmonic ? 'hidden' : ''}">${this.renderChannelHistory('harmonic', 'var(--ch-harmonic)')}</div>
+                 <div class="channel-row ${!this.visibleChannels.bass ? 'hidden' : ''}">${this.renderChannelHistory('bass', 'var(--ch-bass)')}</div>
+                 <div class="channel-row ${!this.visibleChannels.rhythm ? 'hidden' : ''}">${this.renderChannelHistory('rhythm', 'var(--ch-rhythm)')}</div>
+               </div>
+             `}
              <div class="fade-overlay" style="left: 20px; width: calc((100% - 40px) * ${fadeInPct/100})"></div>
              <div class="fade-overlay" style="left: ${handleLeft(fadeOutStartPct)}; width: calc((100% - 40px) * ${fadeOutWidthPct/100})"></div>
              <div class="fade-handle fade-in" style="left: ${handleLeft(fadeInPct)}"></div>

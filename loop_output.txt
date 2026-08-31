@@ -1,0 +1,6 @@
+components/LeftSidebar.ts:94:    button.loop-btn { color: #00ccff; }
+components/LeftSidebar.ts:304:    this.dispatch('loop-changed', this.isLooping); 
+components/LeftSidebar.ts:399:        <button class="loop-btn ${this.isLooping ? 'active-green' : ''}" @click=${this.onLoopClick} ?disabled=${!this.hasRecording} title="Toggle Loop">
+components/Timeline.ts:367:      if (this.playbackState === 'stopped' || this.playbackState === 'paused' || this.playbackState === 'loop-waiting') {
+components/Timeline.ts:446:      if (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading' || this.playbackState === 'loop-waiting' || this.playbackState === 'rewinding' || this.isRewinding) return;
+components/Timeline.ts:501:      case 'loop-waiting': return html`<div class="status-text status-waiting">LOOP</div>`;

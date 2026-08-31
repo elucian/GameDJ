@@ -247,7 +247,7 @@ export class LiveMusicHelper extends EventTarget {
 
   private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 200);
 
-  public sendVocalSignal(signal: string) {
+  public sendVocalSignal(signal: string, durationMs: number = 2000) {
     if (this.generationMode !== 'VOCALIZATION') return;
     if (!this.isVocalInstrumentActive()) return;
 
@@ -260,7 +260,7 @@ export class LiveMusicHelper extends EventTarget {
         this.currentVocalSignal = null;
         this.dispatchEvent(new CustomEvent('vocal-signal-received', { detail: null }));
         this.scheduleRefresh();
-    }, 2000);
+    }, durationMs);
   }
 
   private async refreshSessionPrompts() {
@@ -451,7 +451,14 @@ export class LiveMusicHelper extends EventTarget {
                  inst.includes('voice') || 
                  inst.includes('choir') || 
                  inst.includes('vocals') || 
-                 inst.includes('soprano');
+                 inst.includes('soprano') ||
+                 inst.includes('male') ||
+                 inst.includes('female') ||
+                 inst.includes('boy') ||
+                 inst.includes('girl') ||
+                 inst.includes('chant') ||
+                 inst.includes('a cappella') ||
+                 inst.includes('vocal ensemble');
       });
   }
 
