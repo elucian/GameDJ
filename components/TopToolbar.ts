@@ -889,14 +889,14 @@ export class TopToolbar extends LitElement {
     }
     .logo span.version-badge { background: var(--accent-color); color: #000; padding: 2px 5px; border-radius: 4px; font-size: 10px; }
     .divider { width: 1px; height: 100%; background: var(--border-color); flex-shrink: 0; }
-    .control-group { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; justify-content: center; padding: 0 12px; margin-bottom: 5px; }
+    .control-group { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; justify-content: center; padding: 0 8px; margin-bottom: 5px; box-sizing: border-box; }
     .control-group.fixed { flex: 0 0 auto; }
     .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; width: 100%; }
-    .label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
-    .row { display: flex; align-items: center; gap: 6px; }
+    .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+    .row { display: flex; align-items: center; gap: 6px; width: 100%; }
     .slider-container { display: flex; align-items: center; gap: 6px; width: 100%; }
     input[type=range] { -webkit-appearance: none; background: transparent; width: 100%; height: 4px; border-radius: 2px; background: var(--border-color); outline: none; flex: 1; border: none; }
-    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 8px; border-radius: 1px; background: silver; cursor: pointer; margin-top: -4px; box-shadow: 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #999; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 10px; border-radius: 1px; background: silver; cursor: pointer; margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #999; }
     
     select, select::picker(select) {
       appearance: base-select; /* Unlock picker styling */
@@ -904,33 +904,30 @@ export class TopToolbar extends LitElement {
 
     select { 
       background: var(--surface-active); color: var(--text-heading); 
-      border: 1px solid var(--border-active); border-radius: 4px; padding: 0 2px; 
-      font-size: 10px; outline: none; cursor: pointer; font-family: monospace; 
-      width: 100%; height: 18px; 
-      display: flex; align-items: center; line-height: 16px;
+      border: 1px solid var(--border-active); border-radius: 4px; padding: 0 4px; 
+      font-size: 12px; outline: none; cursor: pointer; font-family: monospace; 
+      width: 100%; height: 24px; 
+      display: flex; align-items: center; line-height: 20px;
     }
     
     option, optgroup { 
-      font-size: 10px; 
-      padding-top: 0.5px;
-      padding-bottom: 0.5px;
-      line-height: 1; 
+      font-size: 12px; 
+      padding-top: 1px;
+      padding-bottom: 1px;
+      line-height: 1.2; 
     }
 
     @media (max-width: 1200px) {
       option, optgroup {
-        padding-top: 0.25px;
-        padding-bottom: 0.25px;
+        padding-top: 0.5px;
+        padding-bottom: 0.5px;
       }
     }
 
     optgroup { font-weight: 800; text-decoration: underline; background: #111; color: var(--accent-color); margin-top: 1px; }
 
-    .select-10vw { width: 10vw; min-width: 85px; }
-    .select-7vw { width: 7vw; min-width: 75px; }
-    .select-key { width: 85px; }
-    .select-meter { width: 55px; }
-    .value-display { font-family: monospace; font-size: 11px; color: var(--accent-color); min-width: 28px; text-align: right; }
+    .select-10vw, .select-7vw, .select-key, .select-meter { width: 100%; min-width: 0; flex: 1; }
+    .value-display { font-family: monospace; font-size: 13px; color: var(--accent-color); min-width: 32px; text-align: right; }
     .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 3px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 20px; height: 20px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
     .lock-btn.locked { color: #ffcc00; background: rgba(255, 204, 0, 0.15); border-color: rgba(255, 204, 0, 0.3); box-shadow: 0 0 10px rgba(255, 204, 0, 0.1); }
@@ -951,7 +948,11 @@ export class TopToolbar extends LitElement {
   private bpmRange: [number, number] = [100, 120];
 
   public get locks() { return this.locked; }
-  private toggleLock(key: keyof typeof this.locked) { uiSounds.playTick(); this.locked = { ...this.locked, [key]: !this.locked[key] }; }
+  private toggleLock(key: keyof typeof this.locked) {
+      uiSounds.playTick();
+      this.locked = { ...this.locked, [key]: !this.locked[key] };
+      this.dispatch('locks-changed', this.locked);
+  }
 
   public randomize(): string {
     // 1. GENRE
@@ -1020,13 +1021,36 @@ export class TopToolbar extends LitElement {
          this.currentMood = 'None';
          this.dispatch('mood-changed', 'None');
      }
-     this.applySignature(this.musicStyle, false);
+     const sig = genreData?.styles[this.musicStyle];
+     if (sig) {
+         if (!this.locked.tempo) {
+             this.bpm = sig.bpm;
+             this.meter = sig.meters[0];
+             this.bpmRange = sig.bpmRange;
+             this.dispatch('bpm-changed', this.bpm);
+             this.dispatch('meter-changed', this.meter);
+         }
+         if (!this.locked.key) {
+             this.key = sig.keys[0];
+             this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+             this.dispatch('key-changed', { key: this.key, mode: this.mode });
+         }
+     }
+     this.randomizeInstruments();
   }
 
-  public async randomizeInstruments(locks?: { manifest: boolean; channels: boolean }, currentInstruments?: InstrumentSet, mode: MusicGenerationMode = 'QUALITY') {
+  public async randomizeInstruments(locks?: { manifest: boolean; channels: boolean }, currentInstruments?: InstrumentSet, mode: MusicGenerationMode = 'QUALITY', isLiraMode: boolean = false) {
       const genreDef = MUSIC_DATA[this.genre];
       const sig = genreDef.styles[this.musicStyle];
       if (!sig) return;
+
+      const LIRA_POOLS = {
+        lead: ['String Orchestra', 'Chamber Strings', 'Symphony Strings', 'Violin Section', 'Cello Ensemble'],
+        alto: ['Solo Violin', 'Solo Cello', 'Solo Flute', 'Solo Trumpet', 'Solo Saxophone', 'Operatic Soloist', 'Solo Male', 'Solo Female', 'Solo Boy', 'Solo Girl'],
+        harmonic: ['Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble'],
+        bass: ['Cinematic Brass', 'Brass Section', 'Tuba', 'Trombones', 'French Horns', 'Low Brass'],
+        rhythm: ['Orchestral Percussion', 'Timpani & Drums', 'Cinematic Drums', 'Taiko Drums']
+      };
 
       const usedInstruments = new Set<string>();
 
@@ -1098,13 +1122,13 @@ export class TopToolbar extends LitElement {
       
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
       channels.forEach(ch => {
-          const pool = sig.instrumentPools[ch];
+          const pool = isLiraMode ? (LIRA_POOLS[ch as keyof typeof LIRA_POOLS] || sig.instrumentPools[ch]) : (sig.instrumentPools[ch] || []);
           
           if (locks?.channels && currentInstruments) {
               chosenInstruments[ch] = currentInstruments[ch].instrument;
               usedInstruments.add(currentInstruments[ch].instrument);
           } else {
-              if (pool && pool.some(inst => inst.toLowerCase() === 'none')) {
+              if (pool && pool.some((inst: string) => inst.toLowerCase() === 'none')) {
                   effectiveManifest[ch] = false;
               }
               chosenInstruments[ch] = getUniqueInstrument(ch, pool || []);
@@ -1115,7 +1139,7 @@ export class TopToolbar extends LitElement {
           manifest: effectiveManifest, 
           instruments: chosenInstruments, 
           style: this.musicStyle, 
-          pools: sig.instrumentPools,
+          pools: isLiraMode ? LIRA_POOLS : sig.instrumentPools,
           locks: locks
       });
   }
@@ -1154,59 +1178,6 @@ export class TopToolbar extends LitElement {
       }
   }
 
-  public applySignature(style: string, randomInstruments = false, fullyRandomParams = false) {
-      const genreDef = MUSIC_DATA[this.genre];
-      if (!genreDef) return;
-      
-      const availableStyles = Object.keys(genreDef.styles);
-      let effectiveStyle = style;
-      
-      if (!availableStyles.includes(style)) {
-          effectiveStyle = availableStyles[0];
-      }
-      this.musicStyle = effectiveStyle;
-
-      const sig = genreDef.styles[effectiveStyle];
-      if (!sig) return;
-
-      if (!this.locked.tempo) {
-          if (fullyRandomParams) {
-              const range = sig.bpmRange[1] - sig.bpmRange[0];
-              this.bpm = Math.floor(sig.bpmRange[0] + Math.random() * range);
-              this.meter = Math.random() > 0.5 ? sig.meters[Math.floor(Math.random() * sig.meters.length)] : sig.meters[0];
-          } else {
-              this.bpm = sig.bpm;
-              this.meter = sig.meters[0];
-          }
-          this.bpmRange = sig.bpmRange;
-          this.dispatch('bpm-changed', this.bpm);
-          this.dispatch('meter-changed', this.meter);
-      }
-      
-      if (!this.locked.key) {
-          if (fullyRandomParams) {
-              this.key = sig.keys[Math.floor(Math.random() * sig.keys.length)];
-          } else {
-              this.key = sig.keys[0];
-          }
-          this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
-          this.dispatch('key-changed', { key: this.key, mode: this.mode });
-      }
-
-      if (!this.locked.mood && !fullyRandomParams) {
-          if (sig.mood) {
-              this.currentMood = sig.mood;
-              this.dispatch('mood-changed', this.currentMood);
-          }
-      }
-
-      if (randomInstruments) {
-          this.randomizeInstruments();
-      }
-      
-      (this as any).requestUpdate();
-  }
-  
   public applySessionConfig(config: any) {
       if (!this.locked.genre) this.genre = config.genre;
       
@@ -1240,7 +1211,25 @@ export class TopToolbar extends LitElement {
 
       this.dispatch('genre-changed', this.genre); 
       if (this.musicStyle) {
-          this.applySignature(this.musicStyle);
+          const sig = genreData?.styles[this.musicStyle];
+          if (sig) {
+              if (!this.locked.tempo) {
+                  this.bpm = sig.bpm;
+                  this.meter = sig.meters[0];
+                  this.bpmRange = sig.bpmRange;
+                  this.dispatch('bpm-changed', this.bpm);
+                  this.dispatch('meter-changed', this.meter);
+              }
+              if (!this.locked.key) {
+                  this.key = sig.keys[0];
+                  this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+                  this.dispatch('key-changed', { key: this.key, mode: this.mode });
+              }
+              if (!this.locked.mood && sig.mood) {
+                  this.currentMood = sig.mood;
+                  this.dispatch('mood-changed', this.currentMood);
+              }
+          }
           this.dispatch('style-changed', this.musicStyle); 
       }
   }
@@ -1249,7 +1238,26 @@ export class TopToolbar extends LitElement {
       uiSounds.playTick(); 
       const input = e.target as HTMLSelectElement; 
       this.musicStyle = input.value; 
-      this.applySignature(this.musicStyle);
+      const genreData = MUSIC_DATA[this.genre];
+      const sig = genreData?.styles[this.musicStyle];
+      if (sig) {
+          if (!this.locked.tempo) {
+              this.bpm = sig.bpm;
+              this.meter = sig.meters[0];
+              this.bpmRange = sig.bpmRange;
+              this.dispatch('bpm-changed', this.bpm);
+              this.dispatch('meter-changed', this.meter);
+          }
+          if (!this.locked.key) {
+              this.key = sig.keys[0];
+              this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+              this.dispatch('key-changed', { key: this.key, mode: this.mode });
+          }
+          if (!this.locked.mood && sig.mood) {
+              this.currentMood = sig.mood;
+              this.dispatch('mood-changed', this.currentMood);
+          }
+      }
       this.dispatch('style-changed', this.musicStyle); 
   }
 

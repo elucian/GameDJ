@@ -120,6 +120,16 @@ export class LiveMusicHelper extends EventTarget {
 
   private specialInstruction: string | null = null;
   private channelsLocked = false;
+  public isLiraMode = false;
+  public toolbarLocks = {
+      genre: false,
+      style: false,
+      tempo: false,
+      key: false,
+      mood: false,
+      channels: false,
+      manifest: false
+  };
 
   // Track the current phase message for recording
   private currentStatusMessage: string = '';
@@ -206,6 +216,11 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh();
   }
 
+  public setToolbarLocks(locks: any) {
+      this.toolbarLocks = { ...this.toolbarLocks, ...locks };
+      this.scheduleRefresh();
+  }
+
   public setConductorMode(active: boolean) {
       this.conductorMode = active;
       if (active) {
@@ -284,12 +299,50 @@ export class LiveMusicHelper extends EventTarget {
         return { text: `Nuance: ${p.text}`, weight: p.weight * dynamicScale * nuanceScale };
     }).filter(p => p.weight > 0.05); 
     
+    // LIRA MODE HANDLING
+    if (this.isLiraMode) {
+        const hasLocks = Object.values(this.toolbarLocks).some(Boolean);
+        let liraNarrative = `Create pristine, highly authentic traditional and acoustic music with true acoustic timbre, heartfelt melodic storytelling, and organic phrasing. `;
+        liraNarrative += `Develop the composition with clear musical paragraphs, thematic variation, and balanced motif repetitions without excessive mechanical loops. `;
+        
+        if (hasLocks) {
+            // Respect ONLY locked options, ignore unlocked options and ignore instrument settings
+            if (this.toolbarLocks.genre || this.toolbarLocks.style) {
+                liraNarrative += `Genre: ${this.genre}, Style: ${this.style}. `;
+            }
+            if (this.toolbarLocks.key && this.key) {
+                liraNarrative += `Key of ${this.key} ${this.mode}. `;
+            }
+            if (this.toolbarLocks.tempo && this.bpm) {
+                liraNarrative += `Tempo ${this.bpm} BPM`;
+                if (this.meter) liraNarrative += ` (${this.meter})`;
+                liraNarrative += `. `;
+            }
+            if (this.toolbarLocks.mood && this.mood && this.mood !== 'None') {
+                liraNarrative += `Mood: ${this.mood}. `;
+            }
+            liraNarrative += `Render organic, pure, acoustically authentic Lira performance honoring strictly the locked parameters above and ignoring unrequested channel or instrument overrides. `;
+        } else {
+            // Nothing is locked: DJ chooses guidance following genre and style
+            liraNarrative += `The DJ conductor guides this Lira performance to authentically follow the genre ${this.genre} and style ${this.style} with rich acoustic expression and emotional depth. `;
+        }
+
+        const finalPayload = [ { text: liraNarrative, weight: 10.0 } ];
+        const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
+        if (guidancePrompt) {
+            finalPayload.push({ text: `Nuance: Guidance`, weight: guidancePrompt.weight * 1.5 });
+        }
+        finalPayload.push(...weightedPrompts);
+        try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); return; } catch (e) {}
+    }
+
     // 2. Build Authoritative Master Prompt (Narrative format for Lyria)
-    let narrative = `Create a beautifully harmonious and highly structured musical composition. `;
-    narrative += `The genre is purely ${this.genre}, in the style of ${this.style}. `;
+    let narrative = `PRIORITY DIRECTIVE: Adhere strictly to Genre (${this.genre}), Style (${this.style}), and Mood (${this.mood}). `;
+    narrative += `Compose an exceptionally authentic, emotionally resonant musical masterpiece in this exact genre and style. `;
+    narrative += `The music must unfold with a clear melodic story and distinct musical paragraphs (e.g. thematic introduction, developmental phrasing, expressive bridge, and graceful resolution). Incorporate natural motif repetitions for memorable musical hooks, but avoid excessive or tedious loop repetition; ensure organic variation and progressive storytelling. `;
     
     if (this.mood && this.mood !== 'None') {
-        narrative += `The mood and story of the piece should feel deeply ${this.mood.toLowerCase()}. `;
+        narrative += `The mood and emotional narrative of the piece should feel deeply ${this.mood.toLowerCase()}. `;
     }
 
     if (this.bpm || this.meter || this.key) {
@@ -300,6 +353,13 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     if (this.currentSeed !== 0) narrative += `(Seed influence: ${this.currentSeed}). `;
+
+    // Mode separation rule
+    if (this.isLiraMode) {
+        narrative += `MODE ENFORCEMENT: This is a Lira acoustic performance. Use strictly authentic Lira instruments and traditional acoustic orchestration. Do not inject modern band or electronic drums/synths. `;
+    } else {
+        narrative += `MODE ENFORCEMENT: This is a Band performance. Use strictly the selected Band instruments. Do not inject Lira or orchestral solo acoustic strings unless explicitly active. `;
+    }
 
     // Conductor Stage - High Priority Context for Storytelling
     if (this.conductorMode && this.currentStatusMessage) {
@@ -354,6 +414,10 @@ export class LiveMusicHelper extends EventTarget {
         narrative += `The following roles are muted and must be completely silent: ${mutedDefs.join(', ')}. `;
     }
 
+    if (this.channelsLocked) {
+        narrative += `INSTRUMENT LOCK ENFORCEMENT: The user has locked the instrument channels. These exact instruments have absolute highest priority and must not be substituted or altered. `;
+    }
+
     // Anti-Ghost Instruments Logic
     const common = ['Piano', 'Drums', 'Guitar', 'Bass', 'Synth', 'Strings', 'Percussion', 'Vocals'];
     const activeUpper = activeNames.map(n => n.toUpperCase());
@@ -390,10 +454,11 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     // Construct Payload
-    // 10.0 weight ensures the structural rules are paramount
     const finalPayload = [ { text: narrative, weight: 10.0 } ];
     
-    // 3. Add Individual Instrument Prompts (Reinforcement)
+    // 3. Add Individual Instrument Prompts (Reinforcement with higher priority when locked)
+    const instrumentMultiplier = this.channelsLocked ? 25.0 : 12.0;
+
     keys.forEach((k, i) => {
         const ch = this.instruments[k];
         if (ch.active && ch.visible !== false && ch.weight > 0.05) {
@@ -402,16 +467,15 @@ export class LiveMusicHelper extends EventTarget {
             if (k === 'alto') roleContext = "Melodic Support (Doubling Lead)";
             if (k === 'bass') roleContext = "Rhythmic Foundation (Lock with Drums)";
             
-            // We give individual instruments a VERY high weight so the model picks up their timbre over hallucinations
+            const lockPrefix = this.channelsLocked ? "STRICT LOCKED INSTRUMENT -> " : "MANDATORY ACTIVE INSTRUMENT -> ";
             finalPayload.push({ 
-                text: `MANDATORY ACTIVE INSTRUMENT -> ${labels[i]}: ${ch.instrument}. ${roleContext}`, 
-                weight: ch.weight * 10.0 // significantly boosted for strict adherence
+                text: `${lockPrefix}${labels[i]}: ${ch.instrument}. ${roleContext}`, 
+                weight: ch.weight * instrumentMultiplier 
             });
         } else {
-            // Actively instruct to mute
             finalPayload.push({
                 text: `MANDATORY SILENCE FOR ${labels[i].toUpperCase()}. DO NOT GENERATE ANY AUDIO FOR THIS ROLE. DO NOT ADD DEFAULT INSTRUMENTS.`,
-                weight: 8.0
+                weight: 10.0
             });
         }
     });
@@ -462,6 +526,18 @@ export class LiveMusicHelper extends EventTarget {
       });
   }
 
+  public isSoloActive(): boolean {
+      return Object.values(this.instruments).some(ch => {
+          if (!ch.active || ch.visible === false || !ch.instrument) return false;
+          const inst = ch.instrument.toLowerCase();
+          return inst.includes('solo') || inst.includes('violin') || inst.includes('saxophone') || 
+                 inst.includes('trumpet') || inst.includes('flute') || inst.includes('harmonica') || 
+                 inst.includes('guitar') || inst.includes('cello') || inst.includes('soprano') || 
+                 inst.includes('tenor') || inst.includes('soloist') || inst.includes('whistle') || 
+                 inst.includes('recorder') || inst.includes('string orchestra') || inst.includes('orchestra');
+      });
+  }
+
   public applyAuthenticPresets(genre: string, style: string, mood: string, mode: MusicGenerationMode = 'QUALITY') {
       const activeLimit = this.getActiveLimit();
       const weights: Record<string, number> = {
@@ -493,6 +569,28 @@ export class LiveMusicHelper extends EventTarget {
           weights['Space'] += 0.3; weights['Atmosphere'] += 0.4; weights['Dynamics'] += 0.5; weights['Width'] += 0.7; weights['Density'] += 0.4;
       } else {
           weights['Dynamics'] += 0.3; weights['Space'] += 0.2; weights['Organic'] += 0.4; weights['Atmosphere'] += 0.1; weights['Variation'] += 0.2;
+      }
+
+      // High authenticity boost for specific genres and styles requiring authenticity
+      const authenticKeywords = ['traditional', 'spiritual', 'classical', 'folk', 'regional', 'african', 'indian', 'irish', 'spanish', 'oriental', 'romanian', 'western', 'hawaiian', 'marching', 'cinematic', 'ballad', 'orchestral', 'baroque', 'choir', 'opera', 'flamenco', 'bossa', 'salsa', 'reggae', 'blues', 'jazz', 'acoustic', 'celtic'];
+      if (authenticKeywords.some(kw => g.includes(kw) || style.toLowerCase().includes(kw))) {
+          weights['Authenticity'] += 2.8;
+          weights['Organic'] += 2.0;
+          weights['Space'] += 0.5;
+      }
+
+      // If genre is locked, increase authenticity, guidance and reduce density
+      if (this.toolbarLocks.genre) {
+          weights['Authenticity'] += 4.5;
+          weights['Guidance'] += 4.0;
+          weights['Density'] -= 2.5;
+      }
+
+      // Accurate solos require increased guidance and presence
+      if (this.isSoloActive()) {
+          weights['Guidance'] += 4.0;
+          weights['Authenticity'] += 1.8;
+          weights['Presence'] += 1.5;
       }
 
       if (mood !== 'None') {

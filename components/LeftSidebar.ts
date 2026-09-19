@@ -136,7 +136,7 @@ export class LeftSidebar extends LitElement {
     button.dj-btn { color: #0088ff; }
     button.stop-btn { color: #fff; }
     button.back-start-btn { color: #ff8c00; }
-    button.loop-btn { color: #00ff00; }
+    button.loop-btn { color: #005500; }
     button.loop-btn:disabled:not(.active-green) { color: #005500 !important; opacity: 1 !important; }
     button.play-btn { color: #3dffab; }
     button.pause-btn { color: #fff; }
@@ -296,6 +296,14 @@ export class LeftSidebar extends LitElement {
       animation: icon-blink 1.5s infinite ease-in-out;
     }
     
+    @keyframes loop-play-flash {
+      0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1.2); }
+      50% { opacity: 0.5; transform: scale(1.06); filter: brightness(1.8); }
+    }
+    button.loop-btn.playing-flash {
+      animation: loop-play-flash 0.8s infinite ease-in-out;
+    }
+
     button.active-recording .icon-span svg circle {
       animation: inner-circle-blink 1.0s infinite ease-in-out;
     }
@@ -463,7 +471,7 @@ export class LeftSidebar extends LitElement {
         <button class="back-start-btn" @click=${this.onBackStartClick} ?disabled=${(isStopped && this.elapsedSeconds === 0) || isRecording} title="Back to Start">
             <span class="icon-span"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6,6h2v12H6V6zm3.5,6L18,6v12l-8.5-6z" fill="currentColor"/></svg></span>
         </button>
-        <button class="loop-btn ${this.isLooping ? 'active-green' : ''}" @click=${this.onLoopClick} ?disabled=${!this.hasRecording || !isStopped} title="Toggle Loop">
+        <button class="loop-btn ${this.isLooping ? 'active-green' : ''} ${this.playbackState === 'playing' && this.isLooping ? 'playing-flash' : ''}" @click=${this.onLoopClick} ?disabled=${!this.hasRecording || !isStopped} title="Toggle Loop">
             <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M17,17H7V14L3,18l4,4V19H19V13H17V17ZM7,7h10v3l4-4L17,2V5H5V11H7V7Z" fill="currentColor"/></svg></span>
         </button>
         ${this.renderPlayPause()}

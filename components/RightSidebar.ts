@@ -369,7 +369,7 @@ export class RightSidebar extends LitElement {
   @state() private durationIndex = 2; 
   @property({ type: Number }) evolution = 0; 
   
-  @state() private currentTab: 'Band' | 'Lira' = 'Band';
+  @property({ type: String }) currentTab: 'Band' | 'Lira' = 'Band';
 
   @state() private dynamicLead = [...LEAD_INSTRUMENTS];
   @state() private dynamicAlto = [...ALTO_INSTRUMENTS];
@@ -621,7 +621,7 @@ export class RightSidebar extends LitElement {
                   this.settings[key].weight = val; 
                   if (val > 0) this.savedWeights[key] = val;
                   uiSounds.playTick(); 
-                  this.dispatchChannelsChanged(); 
+                  this.dispatchChannelsChanged();
                   this.dispatch('instrument-interacted', key);
               }
           }}/></div>
