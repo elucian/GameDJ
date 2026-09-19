@@ -38,7 +38,7 @@ export class PromptDjMidi extends LitElement {
     .display-box {
       font-family: 'Courier New', Courier, monospace;
       font-weight: 700;
-      font-size: clamp(9px, 1.5vw, 11px);
+      font-size: clamp(12px, 2vw, 14.55px);
       letter-spacing: 1px;
       /* Removed text-transform: uppercase to support mixed case messages */
       width: 100%;
@@ -107,7 +107,7 @@ export class PromptDjMidi extends LitElement {
       }
       .display-box { 
         height: 24px; 
-        font-size: 8px; 
+        font-size: 10.5px; 
         padding: 0 10px;
       }
       .grid-container { 

@@ -34,7 +34,7 @@ export class LeftSidebar extends LitElement {
       border: 1px solid var(--border-color);
       color: var(--text-color);
       padding: 8px;
-      font-size: 12px;
+      font-size: 18.4px;
       border-radius: 4px;
       resize: none;
       outline: none;
@@ -50,7 +50,7 @@ export class LeftSidebar extends LitElement {
       padding: 6px 0;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 12.65px;
       font-weight: bold;
       text-transform: uppercase;
       transition: opacity 0.2s;
@@ -233,7 +233,7 @@ export class LeftSidebar extends LitElement {
     .rotary-text {
       position: relative;
       z-index: 2;
-      font-size: 8px;
+      font-size: 9.2px;
       font-weight: 900;
       letter-spacing: -0.5px;
       pointer-events: none;

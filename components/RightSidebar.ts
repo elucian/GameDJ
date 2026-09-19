@@ -11,16 +11,17 @@ import './MasterVolumePanel';
 
 const LEAD_INSTRUMENTS = [
   'Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Viola', 'Oboe', 'English Horn', 'French Horn', 'Bassoon',
-  'Harmonica', 'Chromatic Harmonica', 'Vocal Chops', 'Choir', 'Accordion', 'Banjo', 'Mandolin', 'Sitar', 'Koto', 'Erhu', 'Oud', 'Bagpipes', 'Bell Synth', 'Whistle', 'Didgeridoo', 'Recorder', 'Pan Flute', 'Pipe Flute', 'Ocarina'
+  'Harmonica', 'Chromatic Harmonica', 'Vocal Chops', 'Choir', 'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Accordion', 'Banjo', 'Mandolin', 'Sitar', 'Koto', 'Erhu', 'Oud', 'Bagpipes', 'Bell Synth', 'Whistle', 'Didgeridoo', 'Recorder', 'Pan Flute', 'Pipe Flute', 'Ocarina'
 ].sort();
 
 const ALTO_INSTRUMENTS = [
   'Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Viola', 'Violin', 'Cello', 'French Horn', 'English Horn', 'Bassoon', 'Oboe',
-  'Brass Section', 'Strings', 'Flute', 'Recorder', 'Accordion', 'Synthesizer', 'Electric Piano', 'Vibraphone', 'Harp', 'Low Whistle', 'Mandocello', 'Pan Flute', 'Harmonica', 'Chromatic Harmonica', 'Electric Violin', 'Pipe Flute'
+  'Brass Section', 'Strings', 'Flute', 'Recorder', 'Accordion', 'Synthesizer', 'Electric Piano', 'Vibraphone', 'Harp', 'Low Whistle', 'Mandocello', 'Pan Flute', 'Harmonica', 'Chromatic Harmonica', 'Electric Violin', 'Pipe Flute',
+  'Choir', 'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl'
 ].sort();
 
 const HARMONIC_INSTRUMENTS = [
-  'Piano', 'Electric Piano', 'Acoustic Guitar', 'Electric Guitar', 'Organ', 'Strings', 'Pads', 'Choir', 'Harpsichord', 'Harp', 'Marimba', 'Cimbalom', 'Tanpura', 'Synthesizer', 'Stab Chords', 'Accordion', 'Harmonium', 'Guzheng', 'Qanun'
+  'Piano', 'Electric Piano', 'Acoustic Guitar', 'Electric Guitar', 'Organ', 'Strings', 'Pads', 'Choir', 'Mixed Choir', 'Female Choir', 'Male Choir', 'Harpsichord', 'Harp', 'Marimba', 'Cimbalom', 'Tanpura', 'Synthesizer', 'Stab Chords', 'Accordion', 'Harmonium', 'Guzheng', 'Qanun'
 ].sort();
 
 const BASS_INSTRUMENTS = [
@@ -56,21 +57,23 @@ export class RightSidebar extends LitElement {
       overflow: hidden;
     }
     
-    .tabs-container {
+    .sidebar-tabs-container {
       display: flex;
       background: var(--surface-header);
       border-bottom: 1px solid var(--border-color);
       flex-shrink: 0;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
+      padding: 0 12px;
+      gap: 16px;
+      height: 32px;
     }
-    .tab-btn {
-      flex: 1;
+    .sidebar-tab-btn {
       background: transparent;
       border: none;
       color: var(--text-muted);
-      padding: 8px 0;
-      font-size: 14px;
+      padding: 4px 8px;
+      font-size: 13px;
       font-weight: bold;
       letter-spacing: 1.2px;
       text-transform: uppercase;
@@ -78,14 +81,14 @@ export class RightSidebar extends LitElement {
       border-bottom: 2px solid transparent;
       transition: color 0.2s, border-bottom-color 0.2s;
     }
-    .tab-btn.active {
+    .sidebar-tab-btn.active {
       color: var(--accent-color);
       border-bottom-color: var(--accent-color);
     }
     .top-header {
       text-align: center;
       padding: 6px 0;
-      font-size: 10px;
+      font-size: 11.5px;
       font-weight: bold;
       letter-spacing: 1.2px;
       color: var(--accent-color);
@@ -102,7 +105,7 @@ export class RightSidebar extends LitElement {
       align-items: center;
       cursor: pointer;
       transition: border-color 0.2s, background 0.2s;
-      font-size: 11px;
+      font-size: 12.65px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
@@ -123,23 +126,29 @@ export class RightSidebar extends LitElement {
       padding: 0 12px;
       border-bottom: 1px solid var(--border-color);
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
       align-items: center;
       flex-shrink: 0;
       height: 24px;
+      position: relative;
     }
     .section-title {
       color: var(--accent-color);
-      font-size: 10px;
+      font-size: 13.2px;
       font-weight: bold;
       letter-spacing: 1.2px;
       text-transform: uppercase;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
     }
 
     .header-btns {
       display: flex;
       align-items: center;
       gap: 4px;
+      position: absolute;
+      right: 12px;
     }
 
     .content {
@@ -168,7 +177,7 @@ export class RightSidebar extends LitElement {
       width: 100%;
     }
     .channel-label {
-      font-size: 9px;
+      font-size: 10.5px;
       text-transform: uppercase;
       color: var(--text-muted);
       font-weight: 700;
@@ -222,13 +231,13 @@ export class RightSidebar extends LitElement {
       color: var(--text-heading);
       border: 1px solid var(--border-color);
       outline: none;
-      font-size: 10px;
+      font-size: 15.18px;
       cursor: pointer;
       padding: 0 2px;
       font-family: monospace;
       border-radius: 2px;
-      height: 18px;
-      display: flex; align-items: center; line-height: 16px;
+      height: 25px;
+      display: flex; align-items: center; line-height: 20px;
     }
     
     select:disabled {
@@ -237,16 +246,18 @@ export class RightSidebar extends LitElement {
     }
 
     option, optgroup { 
-      font-size: 10px; 
-      padding-top: 0.5px;
-      padding-bottom: 0.5px;
-      line-height: 1; 
+      font-size: 15.18px; 
+      padding-top: 0px;
+      padding-bottom: 0px;
+      margin: 0px;
+      line-height: 0.54; 
     }
 
     @media (max-width: 1200px) {
       option, optgroup {
-        padding-top: 0.25px;
-        padding-bottom: 0.25px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+        line-height: 0.54;
       }
     }
 
@@ -255,7 +266,7 @@ export class RightSidebar extends LitElement {
       color: var(--accent-color); 
       font-weight: 800; 
       text-decoration: underline;
-      margin-top: 1px;
+      margin-top: 0px;
     }
     
     .weight-slider { width: 100%; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
@@ -325,7 +336,11 @@ export class RightSidebar extends LitElement {
     }
 
     .switch-label {
-      font-size: 7px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin-top: 4px;
+      font-size: 8.8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin-top: 4px;
+    }
+
+    .bottom-controls .section-title {
+      font-size: 12.65px;
     }
     
     .switch-integrated-box {
@@ -361,6 +376,7 @@ export class RightSidebar extends LitElement {
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
   @property({ type: Boolean }) conductorActive = false;
+  @property({ type: Boolean }) genreLocked = false;
   
   @state() private currentPools: any = {};
   @state() private currentStyleManifest: any = { lead: true, alto: true, harmonic: true, bass: true, rhythm: true };
@@ -369,7 +385,7 @@ export class RightSidebar extends LitElement {
   @state() private durationIndex = 2; 
   @property({ type: Number }) evolution = 0; 
   
-  @property({ type: String }) currentTab: 'Band' | 'Lira' = 'Band';
+  @property({ type: String }) currentTab: 'Band' | 'Lyra' = 'Band';
 
   @state() private dynamicLead = [...LEAD_INSTRUMENTS];
   @state() private dynamicAlto = [...ALTO_INSTRUMENTS];
@@ -426,7 +442,7 @@ export class RightSidebar extends LitElement {
   }
 
   private getDynamicList(channel: keyof InstrumentSet): string[] {
-    if (this.currentTab === 'Lira') {
+    if (this.currentTab === 'Lyra' || (this.currentTab as any) === 'Lira') {
         switch(channel) {
             case 'lead': return LIRA_ORCHESTRA;
             case 'alto': return LIRA_SOLO;
@@ -611,8 +627,12 @@ export class RightSidebar extends LitElement {
           <div class="row">
             <input type="checkbox" class="channel-toggle" .checked=${ch.active} ?disabled=${!ch.instrument || isInteractionDisabled} @change=${(e: Event) => this.onActiveChange(key, e)}>
             <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} ?disabled=${isInteractionDisabled}>
-              ${stylePool.length > 0 ? html`<optgroup label="STYLE SPECIFIC">${stylePool.map((inst: string) => html`<option value=${inst}>${inst}</option>`)}</optgroup>` : ''}
-              <optgroup label="GENERAL LIST">${fallbackOptions.map(inst => html`<option value=${inst}>${inst}</option>`)}</optgroup>
+              ${this.genreLocked ? html`
+                ${(stylePool.length > 0 ? stylePool : fallbackOptions).map((inst: string) => html`<option value=${inst}>${inst}</option>`)}
+              ` : html`
+                ${stylePool.length > 0 ? html`<optgroup label="STYLE SPECIFIC">${stylePool.map((inst: string) => html`<option value=${inst}>${inst}</option>`)}</optgroup>` : ''}
+                <optgroup label="GENERAL LIST">${fallbackOptions.map(inst => html`<option value=${inst}>${inst}</option>`)}</optgroup>
+              `}
             </select>
           </div>
           <div class="weight-slider"><input type="range" min="0" max="2.0" step="0.222" .value=${ch.weight} ?disabled=${isInteractionDisabled} @input=${(e: any) => { 
@@ -630,12 +650,13 @@ export class RightSidebar extends LitElement {
     `;
   }
 
-  private switchTab(tab: 'Band' | 'Lira') {
+  private switchTab(tab: 'Band' | 'Lyra') {
+      if (this.channelsLocked) return;
       if (this.currentTab === tab) return;
       uiSounds.playTick();
       this.currentTab = tab;
       const newSettings = { ...this.settings };
-      if (tab === 'Lira') {
+      if (tab === 'Lyra' || (tab as string) === 'Lira') {
          newSettings.lead.instrument = LIRA_ORCHESTRA[0];
          newSettings.alto.instrument = LIRA_SOLO[0];
          newSettings.harmonic.instrument = LIRA_CHOIR[0];
@@ -657,14 +678,14 @@ export class RightSidebar extends LitElement {
     
     const bandManifestLabels = { lead: 'LEAD', alto: 'ALTO', harmonic: 'HARM', bass: 'BASS', rhythm: 'RHYT' };
     const liraManifestLabels = { lead: 'ORC', alto: 'SOL', harmonic: 'CHR', bass: 'BRS', rhythm: 'DRM' };
-    const manifestLabels = this.currentTab === 'Lira' ? liraManifestLabels : bandManifestLabels;
+    const manifestLabels = (this.currentTab === 'Lyra' || (this.currentTab as any) === 'Lira') ? liraManifestLabels : bandManifestLabels;
 
     return html`
       <div class="top-header">CHANNELS</div>
-      <div class="tabs-container">
-          <button class="tab-btn ${this.currentTab === 'Band' ? 'active' : ''}" @click=${() => this.switchTab('Band')}>BAND</button>
-          <button class="tab-btn ${this.currentTab === 'Lira' ? 'active' : ''}" @click=${() => this.switchTab('Lira')}>LIRA</button>
-          <div class="header-btns" style="padding: 0 12px;">${this.renderLock(this.channelsLocked, () => this.toggleChannelsLock())}</div>
+      <div class="sidebar-tabs-container">
+          <button class="sidebar-tab-btn ${this.currentTab === 'Band' ? 'active' : ''} ${this.channelsLocked ? 'opacity-40 cursor-not-allowed' : ''}" @click=${() => this.switchTab('Band')} title=${this.channelsLocked ? 'Channels are locked' : 'Switch to Band'}>BAND</button>
+          <button class="sidebar-tab-btn ${this.currentTab === 'Lyra' || (this.currentTab as any) === 'Lira' ? 'active' : ''} ${this.channelsLocked ? 'opacity-40 cursor-not-allowed' : ''}" @click=${() => this.switchTab('Lyra')} title=${this.channelsLocked ? 'Channels are locked' : 'Switch to Lyra'}>LYRA</button>
+          <div style="margin-left: auto; display: flex; align-items: center;">${this.renderLock(this.channelsLocked, () => this.toggleChannelsLock())}</div>
       </div>
       
       <div class="content">

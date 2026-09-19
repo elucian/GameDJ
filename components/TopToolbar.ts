@@ -25,7 +25,7 @@ const FALLBACK_POOLS = {
   rhythm: ['Drum Kit', 'Electronic Drums', 'Hand Drum', 'Tabla', 'Djembe', 'Congas', 'Bongos', 'Timbales', 'Taiko Drums', 'Percussion', 'Shakers', 'Tambourine', 'Bells', 'Stomps', 'Industrial Percussion', 'Woodblock', 'Cowbell', 'Snare Drum', 'Cymbals', 'Bass Drum', 'Gong', 'Triangle', 'Wind Chimes']
 };
 
-const VOCAL_MARKERS = ['choir', 'vocal', 'soprano', 'vocals', 'voice', 'tenor', 'baritone', 'alto'];
+const VOCAL_MARKERS = ['choir', 'vocal', 'soprano', 'vocals', 'voice', 'tenor', 'baritone', 'female', 'male', 'boy', 'girl', 'bou', 'chant', 'soloist'];
 
 interface StyleSignature {
     bpm: number;
@@ -877,26 +877,66 @@ Object.values(MUSIC_DATA).forEach(genreDef => {
     });
 });
 
+const STORAGE_KEY_GENRE = 'gamedj_genre';
+const STORAGE_KEY_STYLE = 'gamedj_style';
+
+export function getCachedGenreAndStyle(): { genre: string; style: string } | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const savedGenre = localStorage.getItem(STORAGE_KEY_GENRE);
+      const savedStyle = localStorage.getItem(STORAGE_KEY_STYLE);
+      if (savedGenre && MUSIC_DATA[savedGenre]) {
+        const availableStyles = Object.keys(MUSIC_DATA[savedGenre].styles);
+        const effectiveStyle = (savedStyle && availableStyles.includes(savedStyle))
+          ? savedStyle
+          : (availableStyles[0] || 'Acid Jazz');
+        return { genre: savedGenre, style: effectiveStyle };
+      }
+    }
+  } catch {
+    // Gracefully handle environments with restricted localStorage
+  }
+  return null;
+}
+
+export function saveCachedGenreAndStyle(genre: string, style: string) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_GENRE, genre);
+      localStorage.setItem(STORAGE_KEY_STYLE, style);
+    }
+  } catch {
+    // Gracefully handle environments with restricted localStorage
+  }
+}
+
 @customElement('top-toolbar')
 export class TopToolbar extends LitElement {
   static styles = css`
     :host { display: flex; align-items: center; justify-content: space-between; height: 100%; background: var(--surface-color); border-bottom: 1px solid var(--border-color); padding: 0; box-sizing: border-box; color: var(--text-color); user-select: none; gap: 0; font-family: 'Google Sans', sans-serif; width: 100%; overflow: hidden; transition: background-color 0.3s ease, border-color 0.3s ease; }
-    .logo { font-weight: bold; font-size: 16px; color: var(--accent-color); display: flex; align-items: center; gap: 6px; padding: 0 16px; flex-shrink: 0; transition: padding 0.2s; }
+    .logo { font-weight: bold; font-size: 16px; color: var(--accent-color); display: flex; align-items: center; gap: 5px; padding: 0 8px; flex-shrink: 0; transition: padding 0.2s; }
     .brand-text { display: block; }
     @media (max-width: 1024px) {
       .brand-text { display: none; }
-      .logo { padding: 0 8px; }
+      .logo { padding: 0 6px; }
     }
-    .logo span.version-badge { background: var(--accent-color); color: #000; padding: 2px 5px; border-radius: 4px; font-size: 10px; }
+    .logo span.version-badge { background: var(--accent-color); color: #000; padding: 2px 5px; border-radius: 4px; font-size: 11.5px; font-weight: 800; }
     .divider { width: 1px; height: 100%; background: var(--border-color); flex-shrink: 0; }
-    .control-group { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; justify-content: center; padding: 0 8px; margin-bottom: 5px; box-sizing: border-box; }
+    .control-group { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; justify-content: center; padding: 0 5px; margin-bottom: 3px; box-sizing: border-box; }
     .control-group.fixed { flex: 0 0 auto; }
-    .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; width: 100%; }
-    .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
-    .row { display: flex; align-items: center; gap: 6px; width: 100%; }
-    .slider-container { display: flex; align-items: center; gap: 6px; width: 100%; }
+    .control-group.group-genre { flex: 1.15; min-width: 85px; }
+    .control-group.group-style { flex: 1.15; min-width: 85px; }
+    /* Increased MOOD and KEY width by 15% */
+    .control-group.group-mood { flex: 0 1 131px; min-width: 108px; max-width: 159px; }
+    .control-group.group-key { flex: 0 1 127px; min-width: 108px; max-width: 152px; }
+    .control-group.group-tempo { flex: 1.25; min-width: 125px; }
+
+    .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; width: 100%; }
+    .label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+    .row { display: flex; align-items: center; gap: 4px; width: 100%; }
+    .slider-container { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 50px; }
     input[type=range] { -webkit-appearance: none; background: transparent; width: 100%; height: 4px; border-radius: 2px; background: var(--border-color); outline: none; flex: 1; border: none; }
-    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 10px; border-radius: 1px; background: silver; cursor: pointer; margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #999; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 9px; border-radius: 1px; background: silver; cursor: pointer; margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,0.6); border: 1px solid #999; }
     
     select, select::picker(select) {
       appearance: base-select; /* Unlock picker styling */
@@ -904,31 +944,36 @@ export class TopToolbar extends LitElement {
 
     select { 
       background: var(--surface-active); color: var(--text-heading); 
-      border: 1px solid var(--border-active); border-radius: 4px; padding: 0 4px; 
-      font-size: 12px; outline: none; cursor: pointer; font-family: monospace; 
-      width: 100%; height: 24px; 
-      display: flex; align-items: center; line-height: 20px;
+      border: 1px solid var(--border-active); border-radius: 4px; padding: 0 3px; 
+      font-size: 16.73px; outline: none; cursor: pointer; font-family: monospace; 
+      width: 100%; height: 28px; 
+      display: flex; align-items: center; line-height: 22px;
     }
     
     option, optgroup { 
-      font-size: 12px; 
-      padding-top: 1px;
-      padding-bottom: 1px;
-      line-height: 1.2; 
+      font-size: 16.73px; 
+      padding-top: 0px;
+      padding-bottom: 0px;
+      margin: 0px;
+      line-height: 0.59; 
     }
 
     @media (max-width: 1200px) {
       option, optgroup {
-        padding-top: 0.5px;
-        padding-bottom: 0.5px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+        line-height: 0.59;
       }
     }
 
-    optgroup { font-weight: 800; text-decoration: underline; background: #111; color: var(--accent-color); margin-top: 1px; }
+    optgroup { font-weight: 800; text-decoration: underline; background: #111; color: var(--accent-color); margin-top: 0px; margin-bottom: 0px; }
 
-    .select-10vw, .select-7vw, .select-key, .select-meter { width: 100%; min-width: 0; flex: 1; }
-    .value-display { font-family: monospace; font-size: 13px; color: var(--accent-color); min-width: 32px; text-align: right; }
-    .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 3px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 20px; height: 20px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
+    .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
+    .select-mood, .select-7vw { width: 100%; min-width: 0; flex: 1; }
+    .select-key { width: 100%; min-width: 0; flex: 1; }
+    .select-meter { width: 48px; min-width: 48px; max-width: 52px; flex: 0 0 48px; padding: 0 2px; }
+    .value-display { font-family: monospace; font-size: 16.73px; color: var(--accent-color); min-width: 28px; text-align: right; }
+    .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 2px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 18px; height: 18px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
     .lock-btn.locked { color: #ffcc00; background: rgba(255, 204, 0, 0.15); border-color: rgba(255, 204, 0, 0.3); box-shadow: 0 0 10px rgba(255, 204, 0, 0.1); }
     .lock-btn svg { width: 12px; height: 12px; fill: currentColor; }
@@ -946,6 +991,25 @@ export class TopToolbar extends LitElement {
   @state() private locked = { genre: false, style: false, tempo: false, key: false, mood: false };
 
   private bpmRange: [number, number] = [100, 120];
+
+  constructor() {
+    super();
+    const cached = getCachedGenreAndStyle();
+    if (cached) {
+      this.genre = cached.genre;
+      this.musicStyle = cached.style;
+      const genreData = MUSIC_DATA[this.genre];
+      const sig = genreData?.styles[this.musicStyle];
+      if (sig) {
+        this.bpm = sig.bpm;
+        this.bpmRange = sig.bpmRange;
+        this.meter = sig.meters[0];
+        this.key = sig.keys[0];
+        this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+        this.currentMood = sig.mood || 'None';
+      }
+    }
+  }
 
   public get locks() { return this.locked; }
   private toggleLock(key: keyof typeof this.locked) {
@@ -1000,8 +1064,48 @@ export class TopToolbar extends LitElement {
         this.dispatch('meter-changed', this.meter);
     }
     
+    saveCachedGenreAndStyle(this.genre, this.musicStyle);
     (this as any).requestUpdate();
     return this.genre;
+  }
+
+  public initializeSession(forceDefault: boolean = false): boolean {
+    if (forceDefault) {
+      this.reset();
+      return false;
+    }
+    const cached = getCachedGenreAndStyle();
+    if (cached && !this.locked.genre && !this.locked.style) {
+      this.genre = cached.genre;
+      this.musicStyle = cached.style;
+      const genreData = MUSIC_DATA[this.genre];
+      const sig = genreData?.styles[this.musicStyle];
+      if (sig) {
+        if (!this.locked.tempo) {
+          this.bpm = sig.bpm;
+          this.meter = sig.meters[0];
+          this.bpmRange = sig.bpmRange;
+          this.dispatch('bpm-changed', this.bpm);
+          this.dispatch('meter-changed', this.meter);
+        }
+        if (!this.locked.key) {
+          this.key = sig.keys[0];
+          this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+          this.dispatch('key-changed', { key: this.key, mode: this.mode });
+        }
+        if (!this.locked.mood && sig.mood) {
+          this.currentMood = sig.mood;
+          this.dispatch('mood-changed', this.currentMood);
+        }
+      }
+      this.dispatch('genre-changed', this.genre);
+      this.dispatch('style-changed', this.musicStyle);
+      (this as any).requestUpdate();
+      return true;
+    } else {
+      this.reset();
+      return false;
+    }
   }
 
   public reset() {
@@ -1057,11 +1161,15 @@ export class TopToolbar extends LitElement {
       const getUniqueInstrument = (channelType: keyof typeof FALLBACK_POOLS, pool: string[]) => {
           let candidates = pool.filter(i => !!i && i.toLowerCase() !== 'none' && i.toLowerCase() !== 'n/a' && i.toLowerCase() !== "");
           
+          if (isLiraMode && candidates.length === 0) {
+              candidates = (LIRA_POOLS as any)[channelType] || [];
+          }
+
           // DIVERSITY INJECTION:
           // If channel lock is off (implicit during randomization call usually, passed via locks) 
           // we inject a "less probable" candidate from fallback to increase diversity.
           if (!locks?.channels && candidates.length > 0 && Math.random() < 0.3) {
-             const fallbackPool = FALLBACK_POOLS[channelType as keyof typeof FALLBACK_POOLS];
+             const fallbackPool = isLiraMode ? ((LIRA_POOLS as any)[channelType] || FALLBACK_POOLS[channelType]) : FALLBACK_POOLS[channelType];
              const randomFallback = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
              
              // Respect Vocal Mode rules for the fallback injection
@@ -1092,12 +1200,12 @@ export class TopToolbar extends LitElement {
               }
           }
 
-          let fallbackPool = FALLBACK_POOLS[channelType as keyof typeof FALLBACK_POOLS];
+          let fallbackPool = isLiraMode ? ((LIRA_POOLS as any)[channelType] || FALLBACK_POOLS[channelType]) : FALLBACK_POOLS[channelType];
           if (mode !== 'VOCALIZATION') {
-              fallbackPool = fallbackPool.filter(inst => !VOCAL_MARKERS.some(v => inst.toLowerCase().includes(v)));
+              fallbackPool = fallbackPool.filter((inst: string) => !VOCAL_MARKERS.some(v => inst.toLowerCase().includes(v)));
           } else if (channelType === 'lead' || channelType === 'alto') {
               // Forced vocal fallback for VOC mode
-              fallbackPool = ['Vocal Chops', 'Solo Voice', 'Soprano Voice', 'Choir'];
+              fallbackPool = ['Solo Female', 'Solo Male', 'Solo Girl', 'Solo Boy', 'Choir', 'Vocal Chops', 'Solo Voice', 'Soprano Voice'];
           }
 
           const shuffledFallback = [...fallbackPool].sort(() => Math.random() - 0.5);
@@ -1114,24 +1222,42 @@ export class TopToolbar extends LitElement {
               return fallback;
           }
 
-          return "";
+          if (fallbackPool.length > 0) {
+              const fallback = fallbackPool[0];
+              usedInstruments.add(fallback);
+              return fallback;
+          }
+
+          const defaults: Record<string, string> = { lead: 'Synthesizer', alto: 'Strings', harmonic: 'Piano', bass: 'Electric Bass', rhythm: 'Drum Kit' };
+          return defaults[channelType] || 'Piano';
       };
 
-      const effectiveManifest = { ...sig.manifest };
+      const effectiveManifest = { lead: true, alto: true, harmonic: true, bass: true, rhythm: true };
       const chosenInstruments: any = {};
       
+      const getDefaultInst = (ch: string) => {
+          switch(ch) {
+              case 'lead': return isLiraMode ? 'String Orchestra' : 'Synthesizer';
+              case 'alto': return isLiraMode ? 'Solo Violin' : 'Alto Saxophone';
+              case 'harmonic': return isLiraMode ? 'Mixed Choir' : 'Piano';
+              case 'bass': return isLiraMode ? 'Cinematic Brass' : 'Electric Bass';
+              case 'rhythm': return isLiraMode ? 'Orchestral Percussion' : 'Drum Kit';
+              default: return 'Piano';
+          }
+      };
+
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
       channels.forEach(ch => {
-          const pool = isLiraMode ? (LIRA_POOLS[ch as keyof typeof LIRA_POOLS] || sig.instrumentPools[ch]) : (sig.instrumentPools[ch] || []);
+          const pool = isLiraMode ? (sig.instrumentPools[ch] || LIRA_POOLS[ch as keyof typeof LIRA_POOLS]) : (sig.instrumentPools[ch] || []);
           
           if (locks?.channels && currentInstruments) {
-              chosenInstruments[ch] = currentInstruments[ch].instrument;
-              usedInstruments.add(currentInstruments[ch].instrument);
+              const cur = currentInstruments[ch].instrument;
+              chosenInstruments[ch] = (cur && cur.toLowerCase() !== 'none' && cur.toLowerCase() !== 'n/a') ? cur : getDefaultInst(ch);
+              usedInstruments.add(chosenInstruments[ch]);
           } else {
-              if (pool && pool.some((inst: string) => inst.toLowerCase() === 'none')) {
-                  effectiveManifest[ch] = false;
-              }
-              chosenInstruments[ch] = getUniqueInstrument(ch, pool || []);
+              const inst = getUniqueInstrument(ch, pool || []);
+              chosenInstruments[ch] = (inst && inst.toLowerCase() !== 'none' && inst.toLowerCase() !== 'n/a') ? inst : getDefaultInst(ch);
+              usedInstruments.add(chosenInstruments[ch]);
           }
       });
 
@@ -1189,6 +1315,7 @@ export class TopToolbar extends LitElement {
 
       if (!this.locked.tempo) { this.bpm = config.bpm; this.meter = config.meter; this.dispatch('bpm-changed', this.bpm); this.dispatch('meter-changed', this.meter); }
       if (!this.locked.key) { this.key = config.key; this.mode = config.mode; }
+      saveCachedGenreAndStyle(this.genre, this.musicStyle);
       (this as any).requestUpdate();
   }
 
@@ -1209,6 +1336,7 @@ export class TopToolbar extends LitElement {
           this.musicStyle = availableStyles[0] || '';
       }
 
+      saveCachedGenreAndStyle(this.genre, this.musicStyle);
       this.dispatch('genre-changed', this.genre); 
       if (this.musicStyle) {
           const sig = genreData?.styles[this.musicStyle];
@@ -1238,6 +1366,7 @@ export class TopToolbar extends LitElement {
       uiSounds.playTick(); 
       const input = e.target as HTMLSelectElement; 
       this.musicStyle = input.value; 
+      saveCachedGenreAndStyle(this.genre, this.musicStyle);
       const genreData = MUSIC_DATA[this.genre];
       const sig = genreData?.styles[this.musicStyle];
       if (sig) {
@@ -1301,13 +1430,13 @@ export class TopToolbar extends LitElement {
       </div>
       <div class="divider"></div>
 
-      <div class="control-group">
+      <div class="control-group group-genre">
         <div class="label-row">
           <span class="label">Genre</span>
           ${this.renderLock(this.locked.genre, () => this.toggleLock('genre'))}
         </div>
         <div class="row">
-          <select class="select-10vw" .value=${this.genre} @change=${this.onGenreChange} ?disabled=${isRecording}>
+          <select class="select-genre" .value=${this.genre} @change=${this.onGenreChange} ?disabled=${isRecording}>
             <optgroup label="MODERN">${GENRE_MAP_MODERN.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
             <optgroup label="TRADITIONAL">${GENRE_MAP_TRADITIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
             <optgroup label="REGIONAL">${GENRE_MAP_REGIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
@@ -1317,13 +1446,13 @@ export class TopToolbar extends LitElement {
 
       <div class="divider"></div>
 
-      <div class="control-group">
+      <div class="control-group group-style">
         <div class="label-row">
           <span class="label">Style</span>
           ${this.renderLock(this.locked.style, () => this.toggleLock('style'))}
         </div>
         <div class="row">
-          <select class="select-10vw" .value=${this.musicStyle} @change=${this.onStyleChange} ?disabled=${isRecording}>
+          <select class="select-style" .value=${this.musicStyle} @change=${this.onStyleChange} ?disabled=${isRecording}>
             ${styles.map(s => html`<option value=${s}>${s}</option>`)}
           </select>
         </div>
@@ -1331,13 +1460,13 @@ export class TopToolbar extends LitElement {
 
       <div class="divider"></div>
 
-      <div class="control-group">
+      <div class="control-group group-mood">
         <div class="label-row">
           <span class="label">Mood</span>
           ${this.renderLock(this.locked.mood, () => this.toggleLock('mood'))}
         </div>
         <div class="row">
-          <select class="select-7vw" .value=${this.currentMood} @change=${this.onMoodChange} ?disabled=${isRecording}>
+          <select class="select-mood" .value=${this.currentMood} @change=${this.onMoodChange}>
             ${MOODS.map(m => html`<option value=${m}>${m}</option>`)}
           </select>
         </div>
@@ -1345,13 +1474,13 @@ export class TopToolbar extends LitElement {
 
       <div class="divider"></div>
 
-      <div class="control-group">
+      <div class="control-group group-key">
         <div class="label-row">
           <span class="label">Key / Mode</span>
           ${this.renderLock(this.locked.key, () => this.toggleLock('key'))}
         </div>
         <div class="row">
-          <select class="select-key" .value=${this.key} @change=${this.onKeyChange} ?disabled=${isRecording}>
+          <select class="select-key" .value=${this.key} @change=${this.onKeyChange}>
              ${keys.map(k => html`<option value=${k}>${k}</option>`)}
           </select>
         </div>
@@ -1359,17 +1488,17 @@ export class TopToolbar extends LitElement {
 
       <div class="divider"></div>
 
-      <div class="control-group">
+      <div class="control-group group-tempo">
         <div class="label-row">
           <span class="label">Tempo</span>
           ${this.renderLock(this.locked.tempo, () => this.toggleLock('tempo'))}
         </div>
         <div class="row">
           <div class="slider-container">
-            <input type="range" .min=${this.bpmRange[0]} .max=${this.bpmRange[1]} .value=${this.bpm} @input=${this.onBpmChange} ?disabled=${isRecording}>
+            <input type="range" .min=${this.bpmRange[0]} .max=${this.bpmRange[1]} .value=${this.bpm} @input=${this.onBpmChange}>
             <div class="value-display">${this.bpm}</div>
           </div>
-          <select class="select-meter" .value=${this.meter} @change=${this.onMeterChange} ?disabled=${isRecording}>
+          <select class="select-meter" .value=${this.meter} @change=${this.onMeterChange}>
             ${meters.map(m => html`<option value=${m}>${m}</option>`)}
           </select>
         </div>

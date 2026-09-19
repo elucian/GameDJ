@@ -1,6 +1,8 @@
 {
   "name": "GameDJ V27",
-  "description": "Checkpoint V27: Flattened aluminum button gradient and fixed indicator line.",
+  "description": "Real-time AI music generator with DJ voice simulation messaging, vocal channel detection, and precision controls.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

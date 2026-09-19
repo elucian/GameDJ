@@ -57,7 +57,7 @@ export class TutorialOverlay extends LitElement {
     h2 {
       margin: 0 0 20px 0;
       font-weight: 400;
-      font-size: 24px;
+      font-size: 28px;
       background: linear-gradient(45deg, #fff, #ccc);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -84,11 +84,11 @@ export class TutorialOverlay extends LitElement {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      font-size: 14px;
+      font-size: 16px;
       color: #aaa;
     }
     .text {
-      font-size: 14px;
+      font-size: 16px;
       line-height: 1.5;
       color: #ddd;
     }
@@ -105,7 +105,7 @@ export class TutorialOverlay extends LitElement {
       font-weight: 600;
       font-family: inherit;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 16px;
       transition: all 0.2s;
     }
     button:hover {

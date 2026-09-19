@@ -24,12 +24,34 @@ interface RecordingSegment {
 }
 
 export const VOCAL_STRINGS = [
+  'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Soloist',
+  'Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble',
   'Soprano Voice', 'Coral Voices', 'Coral Bass', 'Solo Voice', 'Vocal Chops', 
   'Male Monastic Choir', 'Powerhouse Soloist', 'Bright Female Vocals', 
   'Processed Vocals', 'Children\'s Choir', 'Gospel Vocals', 'Distant Female Voice', 
   'Backing Choir', 'Soprano Choir', 'Tenor/Alto Choir', 'Bass Choir', 'Deep Vocal Drone',
   'Alto Choir', 'Choir'
 ];
+
+export function isVocalInstrument(instrumentName: string | undefined | null): boolean {
+    if (!instrumentName) return false;
+    const inst = instrumentName.toLowerCase().trim();
+    if (!inst || inst === 'none' || inst === 'n/a') return false;
+    
+    // Core voice channels: Female, Male, Choir, Girl, Boy/Bou
+    if (inst.includes('female')) return true;
+    if (inst.includes('male')) return true;
+    if (inst.includes('choir')) return true;
+    if (inst.includes('girl')) return true;
+    if (inst.includes('boy') || inst.includes('bou')) return true;
+    
+    // General vocal categories
+    if (inst.includes('voice') || inst.includes('vocal') || inst.includes('vocals')) return true;
+    if (inst.includes('soprano') || inst.includes('tenor') || inst.includes('baritone') || inst.includes('alto choir') || inst.includes('alto voice')) return true;
+    if (inst.includes('chant') || inst.includes('a cappella') || inst.includes('soloist') || inst.includes('operatic')) return true;
+    
+    return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase()));
+}
 
 const VOWELS = ['A', 'E', 'I', 'O', 'U'];
 
@@ -64,7 +86,7 @@ export class LiveMusicHelper extends EventTarget {
   private sessionPromise: Promise<LiveMusicSession> | null = null;
   private sessionCounter = 0; 
   private nextStartTime = 0;
-  private bufferTime = 0.2; 
+  private bufferTime = 0.35; 
   public readonly audioContext: AudioContext;
   private rawGain: GainNode;
   private masterGain: GainNode;
@@ -74,7 +96,6 @@ export class LiveMusicHelper extends EventTarget {
   private bpm = 120; private key = 'C Major'; private mode: 'Natural' | 'Minor' = 'Natural';
   public genre = 'Jazz'; public style = 'Acid Jazz'; private meter = '4/4';
   private mood = 'None';
-  private currentSeed = 0;
   public generationMode: MusicGenerationMode = 'QUALITY';
   public instruments: InstrumentSet = {
     lead: { instrument: 'Piano', active: true, weight: 1.0, visible: true },
@@ -116,6 +137,7 @@ export class LiveMusicHelper extends EventTarget {
   private activeHands: string[] = []; 
   private currentVocalSignal: string | null = null;
   private vocalSignalTimer: number | null = null;
+  private lastDjVocalMessageTime = 0;
   private conductorActivationTime = 0;
 
   private specialInstruction: string | null = null;
@@ -136,7 +158,7 @@ export class LiveMusicHelper extends EventTarget {
   private lastAppliedStatusMessage: string = '';
 
   constructor(ai: GoogleGenAI, model: string) {
-    super(); this.ai = ai; this.model = model; this.prompts = new Map();
+    super(); this.ai = ai; this.model = model.startsWith('models/') ? model : `models/${model}`; this.prompts = new Map();
     this.audioContext = new AudioContext({ sampleRate: 48000 });
     this.rawGain = this.audioContext.createGain(); this.masterGain = this.audioContext.createGain(); 
     this.masterGain.gain.value = this.userVolume;
@@ -185,7 +207,7 @@ export class LiveMusicHelper extends EventTarget {
 
   public setStereo(stereo: boolean) { this.isStereo = stereo; this.scheduleRefresh(); }
   public setMaxDuration(minutes: number) { this.maxDurationMinutes = minutes; }
-  public setSeed(seed: number) { this.currentSeed = seed; this.scheduleRefresh(); }
+  public setSeed(_seed?: number) { /* Seed removed to ensure prompt authenticity */ }
   public setChannelsLocked(locked: boolean) { this.channelsLocked = locked; }
   
   public setLoop(loop: boolean) { 
@@ -262,11 +284,16 @@ export class LiveMusicHelper extends EventTarget {
 
   private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 200);
 
-  public sendVocalSignal(signal: string, durationMs: number = 2000) {
-    if (this.generationMode !== 'VOCALIZATION') return;
-    if (!this.isVocalInstrumentActive()) return;
+  public sendVocalSignal(signal: string, durationMs: number = 5000) {
+    if (!this.isVocalInstrumentActive() && this.generationMode !== 'VOCALIZATION') return;
 
-    this.currentVocalSignal = signal.toUpperCase();
+    // Ensure VOCALIZATION mode is active if a voice channel is active
+    if (this.generationMode !== 'VOCALIZATION' && this.isVocalInstrumentActive()) {
+        this.generationMode = 'VOCALIZATION';
+        this.dispatchEvent(new CustomEvent('mode-changed-internal', { detail: 'VOCALIZATION' }));
+    }
+
+    this.currentVocalSignal = signal;
     this.dispatchEvent(new CustomEvent('vocal-signal-received', { detail: this.currentVocalSignal }));
     this.scheduleRefresh();
     
@@ -327,10 +354,27 @@ export class LiveMusicHelper extends EventTarget {
             liraNarrative += `The DJ conductor guides this Lira performance to authentically follow the genre ${this.genre} and style ${this.style} with rich acoustic expression and emotional depth. `;
         }
 
+        const vocalDetails = this.getActiveVocalDetails();
+        if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
+            liraNarrative += `Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. `;
+            if (this.currentVocalSignal) {
+                liraNarrative += `DJ to Lyria vocal instruction: ${this.currentVocalSignal}. `;
+            }
+        }
+
         const finalPayload = [ { text: liraNarrative, weight: 10.0 } ];
         const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
         if (guidancePrompt) {
             finalPayload.push({ text: `Nuance: Guidance`, weight: guidancePrompt.weight * 1.5 });
+        }
+        if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
+            const vocalDirective = this.currentVocalSignal 
+                ? `DJ TO LYRA DIRECTIVE: ${this.currentVocalSignal}. Simulate realistic human singing voice with organic vocal cords, formant resonance, and emotive vibrato.`
+                : `DJ TO LYRA DIRECTIVE: Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. Organic human vocal delivery, acoustic polyphony, and emotive melodic phrasing.`;
+            finalPayload.push({
+                text: vocalDirective,
+                weight: 16.0
+            });
         }
         finalPayload.push(...weightedPrompts);
         try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); return; } catch (e) {}
@@ -351,8 +395,6 @@ export class LiveMusicHelper extends EventTarget {
         if (this.meter) narrative += `in ${this.meter} time, `;
         if (this.key) narrative += `in the key of ${this.key} ${this.mode}. `;
     }
-
-    if (this.currentSeed !== 0) narrative += `(Seed influence: ${this.currentSeed}). `;
 
     // Mode separation rule
     if (this.isLiraMode) {
@@ -426,7 +468,7 @@ export class LiveMusicHelper extends EventTarget {
         narrative += `Do NOT add any backing tracks or default instruments. Specifically, there must be NO ${strictlyForbidden.join(', NO ')} unless explicitly requested above. `;
     }
 
-    narrative += `All instruments must play together harmoniously with perfect consonance, sharing the same chord progression and unified groove. Avoid polytonality and dissonance. Make it sound professional, structured, and emotionally resonant. `;
+    narrative += `ANTI-CACOPHONY DIRECTIVE: Maintain pristine acoustic clarity, gorgeous melodic contour, and rich harmonic consonance at all times. All instruments must play together harmoniously with perfect consonance, sharing the same key, chord progression, and unified groove. Avoid any atonal dissonance, random percussive clutter, abrasive feedback, or conflicting polyrhythms. Every voice must sing with a clear, lyrical melodic purpose. Make it sound professional, structured, and emotionally resonant. `;
 
     if (this.instruments.rhythm.active && this.instruments.rhythm.weight > 0) {
         narrative += `The rhythm track provides the main groove. `;
@@ -446,15 +488,29 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     // Vocal Override
-    if (this.generationMode === 'VOCALIZATION') {
+    const vocalDetails = this.getActiveVocalDetails();
+    if (this.generationMode === 'VOCALIZATION' || vocalDetails.hasAny) {
          narrative += `This is a vocal performance in ${this.getRegionalLanguage()}. `;
-         if (this.currentVocalSignal) narrative += `Vocal cue: ${this.currentVocalSignal}. `;
+         narrative += `Simulate authentic human singing voices with realistic vocal tract resonance, emotional expression, human breathing nuances, and natural melodic delivery for ${vocalDetails.activeVocals.join(', ')}. `;
+         if (this.currentVocalSignal) {
+             narrative += `DJ Vocal Instruction to Lyria: ${this.currentVocalSignal}. `;
+         }
     } else {
         narrative += `Focus on the highest possible ${this.generationMode.toLowerCase()} for the audio generation. `;
     }
 
     // Construct Payload
     const finalPayload = [ { text: narrative, weight: 10.0 } ];
+
+    if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
+        const vocalDirective = this.currentVocalSignal 
+            ? `DJ TO LYRA DIRECTIVE: ${this.currentVocalSignal}. Simulate realistic human singing voice with organic vocal cords, formant resonance, and natural vibrato.`
+            : `DJ TO LYRA DIRECTIVE: Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. Expressive human vocal delivery, organic vibrato, emotional melodic phrasing, and lyrical syllable singing.`;
+        finalPayload.push({
+            text: vocalDirective,
+            weight: 16.0
+        });
+    }
     
     // 3. Add Individual Instrument Prompts (Reinforcement with higher priority when locked)
     const instrumentMultiplier = this.channelsLocked ? 25.0 : 12.0;
@@ -507,22 +563,180 @@ export class LiveMusicHelper extends EventTarget {
       return 18;
   }
 
+  public getActiveVocalDetails() {
+      const activeVocals: string[] = [];
+      let hasFemale = false;
+      let hasMale = false;
+      let hasChoir = false;
+      let hasGirl = false;
+      let hasBoy = false;
+
+      Object.values(this.instruments).forEach(ch => {
+          if (!ch.active || ch.visible === false || !ch.instrument) return;
+          if (isVocalInstrument(ch.instrument)) {
+              activeVocals.push(ch.instrument);
+              const lower = ch.instrument.toLowerCase();
+              if (lower.includes('female')) hasFemale = true;
+              if (lower.includes('male')) hasMale = true;
+              if (lower.includes('choir') || lower.includes('chant') || lower.includes('a cappella')) hasChoir = true;
+              if (lower.includes('girl')) hasGirl = true;
+              if (lower.includes('boy') || lower.includes('bou')) hasBoy = true;
+          }
+      });
+
+      return {
+          activeVocals,
+          hasAny: activeVocals.length > 0,
+          hasFemale,
+          hasMale,
+          hasChoir,
+          hasGirl,
+          hasBoy
+      };
+  }
+
+  public generateDjVocalSimulationMessage(stageName?: string): string {
+      const details = this.getActiveVocalDetails();
+      if (!details.hasAny) return '';
+
+      const stage = (stageName || this.currentStatusMessage || '').toLowerCase();
+      const isClimax = stage.includes('chorus') || stage.includes('climax') || stage.includes('drop') || stage.includes('peak');
+      const isIntro = stage.includes('intro') || stage.includes('warmup');
+      const isOutro = stage.includes('outro') || stage.includes('fade');
+
+      const cues: string[] = [];
+
+      if (details.hasFemale) {
+          if (isClimax) {
+              cues.push(
+                  "FEMALE VOCAL: Soaring emotional chorus hook with powerful belt, expressive vibrato, and melodic runs",
+                  "FEMALE VOCAL: High expressive vocal climax with passionate dynamics and lyrical storytelling"
+              );
+          } else if (isIntro) {
+              cues.push(
+                  "FEMALE VOCAL: Atmospheric melodic humming, soft breathing dynamics, and intimate vocal entrance",
+                  "FEMALE VOCAL: Gentle vocalise introduction with delicate melodic ornaments"
+              );
+          } else if (isOutro) {
+              cues.push(
+                  "FEMALE VOCAL: Graceful sustained emotional tones, fading melodic vibrato, and gentle vocal resolution",
+                  "FEMALE VOCAL: Soft acoustic vocal ad-libs gently resolving the melody"
+              );
+          } else {
+              cues.push(
+                  "FEMALE VOCAL: Emotive lead verses with natural human vocal resonance, clear tone, and soulful phrasing",
+                  "FEMALE VOCAL: Lyrical vocal storytelling singing expressive syllables and melodic hooks",
+                  "FEMALE VOCAL: Warm chest-to-head voice transitions with authentic human expression"
+              );
+          }
+      }
+
+      if (details.hasMale) {
+          if (isClimax) {
+              cues.push(
+                  "MALE VOCAL: Soaring tenor climax with impassioned chest resonance and powerful melodic delivery",
+                  "MALE VOCAL: Dramatic vocal hook with dynamic energy, natural vibrato, and full acoustic presence"
+              );
+          } else if (isIntro) {
+              cues.push(
+                  "MALE VOCAL: Low resonant vocal hums, deep chest tone, and subtle melodic entrance",
+                  "MALE VOCAL: Atmospheric acoustic vocal murmurs establishing the song motif"
+              );
+          } else if (isOutro) {
+              cues.push(
+                  "MALE VOCAL: Warm baritone sustained notes resolving the harmonic progression gracefully",
+                  "MALE VOCAL: Quiet vocal hums and gentle acoustic fade"
+              );
+          } else {
+              cues.push(
+                  "MALE VOCAL: Charismatic baritone/tenor verses with rich acoustic chest warmth and clear diction",
+                  "MALE VOCAL: Soulful melodic phrasing with natural vocal inflection and emotive resonance",
+                  "MALE VOCAL: Storytelling vocal delivery singing expressive lyrical lines"
+              );
+          }
+      }
+
+      if (details.hasGirl) {
+          if (isClimax) {
+              cues.push(
+                  "GIRL VOCAL: Clear crystalline soprano soaring on the chorus with pure, bright resonance",
+                  "GIRL VOCAL: High sweet melodic refrain carrying radiant emotional energy"
+              );
+          } else {
+              cues.push(
+                  "GIRL VOCAL: Delicate young girl soloist singing clear, innocent melodies with pure acoustic timbre",
+                  "GIRL VOCAL: Sweet crystalline vocal refrains with bright pitch accuracy and gentle expression",
+                  "GIRL VOCAL: Gentle girl solo voice carrying the primary theme with acoustic purity"
+              );
+          }
+      }
+
+      if (details.hasBoy) {
+          if (isClimax) {
+              cues.push(
+                  "BOY VOCAL: Soaring treble soloist reaching bell-like acoustic peaks with sacred clarity",
+                  "BOY VOCAL: Angelic boy soprano singing impassioned melodic lines with pure resonance"
+              );
+          } else {
+              cues.push(
+                  "BOY VOCAL: Angelic boy treble soloist with sacred acoustic clarity, singing pure thematic motifs",
+                  "BOY VOCAL: Pure treble soloist vocalizing melodic lines with pristine acoustic warmth",
+                  "BOY VOCAL: Clear bell-like boy soprano melody with delicate breath phrasing"
+              );
+          }
+      }
+
+      if (details.hasChoir) {
+          if (isClimax) {
+              cues.push(
+                  "CHOIR: Majestic fortissimo choral swell with rich 4-part harmonies and triumphant cathedral polyphony",
+                  "CHOIR: Powerful full choir harmonic explosion supporting the melodic climax"
+              );
+          } else if (isIntro) {
+              cues.push(
+                  "CHOIR: Ethereal pianissimo vocal pads and gentle cathedral choir hums",
+                  "CHOIR: Subtle atmospheric chanting and mystical choral hums entering softly"
+              );
+          } else {
+              cues.push(
+                  "CHOIR: Lush multi-part choir harmonies with expansive acoustic polyphony and vocal backing beds",
+                  "CHOIR: Cathedral choral ensemble singing rich harmonic counterpoint and sacred chants",
+                  "CHOIR: Expressive backing choir vocal harmonies enriching the acoustic texture"
+              );
+          }
+      }
+
+      if (details.hasFemale && details.hasChoir) {
+          cues.push(
+              "FEMALE + CHOIR: Emotive female lead vocal soaring passionately over lush cathedral backing choir harmonies",
+              "FEMALE + CHOIR: Dynamic call-and-response between female soloist and rich polyphonic choir"
+          );
+      }
+      if (details.hasMale && details.hasChoir) {
+          cues.push(
+              "MALE + CHOIR: Resonant male lead vocal supported by expansive 4-part choir harmonies and choral swells",
+              "MALE + CHOIR: Dramatic male soloist singing primary melody with majestic choral counterpoint"
+          );
+      }
+      if (details.hasMale && details.hasFemale) {
+          cues.push(
+              "MALE + FEMALE DUET: Soulful vocal duet with interlocking harmonies, expressive call-and-response, and dynamic passion"
+          );
+      }
+
+      if (cues.length === 0) {
+          cues.push(
+              `VOICE SIMULATION: Authentic human singing voices for ${details.activeVocals.join(' and ')} with natural vocal cords and expressive dynamics`
+          );
+      }
+
+      return cues[Math.floor(Math.random() * cues.length)];
+  }
+
   public isVocalInstrumentActive(): boolean {
       return Object.values(this.instruments).some(ch => {
           if (!ch.active || ch.visible === false || !ch.instrument) return false;
-          const inst = ch.instrument.toLowerCase();
-          return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase())) ||
-                 inst.includes('voice') || 
-                 inst.includes('choir') || 
-                 inst.includes('vocals') || 
-                 inst.includes('soprano') ||
-                 inst.includes('male') ||
-                 inst.includes('female') ||
-                 inst.includes('boy') ||
-                 inst.includes('girl') ||
-                 inst.includes('chant') ||
-                 inst.includes('a cappella') ||
-                 inst.includes('vocal ensemble');
+          return isVocalInstrument(ch.instrument);
       });
   }
 
@@ -1045,10 +1259,26 @@ export class LiveMusicHelper extends EventTarget {
           this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false } }));
           this.interpolateParameters();
           this.scheduleRefresh();
+
+          // When voice channels are active, DJ immediately cues Lyria with a vocal direction for this stage!
+          if (this.isVocalInstrumentActive()) {
+              this.lastDjVocalMessageTime = Date.now();
+              const stageVocalMsg = this.generateDjVocalSimulationMessage(currentStage.stageName);
+              if (stageVocalMsg) {
+                  this.sendVocalSignal(stageVocalMsg, 6000);
+                  this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { message: stageVocalMsg, stage: currentStage.stageName } }));
+              }
+          }
       }
-      if (this.generationMode === 'VOCALIZATION' && this.isVocalInstrumentActive() && Math.random() < 0.05) {
-          const v = VOWELS[Math.floor(Math.random() * VOWELS.length)];
-          this.sendVocalSignal(v);
+
+      // Continuous vocal guidance: DJ periodically sends human voice simulation messages to Lyria
+      if (this.isVocalInstrumentActive() && (Date.now() - this.lastDjVocalMessageTime > 9000) && !this.currentVocalSignal) {
+          this.lastDjVocalMessageTime = Date.now();
+          const vocalMsg = this.generateDjVocalSimulationMessage();
+          if (vocalMsg) {
+              this.sendVocalSignal(vocalMsg, 5000);
+              this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { message: vocalMsg } }));
+          }
       }
       this.interpolateParameters();
   }
@@ -1322,7 +1552,20 @@ export class LiveMusicHelper extends EventTarget {
 
   private async connect(): Promise<LiveMusicSession> {
     this.sessionCounter++; const currentSessionId = this.sessionCounter;
-    this.sessionPromise = this.ai.live.music.connect({ model: this.model, callbacks: { onmessage: async (e) => { if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); }, onerror: () => this.stop(), onclose: () => this.stop(), } });
+    this.sessionPromise = this.ai.live.music.connect({ 
+      model: this.model, 
+      callbacks: { 
+        onmessage: async (e) => { 
+          if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); 
+        }, 
+        onerror: (err: any) => { 
+          this.stop(); 
+          const errStr = err?.message || err?.toString() || 'API quota exceeded or connection error';
+          this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { text: `API Error: ${errStr}. Please check billing/quota details.`, type: 'error' } })); 
+        }, 
+        onclose: () => this.stop(), 
+      } 
+    });
     return this.sessionPromise;
   }
 
@@ -1339,10 +1582,28 @@ export class LiveMusicHelper extends EventTarget {
   private async processAudioChunks(audioChunks: AudioChunk[]) {
     if (!this.session || this.playbackState === 'paused') return;
     const audioBuffer = await decodeAudioData(decode(audioChunks[0].data!), this.audioContext, 48000, 2);
-    const source = this.audioContext.createBufferSource(); source.buffer = audioBuffer; source.connect(this.rawGain);
-    if (this.nextStartTime === 0) this.nextStartTime = this.audioContext.currentTime + this.bufferTime;
-    if (this.nextStartTime < this.audioContext.currentTime) this.nextStartTime = this.audioContext.currentTime + 0.05;
-    source.start(this.nextStartTime); this.nextStartTime += audioBuffer.duration;
+    const source = this.audioContext.createBufferSource(); 
+    source.buffer = audioBuffer; 
+
+    const chunkGain = this.audioContext.createGain();
+    const startTime = this.nextStartTime > this.audioContext.currentTime ? this.nextStartTime : this.audioContext.currentTime + 0.05;
+    chunkGain.gain.setValueAtTime(0.01, startTime);
+    chunkGain.gain.exponentialRampToValueAtTime(1.0, startTime + 0.02);
+
+    source.connect(chunkGain);
+    chunkGain.connect(this.rawGain);
+
+    if (this.nextStartTime === 0 || this.nextStartTime < this.audioContext.currentTime) {
+      this.nextStartTime = this.audioContext.currentTime + this.bufferTime;
+    }
+    
+    source.start(this.nextStartTime); 
+    this.activeSources.add(source);
+    source.onended = () => {
+      this.activeSources.delete(source);
+    };
+
+    this.nextStartTime += audioBuffer.duration;
   }
 
   public get activePrompts() { return Array.from(this.prompts.values()).filter((p) => p.weight > 0.01); }

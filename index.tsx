@@ -13,11 +13,11 @@ import { TopToolbar, MUSIC_DATA } from './components/TopToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-const model = 'lyria-realtime-exp';
+const model = 'models/lyria-realtime-exp';
 
 function main() {
   const initialPrompts = buildInitialPrompts();
@@ -27,7 +27,6 @@ function main() {
   const timeline = new Timeline();
   const pdjMidi = new PromptDjMidi();
   
-  let activeMusicSeed = Math.floor(Math.random() * 2147483647);
   let autoLoopCountdownTimer: number | null = null;
   let autoLoopSecondsRemaining = 20;
 
@@ -71,7 +70,6 @@ function main() {
   document.body.appendChild(toastMessage as any);
   const liveMusicHelper = new LiveMusicHelper(ai, model);
   liveMusicHelper.setWeightedPrompts(initialPrompts);
-  liveMusicHelper.setSeed(activeMusicSeed);
   
   liveMusicHelper.setMaxDuration(3); 
   timeline.maxDuration = 180; 
@@ -122,12 +120,11 @@ function main() {
   (topToolbar as any).addEventListener('genre-changed', ((e: Event) => {
       cancelAutoLoop();
       userChangedMode = false;
+      const genre = (e as CustomEvent<string>).detail;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
-          activeMusicSeed = Math.floor(Math.random() * 2147483647);
-          liveMusicHelper.setSeed(activeMusicSeed);
-          pdjMidi.setMessage(`GENRE CHANGE: NEW SEED GENERATED`, 'info');
+          pdjMidi.setMessage(`GENRE: ${genre.toUpperCase()}`, 'info');
       }
-      liveMusicHelper.setGlobalSettings({ genre: (e as CustomEvent<string>).detail });
+      liveMusicHelper.setGlobalSettings({ genre });
       if (liveMusicHelper.playbackState === 'stopped') {
         liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, leftSidebar.primaryMode);
       }
@@ -136,12 +133,11 @@ function main() {
   (topToolbar as any).addEventListener('style-changed', ((e: Event) => {
       cancelAutoLoop();
       userChangedMode = false;
+      const style = (e as CustomEvent<string>).detail;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
-          activeMusicSeed = Math.floor(Math.random() * 2147483647);
-          liveMusicHelper.setSeed(activeMusicSeed);
-          pdjMidi.setMessage(`STYLE CHANGE: NEW SEED GENERATED`, 'info');
+          pdjMidi.setMessage(`STYLE: ${style.toUpperCase()}`, 'info');
       }
-      liveMusicHelper.setGlobalSettings({ style: (e as CustomEvent<string>).detail });
+      liveMusicHelper.setGlobalSettings({ style });
       if (liveMusicHelper.playbackState === 'stopped') {
         liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, leftSidebar.primaryMode);
       }
@@ -151,9 +147,7 @@ function main() {
       cancelAutoLoop();
       const mood = (e as CustomEvent<string>).detail;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
-          activeMusicSeed = Math.floor(Math.random() * 2147483647);
-          liveMusicHelper.setSeed(activeMusicSeed);
-          pdjMidi.setMessage(`MOOD CHANGE: NEW SEED GENERATED`, 'info');
+          pdjMidi.setMessage(`MOOD: ${mood.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setMood(mood);
       if (liveMusicHelper.playbackState === 'stopped') {
@@ -168,6 +162,7 @@ function main() {
   (topToolbar as any).addEventListener('locks-changed', ((e: Event) => {
       const locks = (e as CustomEvent<any>).detail;
       liveMusicHelper.setToolbarLocks(locks);
+      rightSidebar.genreLocked = locks.genre;
   }));
   (topToolbar as any).addEventListener('meter-changed', ((e: Event) => {
       cancelAutoLoop();
@@ -310,8 +305,9 @@ function main() {
           if (!isLive) {
               // DJ plans music settings and can change instruments before music starts if not locked
               const rsLocks = (rightSidebar as any).locks;
+              const isLyra = rightSidebar.currentTab === 'Lyra' || (rightSidebar.currentTab as any) === 'Lira';
               if (!rsLocks.channels) {
-                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, leftSidebar.primaryMode, rightSidebar.currentTab === 'Lira');
+                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, leftSidebar.primaryMode, isLyra);
               }
               liveMusicHelper.generatePerformancePlan(0);
               pdjMidi.setMessage("DJ PLANNED MUSIC SETTINGS & READY", "info");
@@ -418,11 +414,7 @@ function main() {
       timeline.resetHistory(true);
       leftSidebar.isShuffling = true;
       
-      // 1. New Seed
-      activeMusicSeed = Math.floor(Math.random() * 2147483647);
-      liveMusicHelper.setSeed(activeMusicSeed);
-
-      // 2. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
+      // 1. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
       const selectedGenre = topToolbar.randomize();
 
       // 3. Use Current Evolution (Do not Randomize, just respect it)
@@ -431,19 +423,19 @@ function main() {
       
       // 4. Update Instruments and Manifest based on Style Matrix for current tab
       const rsLocks = (rightSidebar as any).locks;
-      const isLira = rightSidebar.currentTab === 'Lira';
-      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode, isLira);
+      if (!rsLocks.channels) {
+          const lyraGenres = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
+          const shouldBeLyra = lyraGenres.includes(selectedGenre);
+          rightSidebar.currentTab = shouldBeLyra ? 'Lyra' : 'Band';
+      }
+      const isLyra = rightSidebar.currentTab === 'Lyra' || (rightSidebar.currentTab as any) === 'Lira';
+      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode, isLyra);
       
       // 5. Intelligent Mode Selection based on Instruments
       const settings = rightSidebar.settings;
       const vocalChannels = (Object.values(settings) as ChannelState[]).filter(ch => {
           if (ch.visible === false) return false;
-          const inst = (ch.instrument || "").toLowerCase();
-          return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase())) ||
-                 inst.includes('voice') || 
-                 inst.includes('choir') || 
-                 inst.includes('vocals') || 
-                 inst.includes('soprano');
+          return isVocalInstrument(ch.instrument);
       });
       const hasVocalsInOutput = vocalChannels.length > 0;
       leftSidebar.hasVocalInstrument = hasVocalsInOutput;
@@ -497,12 +489,9 @@ function main() {
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
       liveMusicHelper.setSpecialInstruction(null);
-      
-      activeMusicSeed = 0;
-      liveMusicHelper.setSeed(activeMusicSeed);
 
       await topToolbar.randomizeInstruments();
-      pdjMidi.setMessage('ENGINE RESET (SEED: 0)', 'info');
+      pdjMidi.setMessage('ENGINE RESET', 'info');
       setTimeout(() => { leftSidebar.isResetting = false; }, 800);
   });
 
@@ -513,19 +502,17 @@ function main() {
       
       const vocalInManifest = (Object.values(detail) as ChannelState[]).some(ch => {
           if (ch.visible === false) return false;
-          const inst = (ch.instrument || "").toLowerCase();
-          return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase())) ||
-                 inst.includes('voice') || 
-                 inst.includes('choir') || 
-                 inst.includes('vocals') || 
-                 inst.includes('soprano');
+          return isVocalInstrument(ch.instrument);
       });
       leftSidebar.hasVocalInstrument = vocalInManifest;
 
-      if (vocalInManifest && !userChangedMode && liveMusicHelper.generationMode !== 'VOCALIZATION') {
-          liveMusicHelper.setGenerationMode('VOCALIZATION');
-          leftSidebar.primaryMode = 'VOCALIZATION';
-          pdjMidi.setMessage(`AUTO VOCAL MODE ACTIVATED`, "info");
+      if (vocalInManifest) {
+          if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
+              liveMusicHelper.setGenerationMode('VOCALIZATION');
+              leftSidebar.primaryMode = 'VOCALIZATION';
+              userChangedMode = false;
+              pdjMidi.setMessage(`VOICE CHANNEL ACTIVE -> VOCALIZATION ENABLED`, "info");
+          }
       } else if (liveMusicHelper.generationMode === 'VOCALIZATION' && !vocalInManifest) {
           liveMusicHelper.setGenerationMode('QUALITY');
           leftSidebar.primaryMode = 'QUALITY';
@@ -589,6 +576,19 @@ function main() {
         }
     }
   }));
+
+  (liveMusicHelper as any).addEventListener('dj-vocal-message', ((e: CustomEvent) => {
+    const { message, stage } = e.detail || {};
+    if (message) {
+      pdjMidi.setMessage(`DJ->LYRA [${stage ? stage.toUpperCase() : 'VOICE'}]: ${message}`, "info");
+    }
+  }) as EventListener);
+
+  (liveMusicHelper as any).addEventListener('vocal-signal-received', ((e: CustomEvent) => {
+    if (e.detail) {
+      pdjMidi.setMessage(`VOCAL DIRECTIVE: ${e.detail}`, "info");
+    }
+  }) as EventListener);
 
   audioAnalyser.addEventListener('audio-levels-changed', ((e: Event) => {
     const { left, right } = (e as CustomEvent<{left: number, right: number}>).detail;

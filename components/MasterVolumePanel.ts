@@ -57,7 +57,7 @@ export class MasterVolumePanel extends LitElement {
     }
 
     .volume-label {
-      font-size: 8px; 
+      font-size: 10.58px; 
       font-weight: bold;
       color: var(--text-muted);
       letter-spacing: 0.6px;
@@ -68,7 +68,7 @@ export class MasterVolumePanel extends LitElement {
 
     .value-display {
       font-family: monospace;
-      font-size: 9px;
+      font-size: 12.1px;
       color: var(--accent-color);
       font-weight: bold;
     }
@@ -82,7 +82,7 @@ export class MasterVolumePanel extends LitElement {
       user-select: none;
     }
     .toggle-text {
-      font-size: 7px;
+      font-size: 9.2px;
       font-weight: 900;
       color: var(--text-muted);
     }
@@ -131,7 +131,7 @@ export class MasterVolumePanel extends LitElement {
     }
 
     .metric-text {
-      font-size: 7px;
+      font-size: 8px;
       color: var(--text-muted);
       font-weight: bold;
     }

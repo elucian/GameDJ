@@ -31,7 +31,7 @@ export class Timeline extends LitElement {
       position: relative;
       overflow: hidden; 
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: 12.65px;
     }
     .ruler {
       height: 24px;
@@ -42,7 +42,7 @@ export class Timeline extends LitElement {
       padding-left: 100px;
       position: relative;
       user-select: none;
-      font-size: 9px;
+      font-size: 10.5px;
       overflow: hidden; 
       cursor: crosshair;
     }
@@ -101,7 +101,7 @@ export class Timeline extends LitElement {
     .time-display {
       color: var(--accent-color);
       font-family: monospace;
-      font-size: 16px;
+      font-size: 18.5px;
       font-weight: bold;
       line-height: 1.2;
       text-align: center;
@@ -111,7 +111,7 @@ export class Timeline extends LitElement {
     }
 
     .status-text {
-      font-size: 9px;
+      font-size: 10.5px;
       font-weight: bold;
       letter-spacing: 1.5px;
       text-transform: uppercase;
@@ -252,7 +252,7 @@ export class Timeline extends LitElement {
     .fade-label {
       position: absolute;
       top: 3px;
-      font-size: 8px;
+      font-size: 10.58px;
       white-space: nowrap;
       background: rgba(0, 0, 0, 0.85);
       color: #fff;

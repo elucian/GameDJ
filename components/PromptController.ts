@@ -135,7 +135,7 @@ export class PromptController extends LitElement {
     
     #text {
       font-weight: 700;
-      font-size: clamp(5px, 0.8vw, 8px);
+      font-size: clamp(7px, 1.1vw, 10.6px);
       letter-spacing: 0.05px;
       text-transform: uppercase;
       width: 100%;
@@ -168,7 +168,7 @@ export class PromptController extends LitElement {
         padding: 0 3px;
       }
       #text {
-        font-size: 6px;
+        font-size: 8px;
         margin-top: 1px;
       }
     }
