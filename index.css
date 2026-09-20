@@ -79,7 +79,7 @@ body {
     "left header right"
     "left main right"
     "left timeline right";
-  grid-template-rows: 49px minmax(0, 1fr) 80px; 
+  grid-template-rows: 57px minmax(0, 1fr) 80px; 
   grid-template-columns: 50px 1fr 290px;
 }
 
@@ -91,7 +91,7 @@ top-toolbar, left-sidebar, right-sidebar, bottom-timeline {
 body.dragging { cursor: ns-resize; }
 body.dragging * { user-select: none; pointer-events: none; }
 
-top-toolbar { grid-area: header; z-index: 10; border-bottom: 1px solid var(--border-color); }
+top-toolbar { grid-area: header; z-index: 10; border-bottom: 1px solid var(--border-color); padding-top: 4px; padding-bottom: 4px; box-sizing: border-box; }
 left-sidebar { grid-area: left; z-index: 5; border-right: 1px solid var(--border-color); }
 right-sidebar { grid-area: right; z-index: 5; border-left: 1px solid var(--border-color); }
 bottom-timeline { grid-area: timeline; z-index: 10; background: var(--bg-color); }
@@ -100,6 +100,7 @@ prompt-dj-midi {
   grid-area: main;
   width: 100%;
   height: 100%;
+  z-index: 1; /* Make sure it stays below the dialog */
 }
 toast-message { z-index: 9999; }
 

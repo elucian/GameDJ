@@ -186,7 +186,7 @@ export class MasterVolumePanel extends LitElement {
 
     .vu-meter {
       width: 100%;
-      height: 9px; 
+      height: 11px; 
       background: #050505;
       border-radius: 1px;
       display: flex;
@@ -199,25 +199,25 @@ export class MasterVolumePanel extends LitElement {
       overflow: hidden;
       padding: 1px;
       box-sizing: border-box;
-      gap: 2px;
+      gap: 3px;
       transition: height 0.2s ease;
     }
 
     .vu-meter.mono-expanded {
-      height: 20px; 
+      height: 24px; 
     }
 
     .led-segment {
-      width: 4px;
+      width: 3px;
+      flex-shrink: 0;
       background: #0a0a0a;
       transition: background 0.05s;
       border-radius: 0.5px;
-      flex-shrink: 0;
     }
 
     .led-segment.active {
       background: var(--led-color, #3dffab);
-      box-shadow: 0 0 6px var(--led-color);
+      box-shadow: 0 0 8px var(--led-color), 0 0 3px var(--led-color);
     }
   `;
 
@@ -290,22 +290,25 @@ export class MasterVolumePanel extends LitElement {
   }
 
   private renderLeds(level: number) {
-    const numSegments = 30; 
+    const numSegments = 50; 
     const segments = [];
     for (let i = 0; i < numSegments; i++) {
         const threshold = i / numSegments;
         const isActive = level > threshold;
-        let color = '#3dffab';
-        if (i > numSegments * 0.9) color = '#ff4444';
-        else if (i > numSegments * 0.7) color = '#ffdd28';
+        // Green: 0-55%, Yellow: 55-70%, Red: 70-100%
+        let color = '#3dffab'; // Green
+        if (i >= numSegments * 0.7) color = '#ff4444'; // Red
+        else if (i >= numSegments * 0.55) color = '#ffbb00'; // Bright Yellow-Orange
         segments.push(html`<div class="led-segment ${isActive ? 'active' : ''}" style="--led-color: ${color}"></div>`);
     }
     return segments;
   }
 
   render() {
-    const visualLevelL = this.smoothedLevelL * 7.0; 
-    const visualLevelR = this.smoothedLevelR * 7.0; 
+    // Cap level to volume knob position — meter must not overshoot the knob
+    const maxLevel = this.volume;
+    const visualLevelL = Math.min(this.smoothedLevelL * 7.0, maxLevel); 
+    const visualLevelR = Math.min(this.smoothedLevelR * 7.0, maxLevel); 
 
     return html`
       <div class="control-wrapper">

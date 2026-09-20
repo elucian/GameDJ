@@ -1,0 +1,14 @@
+{
+  "songs": [
+    { "title": "Bohemian Rhapsody", "artist": "Queen" },
+    { "title": "Imagine", "artist": "John Lennon" },
+    { "title": "Hotel California", "artist": "Eagles" },
+    { "title": "Yesterday", "artist": "The Beatles" },
+    { "title": "Smells Like Teen Spirit", "artist": "Nirvana" },
+    { "title": "Billie Jean", "artist": "Michael Jackson" },
+    { "title": "Hallelujah", "artist": "Leonard Cohen" },
+    { "title": "Like a Rolling Stone", "artist": "Bob Dylan" },
+    { "title": "Purple Haze", "artist": "Jimi Hendrix" },
+    { "title": "Sweet Child O' Mine", "artist": "Guns N' Roses" }
+  ]
+}

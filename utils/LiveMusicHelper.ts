@@ -38,18 +38,13 @@ export function isVocalInstrument(instrumentName: string | undefined | null): bo
     const inst = instrumentName.toLowerCase().trim();
     if (!inst || inst === 'none' || inst === 'n/a') return false;
     
-    // Core voice channels: Female, Male, Choir, Girl, Boy/Bou
-    if (inst.includes('female')) return true;
-    if (inst.includes('male')) return true;
+    // Core voice channels: Match specific vocal instrument patterns
     if (inst.includes('choir')) return true;
-    if (inst.includes('girl')) return true;
-    if (inst.includes('boy') || inst.includes('bou')) return true;
+    if (inst.includes('voice')) return true;
+    if (inst.includes('vocal')) return true;
+    if (inst.includes('solo female') || inst.includes('solo male') || inst.includes('solo girl') || inst.includes('solo boy')) return true;
     
-    // General vocal categories
-    if (inst.includes('voice') || inst.includes('vocal') || inst.includes('vocals')) return true;
-    if (inst.includes('soprano') || inst.includes('tenor') || inst.includes('baritone') || inst.includes('alto choir') || inst.includes('alto voice')) return true;
-    if (inst.includes('chant') || inst.includes('a cappella') || inst.includes('soloist') || inst.includes('operatic')) return true;
-    
+    // Fallback to explicit list for others
     return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase()));
 }
 
@@ -86,7 +81,7 @@ export class LiveMusicHelper extends EventTarget {
   private sessionPromise: Promise<LiveMusicSession> | null = null;
   private sessionCounter = 0; 
   private nextStartTime = 0;
-  private bufferTime = 0.35; 
+  public bufferTime = 3.0; // Large buffer: red cursor runs ahead, green starts after buffer fills
   public readonly audioContext: AudioContext;
   private rawGain: GainNode;
   private masterGain: GainNode;
@@ -170,7 +165,15 @@ export class LiveMusicHelper extends EventTarget {
   public get masterDestination() { return this._masterDestination; }
   private _masterDestination: AudioNode | null = null;
   public set masterDestination(node: AudioNode | null) {
-    this._masterDestination = node; if (node) { try { this.masterGain.disconnect(node); } catch(e) {} this.masterGain.connect(node); }
+    // Disconnect everything from masterGain first
+    try { this.masterGain.disconnect(); } catch(e) {}
+    
+    this._masterDestination = node; 
+    if (node) { 
+        this.masterGain.connect(node); 
+    } else {
+        this.masterGain.connect(this.audioContext.destination);
+    }
   }
 
   public setVolume(value: number) { 
@@ -276,7 +279,36 @@ export class LiveMusicHelper extends EventTarget {
     this.scheduleRefresh();
   }
 
-  public setInstruments(channels: InstrumentSet) { this.instruments = channels; this.scheduleRefresh(); }
+  public setInstruments(channels: InstrumentSet) { 
+      this.instruments = channels; 
+      this.scheduleRefresh(); 
+      
+      // Update model instructions with the new active instrument set
+      const activeInstruments = Object.entries(channels)
+          .filter(([_, ch]) => ch.active && ch.visible !== false)
+          .map(([_, ch]) => ch.instrument);
+      
+      const hasVocals = activeInstruments.some(inst => isVocalInstrument(inst));
+      
+      let instruction: string;
+      if (hasVocals) {
+          // Vocal-specific instructions when vocal instruments are active
+          const genreVocalHint = (() => {
+              const g = this.genre.toLowerCase();
+              if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+              if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+              if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+              if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+              return 'Use vocal styles appropriate for the genre.';
+          })();
+          instruction = `IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`;
+      } else {
+          // Instrumental-only instructions when no vocal instruments are active
+          instruction = `IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. STRICTLY INSTRUMENTAL — no vocals, no singing, no choir, no vocal chops. Maintain strict harmonic cohesion between instruments. Do not add any ghost instruments or unselected backing tracks.`;
+      }
+      
+      this.setSpecialInstruction(instruction);
+  }
   
   public notifyUserInteraction(id: string) { 
       this.userInteractionCooldowns.set(id, Date.now()); 
@@ -308,254 +340,79 @@ export class LiveMusicHelper extends EventTarget {
   private async refreshSessionPrompts() {
     if (!this.session) return;
     
-    // 1. Gather Nuance Prompts (Density, etc.)
-    const nuanceScale = 1.3; 
+    // 1. Set Native API Config
+    const config: any = {
+        musicGenerationMode: this.generationMode,
+        bpm: this.bpm,
+        guidance: 4.0,
+        temperature: 1.0,
+    };
     
-    const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
-        let dynamicScale = 0.5;
-        if (this.generationMode === 'QUALITY') {
-            const highFidelityPrompts = ['Authenticity', 'Presence', 'Brightness', 'Dynamics', 'Guidance'];
-            if (highFidelityPrompts.includes(p.text)) dynamicScale = 1.0;
-        } else if (this.generationMode === 'DIVERSITY') {
-            const highDiversityPrompts = ['Variation', 'Ornamentation', 'Complexity', 'Groove', 'Atmosphere'];
-            if (highDiversityPrompts.includes(p.text)) dynamicScale = 1.0;
-        } else if (this.generationMode === 'VOCALIZATION') {
-            const richnessPrompts = ['Texture', 'Density', 'Dynamics', 'Space', 'Organic'];
-            if (richnessPrompts.includes(p.text)) dynamicScale = 1.0;
+    const scaleMap: any = {
+        "C Major": "C_MAJOR_A_MINOR", "A Minor": "C_MAJOR_A_MINOR",
+        "D Major": "D_MAJOR_B_MINOR", "B Minor": "D_MAJOR_B_MINOR",
+        "F Major": "F_MAJOR_D_MINOR", "D Minor": "F_MAJOR_D_MINOR",
+        "G Major": "G_MAJOR_E_MINOR", "E Minor": "G_MAJOR_E_MINOR"
+    };
+    if (scaleMap[this.key]) {
+        config.scale = scaleMap[this.key];
+    }
+    try { await this.session.setMusicGenerationConfig({ musicGenerationConfig: config }); } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
+
+    // 2. Build Tokenized Prompt (Minimal Tokens)
+    let narrative = `[G:${this.genre}] [S:${this.style}] [M:${this.mood}] [B:${this.bpm}] `;
+    
+    // Instrument context
+    const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
+    keys.forEach((k) => {
+        const ch = this.instruments[k];
+        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+            narrative += `[${k.toUpperCase()}:${ch.instrument.replace(/\s+/g, '')}] `;
         }
-        return { text: `Nuance: ${p.text}`, weight: p.weight * dynamicScale * nuanceScale };
+    });
+
+    narrative += `[LANG:${this.getRegionalLanguage()}] [TEMPO_STRICT:${this.bpm}] `;
+
+    // Explicitly suppress vocals when not in VOCALIZATION mode
+    if (this.generationMode !== 'VOCALIZATION') {
+        narrative += `[INSTRUMENTAL_ONLY:true] [NO_VOCALS:true] [NO_SINGING:true] `;
+    }
+
+    if (this.specialInstruction) {
+        // If mode is not VOCALIZATION, strip any vocal-related instructions from the special instructions
+        let instruction = this.specialInstruction;
+        if (this.generationMode !== 'VOCALIZATION') {
+            instruction = instruction.replace(/vocal/gi, 'instrumental').replace(/singing/gi, 'playing').replace(/choir/gi, 'strings').replace(/voice/gi, 'instrument');
+        }
+        narrative += `[EXTRA:${instruction.substring(0, 150).replace(/\s+/g, '_')}] `;
+    }
+
+    const finalPayload = [ { text: narrative, weight: 1.5 } ];
+
+    const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
+        return { text: `[N:${p.text.replace(/\s+/g, '')}]`, weight: p.weight * 0.5 };
     }).filter(p => p.weight > 0.05); 
     
-    // LIRA MODE HANDLING
-    if (this.isLiraMode) {
-        const hasLocks = Object.values(this.toolbarLocks).some(Boolean);
-        let liraNarrative = `Create pristine, highly authentic traditional and acoustic music with true acoustic timbre, heartfelt melodic storytelling, and organic phrasing. `;
-        liraNarrative += `Develop the composition with clear musical paragraphs, thematic variation, and balanced motif repetitions without excessive mechanical loops. `;
-        
-        if (hasLocks) {
-            // Respect ONLY locked options, ignore unlocked options and ignore instrument settings
-            if (this.toolbarLocks.genre || this.toolbarLocks.style) {
-                liraNarrative += `Genre: ${this.genre}, Style: ${this.style}. `;
-            }
-            if (this.toolbarLocks.key && this.key) {
-                liraNarrative += `Key of ${this.key} ${this.mode}. `;
-            }
-            if (this.toolbarLocks.tempo && this.bpm) {
-                liraNarrative += `Tempo ${this.bpm} BPM`;
-                if (this.meter) liraNarrative += ` (${this.meter})`;
-                liraNarrative += `. `;
-            }
-            if (this.toolbarLocks.mood && this.mood && this.mood !== 'None') {
-                liraNarrative += `Mood: ${this.mood}. `;
-            }
-            liraNarrative += `Render organic, pure, acoustically authentic Lira performance honoring strictly the locked parameters above and ignoring unrequested channel or instrument overrides. `;
-        } else {
-            // Nothing is locked: DJ chooses guidance following genre and style
-            liraNarrative += `The DJ conductor guides this Lira performance to authentically follow the genre ${this.genre} and style ${this.style} with rich acoustic expression and emotional depth. `;
-        }
-
-        const vocalDetails = this.getActiveVocalDetails();
-        if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
-            liraNarrative += `Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. `;
-            if (this.currentVocalSignal) {
-                liraNarrative += `DJ to Lyria vocal instruction: ${this.currentVocalSignal}. `;
-            }
-        }
-
-        const finalPayload = [ { text: liraNarrative, weight: 10.0 } ];
-        const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
-        if (guidancePrompt) {
-            finalPayload.push({ text: `Nuance: Guidance`, weight: guidancePrompt.weight * 1.5 });
-        }
-        if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
-            const vocalDirective = this.currentVocalSignal 
-                ? `DJ TO LYRA DIRECTIVE: ${this.currentVocalSignal}. Simulate realistic human singing voice with organic vocal cords, formant resonance, and emotive vibrato.`
-                : `DJ TO LYRA DIRECTIVE: Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. Organic human vocal delivery, acoustic polyphony, and emotive melodic phrasing.`;
-            finalPayload.push({
-                text: vocalDirective,
-                weight: 16.0
-            });
-        }
-        finalPayload.push(...weightedPrompts);
-        try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); return; } catch (e) {}
-    }
-
-    // 2. Build Authoritative Master Prompt (Narrative format for Lyria)
-    let narrative = `PRIORITY DIRECTIVE: Adhere strictly to Genre (${this.genre}), Style (${this.style}), and Mood (${this.mood}). `;
-    narrative += `Compose an exceptionally authentic, emotionally resonant musical masterpiece in this exact genre and style. `;
-    narrative += `The music must unfold with a clear melodic story and distinct musical paragraphs (e.g. thematic introduction, developmental phrasing, expressive bridge, and graceful resolution). Incorporate natural motif repetitions for memorable musical hooks, but avoid excessive or tedious loop repetition; ensure organic variation and progressive storytelling. `;
-    
-    if (this.mood && this.mood !== 'None') {
-        narrative += `The mood and emotional narrative of the piece should feel deeply ${this.mood.toLowerCase()}. `;
-    }
-
-    if (this.bpm || this.meter || this.key) {
-        narrative += `To maintain strict musical structure, compose this piece `;
-        if (this.bpm) narrative += `at ${this.bpm} BPM, `;
-        if (this.meter) narrative += `in ${this.meter} time, `;
-        if (this.key) narrative += `in the key of ${this.key} ${this.mode}. `;
-    }
-
-    // Mode separation rule
-    if (this.isLiraMode) {
-        narrative += `MODE ENFORCEMENT: This is a Lira acoustic performance. Use strictly authentic Lira instruments and traditional acoustic orchestration. Do not inject modern band or electronic drums/synths. `;
-    } else {
-        narrative += `MODE ENFORCEMENT: This is a Band performance. Use strictly the selected Band instruments. Do not inject Lira or orchestral solo acoustic strings unless explicitly active. `;
-    }
-
-    // Conductor Stage - High Priority Context for Storytelling
-    if (this.conductorMode && this.currentStatusMessage) {
-        narrative += `The music must evolve to tell a dynamic story. Right now, the arrangement should reflect this section: "${this.currentStatusMessage}". `;
-    }
-
-    // Instrumentation Rules - Explicit White-listing
-    const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-    const labels = ['Lead', 'Alto', 'Harmonic', 'Bass', 'Rhythm'];
-    
-    const activeDefs: string[] = [];
-    const activeNames: string[] = [];
-    const mutedDefs: string[] = [];
-
-    keys.forEach((k, i) => {
-        const ch = this.instruments[k];
-        let instName = ch.instrument || 'None';
-        
-        // ORCHESTRAL STACKING LOGIC
-        if (k === 'lead' && ch.active && instName !== 'None') {
-            if (!instName.toLowerCase().includes('section') && !instName.toLowerCase().includes('ensemble')) {
-                instName = `${instName} (Ensemble Section)`;
-            }
-        }
-        
-        // Check active AND weight. If weight is very low, treat as muted
-        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
-            activeDefs.push(`${labels[i]} (${instName})`);
-            activeNames.push(instName);
-        } else {
-            mutedDefs.push(labels[i]);
-        }
-    });
-
-    // Determine Strict Formation
-    const count = activeNames.length;
-    let formation = 'an ensemble';
-    if (count === 0) formation = 'complete silence';
-    else if (count === 1) formation = 'a solo performance';
-    else if (count === 2) formation = 'a duet';
-    else if (count === 3) formation = 'a trio';
-    else if (count === 4) formation = 'a quartet';
-    else if (count === 5) formation = 'a quintet';
-
-    narrative += `The arrangement must be beautifully orchestrated as ${formation}. `;
-    
-    if (activeDefs.length > 0) {
-        narrative += `It is absolutely critical that ONLY the following instruments are playing: ${activeDefs.join(' and ')}. `;
-    }
-
-    if (mutedDefs.length > 0) {
-        narrative += `The following roles are muted and must be completely silent: ${mutedDefs.join(', ')}. `;
-    }
-
-    if (this.channelsLocked) {
-        narrative += `INSTRUMENT LOCK ENFORCEMENT: The user has locked the instrument channels. These exact instruments have absolute highest priority and must not be substituted or altered. `;
-    }
-
-    // Anti-Ghost Instruments Logic
-    const common = ['Piano', 'Drums', 'Guitar', 'Bass', 'Synth', 'Strings', 'Percussion', 'Vocals'];
-    const activeUpper = activeNames.map(n => n.toUpperCase());
-    const strictlyForbidden = common.filter(c => !activeUpper.some(a => a.includes(c.toUpperCase())));
-    if (strictlyForbidden.length > 0) {
-        narrative += `Do NOT add any backing tracks or default instruments. Specifically, there must be NO ${strictlyForbidden.join(', NO ')} unless explicitly requested above. `;
-    }
-
-    narrative += `ANTI-CACOPHONY DIRECTIVE: Maintain pristine acoustic clarity, gorgeous melodic contour, and rich harmonic consonance at all times. All instruments must play together harmoniously with perfect consonance, sharing the same key, chord progression, and unified groove. Avoid any atonal dissonance, random percussive clutter, abrasive feedback, or conflicting polyrhythms. Every voice must sing with a clear, lyrical melodic purpose. Make it sound professional, structured, and emotionally resonant. `;
-
-    if (this.instruments.rhythm.active && this.instruments.rhythm.weight > 0) {
-        narrative += `The rhythm track provides the main groove. `;
-    } else {
-        narrative += `The bass or harmonic foundation provides the main groove since there are no drums. `;
-    }
-
-    // Guidance / References
-    const guidancePrompt = Array.from(this.prompts.values()).find(p => p.text === 'Guidance');
-    const guidanceWeight = guidancePrompt?.weight ?? 1.0; 
-
-    if (guidanceWeight < 0.5) {
-        narrative += `This should be a purely original, highly creative interpretation. `;
-    } else {
-        const ref = this.specialInstruction || 'popular genre standard';
-        narrative += `Use "${ref}" as a stylistic reference for the composition. `;
-    }
-
-    // Vocal Override
-    const vocalDetails = this.getActiveVocalDetails();
-    if (this.generationMode === 'VOCALIZATION' || vocalDetails.hasAny) {
-         narrative += `This is a vocal performance in ${this.getRegionalLanguage()}. `;
-         narrative += `Simulate authentic human singing voices with realistic vocal tract resonance, emotional expression, human breathing nuances, and natural melodic delivery for ${vocalDetails.activeVocals.join(', ')}. `;
-         if (this.currentVocalSignal) {
-             narrative += `DJ Vocal Instruction to Lyria: ${this.currentVocalSignal}. `;
-         }
-    } else {
-        narrative += `Focus on the highest possible ${this.generationMode.toLowerCase()} for the audio generation. `;
-    }
-
-    // Construct Payload
-    const finalPayload = [ { text: narrative, weight: 10.0 } ];
-
-    if (vocalDetails.hasAny || this.generationMode === 'VOCALIZATION') {
-        const vocalDirective = this.currentVocalSignal 
-            ? `DJ TO LYRA DIRECTIVE: ${this.currentVocalSignal}. Simulate realistic human singing voice with organic vocal cords, formant resonance, and natural vibrato.`
-            : `DJ TO LYRA DIRECTIVE: Simulate authentic human singing voices for ${vocalDetails.activeVocals.join(' and ')}. Expressive human vocal delivery, organic vibrato, emotional melodic phrasing, and lyrical syllable singing.`;
-        finalPayload.push({
-            text: vocalDirective,
-            weight: 16.0
-        });
-    }
-    
-    // 3. Add Individual Instrument Prompts (Reinforcement with higher priority when locked)
-    const instrumentMultiplier = this.channelsLocked ? 25.0 : 12.0;
-
-    keys.forEach((k, i) => {
-        const ch = this.instruments[k];
-        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
-            let roleContext = "";
-            if (k === 'lead') roleContext = "Primary Melody (Ensemble)";
-            if (k === 'alto') roleContext = "Melodic Support (Doubling Lead)";
-            if (k === 'bass') roleContext = "Rhythmic Foundation (Lock with Drums)";
-            
-            const lockPrefix = this.channelsLocked ? "STRICT LOCKED INSTRUMENT -> " : "MANDATORY ACTIVE INSTRUMENT -> ";
-            finalPayload.push({ 
-                text: `${lockPrefix}${labels[i]}: ${ch.instrument}. ${roleContext}`, 
-                weight: ch.weight * instrumentMultiplier 
-            });
-        } else {
-            finalPayload.push({
-                text: `MANDATORY SILENCE FOR ${labels[i].toUpperCase()}. DO NOT GENERATE ANY AUDIO FOR THIS ROLE. DO NOT ADD DEFAULT INSTRUMENTS.`,
-                weight: 10.0
-            });
-        }
-    });
-    
     finalPayload.push(...weightedPrompts);
-    try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); } catch (e) {}
+    try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); } catch (e) { console.error("setWeightedPrompts failed:", e); }
   }
-
   private getRegionalLanguage(): string {
-    const g = this.genre.toLowerCase();
-    if (g === 'romanian') return 'Romanian';
-    if (g === 'indian') return 'Hindi/Sanskrit';
-    if (g === 'spiritual') return 'Liturgical Latin/Greek';
-    if (g === 'african') return 'Swahili/Yoruba';
-    if (g === 'irish') return 'Irish Gaelic';
-    if (g === 'spanish') return 'Spanish/Portuguese';
-    if (g === 'oriental') {
-        const s = this.style.toLowerCase();
-        if (s.includes('japanese')) return 'Japanese';
-        if (s.includes('chinese')) return 'Mandarin';
-        if (s.includes('arabic')) return 'Arabic';
-        return 'Oriental Phonemes';
-    }
-    return 'English';
+      const g = this.genre.toLowerCase();
+      if (g === 'romanian') return 'Romanian';
+      if (g === 'indian') return 'Hindi/Sanskrit';
+      if (g === 'spiritual') return 'Liturgical Latin/Greek';
+      if (g === 'african') return 'Swahili/Yoruba';
+      if (g === 'irish') return 'Irish-Gaelic';
+      if (g === 'spanish') return 'Spanish';
+      if (g === 'celtic') return 'Celtic';
+      if (g === 'oriental') {
+          const s = this.style.toLowerCase();
+          if (s.includes('japanese')) return 'Japanese';
+          if (s.includes('chinese')) return 'Mandarin';
+          if (s.includes('arabic')) return 'Arabic';
+          return 'Oriental-Phonemes';
+      }
+      return 'English';
   }
 
   private getActiveLimit() {
@@ -595,6 +452,15 @@ export class LiveMusicHelper extends EventTarget {
       };
   }
 
+  private getVocalStyleHint(genre: string): string {
+      const g = genre.toLowerCase();
+      if (g.includes('indian')) return 'in a traditional Indian Hindustani or Carnatic style';
+      if (g.includes('irish') || g.includes('celtic')) return 'in a traditional Irish or Celtic folk style';
+      if (g.includes('spanish') || g.includes('flamenco')) return 'in a traditional Spanish or Flamenco style';
+      if (g.includes('romanian')) return 'in a traditional Romanian or Balkan style';
+      return 'in a natural authentic style';
+  }
+
   public generateDjVocalSimulationMessage(stageName?: string): string {
       const details = this.getActiveVocalDetails();
       if (!details.hasAny) return '';
@@ -603,131 +469,95 @@ export class LiveMusicHelper extends EventTarget {
       const isClimax = stage.includes('chorus') || stage.includes('climax') || stage.includes('drop') || stage.includes('peak');
       const isIntro = stage.includes('intro') || stage.includes('warmup');
       const isOutro = stage.includes('outro') || stage.includes('fade');
+      const styleHint = this.getVocalStyleHint(this.genre);
 
       const cues: string[] = [];
+      const addCue = (msg: string) => cues.push(`${msg} ${styleHint}`);
 
       if (details.hasFemale) {
           if (isClimax) {
-              cues.push(
-                  "FEMALE VOCAL: Soaring emotional chorus hook with powerful belt, expressive vibrato, and melodic runs",
-                  "FEMALE VOCAL: High expressive vocal climax with passionate dynamics and lyrical storytelling"
-              );
+              addCue("FEMALE VOCAL: Soaring emotional chorus hook with powerful belt, expressive vibrato, and melodic runs");
+              addCue("FEMALE VOCAL: High expressive vocal climax with passionate dynamics and lyrical storytelling");
           } else if (isIntro) {
-              cues.push(
-                  "FEMALE VOCAL: Atmospheric melodic humming, soft breathing dynamics, and intimate vocal entrance",
-                  "FEMALE VOCAL: Gentle vocalise introduction with delicate melodic ornaments"
-              );
+              addCue("FEMALE VOCAL: Atmospheric melodic humming, soft breathing dynamics, and intimate vocal entrance");
+              addCue("FEMALE VOCAL: Gentle vocalise introduction with delicate melodic ornaments");
           } else if (isOutro) {
-              cues.push(
-                  "FEMALE VOCAL: Graceful sustained emotional tones, fading melodic vibrato, and gentle vocal resolution",
-                  "FEMALE VOCAL: Soft acoustic vocal ad-libs gently resolving the melody"
-              );
+              addCue("FEMALE VOCAL: Graceful sustained emotional tones, fading melodic vibrato, and gentle vocal resolution");
+              addCue("FEMALE VOCAL: Soft acoustic vocal ad-libs gently resolving the melody");
           } else {
-              cues.push(
-                  "FEMALE VOCAL: Emotive lead verses with natural human vocal resonance, clear tone, and soulful phrasing",
-                  "FEMALE VOCAL: Lyrical vocal storytelling singing expressive syllables and melodic hooks",
-                  "FEMALE VOCAL: Warm chest-to-head voice transitions with authentic human expression"
-              );
+              addCue("FEMALE VOCAL: Emotive lead verses with natural human vocal resonance, clear tone, and soulful phrasing");
+              addCue("FEMALE VOCAL: Lyrical vocal storytelling singing expressive syllables and melodic hooks");
+              addCue("FEMALE VOCAL: Warm chest-to-head voice transitions with authentic human expression");
           }
       }
 
       if (details.hasMale) {
           if (isClimax) {
-              cues.push(
-                  "MALE VOCAL: Soaring tenor climax with impassioned chest resonance and powerful melodic delivery",
-                  "MALE VOCAL: Dramatic vocal hook with dynamic energy, natural vibrato, and full acoustic presence"
-              );
+              addCue("MALE VOCAL: Soaring tenor climax with impassioned chest resonance and powerful melodic delivery");
+              addCue("MALE VOCAL: Dramatic vocal hook with dynamic energy, natural vibrato, and full acoustic presence");
           } else if (isIntro) {
-              cues.push(
-                  "MALE VOCAL: Low resonant vocal hums, deep chest tone, and subtle melodic entrance",
-                  "MALE VOCAL: Atmospheric acoustic vocal murmurs establishing the song motif"
-              );
+              addCue("MALE VOCAL: Low resonant vocal hums, deep chest tone, and subtle melodic entrance");
+              addCue("MALE VOCAL: Atmospheric acoustic vocal murmurs establishing the song motif");
           } else if (isOutro) {
-              cues.push(
-                  "MALE VOCAL: Warm baritone sustained notes resolving the harmonic progression gracefully",
-                  "MALE VOCAL: Quiet vocal hums and gentle acoustic fade"
-              );
+              addCue("MALE VOCAL: Warm baritone sustained notes resolving the harmonic progression gracefully");
+              addCue("MALE VOCAL: Quiet vocal hums and gentle acoustic fade");
           } else {
-              cues.push(
-                  "MALE VOCAL: Charismatic baritone/tenor verses with rich acoustic chest warmth and clear diction",
-                  "MALE VOCAL: Soulful melodic phrasing with natural vocal inflection and emotive resonance",
-                  "MALE VOCAL: Storytelling vocal delivery singing expressive lyrical lines"
-              );
+              addCue("MALE VOCAL: Charismatic baritone/tenor verses with rich acoustic chest warmth and clear diction");
+              addCue("MALE VOCAL: Soulful melodic phrasing with natural vocal inflection and emotive resonance");
+              addCue("MALE VOCAL: Storytelling vocal delivery singing expressive lyrical lines");
           }
       }
 
       if (details.hasGirl) {
           if (isClimax) {
-              cues.push(
-                  "GIRL VOCAL: Clear crystalline soprano soaring on the chorus with pure, bright resonance",
-                  "GIRL VOCAL: High sweet melodic refrain carrying radiant emotional energy"
-              );
+              addCue("GIRL VOCAL: Clear crystalline soprano soaring on the chorus with pure, bright resonance");
+              addCue("GIRL VOCAL: High sweet melodic refrain carrying radiant emotional energy");
           } else {
-              cues.push(
-                  "GIRL VOCAL: Delicate young girl soloist singing clear, innocent melodies with pure acoustic timbre",
-                  "GIRL VOCAL: Sweet crystalline vocal refrains with bright pitch accuracy and gentle expression",
-                  "GIRL VOCAL: Gentle girl solo voice carrying the primary theme with acoustic purity"
-              );
+              addCue("GIRL VOCAL: Delicate young girl soloist singing clear, innocent melodies with pure acoustic timbre");
+              addCue("GIRL VOCAL: Sweet crystalline vocal refrains with bright pitch accuracy and gentle expression");
+              addCue("GIRL VOCAL: Gentle girl solo voice carrying the primary theme with acoustic purity");
           }
       }
 
       if (details.hasBoy) {
           if (isClimax) {
-              cues.push(
-                  "BOY VOCAL: Soaring treble soloist reaching bell-like acoustic peaks with sacred clarity",
-                  "BOY VOCAL: Angelic boy soprano singing impassioned melodic lines with pure resonance"
-              );
+              addCue("BOY VOCAL: Soaring treble soloist reaching bell-like acoustic peaks with sacred clarity");
+              addCue("BOY VOCAL: Angelic boy soprano singing impassioned melodic lines with pure resonance");
           } else {
-              cues.push(
-                  "BOY VOCAL: Angelic boy treble soloist with sacred acoustic clarity, singing pure thematic motifs",
-                  "BOY VOCAL: Pure treble soloist vocalizing melodic lines with pristine acoustic warmth",
-                  "BOY VOCAL: Clear bell-like boy soprano melody with delicate breath phrasing"
-              );
+              addCue("BOY VOCAL: Angelic boy treble soloist with sacred acoustic clarity, singing pure thematic motifs");
+              addCue("BOY VOCAL: Pure treble soloist vocalizing melodic lines with pristine acoustic warmth");
+              addCue("BOY VOCAL: Clear bell-like boy soprano melody with delicate breath phrasing");
           }
       }
 
       if (details.hasChoir) {
           if (isClimax) {
-              cues.push(
-                  "CHOIR: Majestic fortissimo choral swell with rich 4-part harmonies and triumphant cathedral polyphony",
-                  "CHOIR: Powerful full choir harmonic explosion supporting the melodic climax"
-              );
+              addCue("CHOIR: Majestic fortissimo choral swell with rich 4-part harmonies and triumphant cathedral polyphony");
+              addCue("CHOIR: Powerful full choir harmonic explosion supporting the melodic climax");
           } else if (isIntro) {
-              cues.push(
-                  "CHOIR: Ethereal pianissimo vocal pads and gentle cathedral choir hums",
-                  "CHOIR: Subtle atmospheric chanting and mystical choral hums entering softly"
-              );
+              addCue("CHOIR: Ethereal pianissimo vocal pads and gentle cathedral choir hums");
+              addCue("CHOIR: Subtle atmospheric chanting and mystical choral hums entering softly");
           } else {
-              cues.push(
-                  "CHOIR: Lush multi-part choir harmonies with expansive acoustic polyphony and vocal backing beds",
-                  "CHOIR: Cathedral choral ensemble singing rich harmonic counterpoint and sacred chants",
-                  "CHOIR: Expressive backing choir vocal harmonies enriching the acoustic texture"
-              );
+              addCue("CHOIR: Lush multi-part choir harmonies with expansive acoustic polyphony and vocal backing beds");
+              addCue("CHOIR: Cathedral choral ensemble singing rich harmonic counterpoint and sacred chants");
+              addCue("CHOIR: Expressive backing choir vocal harmonies enriching the acoustic texture");
           }
       }
 
       if (details.hasFemale && details.hasChoir) {
-          cues.push(
-              "FEMALE + CHOIR: Emotive female lead vocal soaring passionately over lush cathedral backing choir harmonies",
-              "FEMALE + CHOIR: Dynamic call-and-response between female soloist and rich polyphonic choir"
-          );
+          addCue("FEMALE + CHOIR: Emotive female lead vocal soaring passionately over lush cathedral backing choir harmonies");
+          addCue("FEMALE + CHOIR: Dynamic call-and-response between female soloist and rich polyphonic choir");
       }
       if (details.hasMale && details.hasChoir) {
-          cues.push(
-              "MALE + CHOIR: Resonant male lead vocal supported by expansive 4-part choir harmonies and choral swells",
-              "MALE + CHOIR: Dramatic male soloist singing primary melody with majestic choral counterpoint"
-          );
+          addCue("MALE + CHOIR: Resonant male lead vocal supported by expansive 4-part choir harmonies and choral swells");
+          addCue("MALE + CHOIR: Dramatic male soloist singing primary melody with majestic choral counterpoint");
       }
       if (details.hasMale && details.hasFemale) {
-          cues.push(
-              "MALE + FEMALE DUET: Soulful vocal duet with interlocking harmonies, expressive call-and-response, and dynamic passion"
-          );
+          addCue("MALE + FEMALE DUET: Soulful vocal duet with interlocking harmonies, expressive call-and-response, and dynamic passion");
       }
 
       if (cues.length === 0) {
-          cues.push(
-              `VOICE SIMULATION: Authentic human singing voices for ${details.activeVocals.join(' and ')} with natural vocal cords and expressive dynamics`
-          );
+          addCue(`VOICE SIMULATION: Authentic human singing voices for ${details.activeVocals.join(' and ')} with natural vocal cords and expressive dynamics`);
       }
 
       return cues[Math.floor(Math.random() * cues.length)];
@@ -752,153 +582,11 @@ export class LiveMusicHelper extends EventTarget {
       });
   }
 
-  public applyAuthenticPresets(genre: string, style: string, mood: string, mode: MusicGenerationMode = 'QUALITY') {
-      const activeLimit = this.getActiveLimit();
-      const weights: Record<string, number> = {
-          'Guidance': 1.0, 'Density': 0, 'Dynamics': 0, 'Groove': 0, 'Attack': 0, 'Staccato': 0,
-          'Brightness': 0, 'Complexity': 0, 'Ornamentation': 0, 'Variation': 0, 'Glide': 0, 'Presence': 0,
-          'Space': 0, 'Organic': 0, 'Texture': 0, 'Width': 0, 'Atmosphere': 0, 'Authenticity': 0
-      };
-
-      const g = genre.toLowerCase();
-      
-      // Base weighting by mode
-      if (mode === 'QUALITY') {
-          weights['Guidance'] = 1.3; weights['Authenticity'] = 1.6; weights['Dynamics'] = 1.4; weights['Presence'] = 1.2;
-      } else if (mode === 'DIVERSITY') {
-          weights['Variation'] = 1.8; weights['Ornamentation'] = 1.6; weights['Complexity'] = 1.5; weights['Groove'] = 1.4;
-      } else if (mode === 'VOCALIZATION') {
-          weights['Texture'] = 1.7; weights['Organic'] = 1.8; weights['Space'] = 1.6; weights['Dynamics'] = 1.4; weights['Authenticity'] = 1.5;
-      }
-
-      // Additive weighting by genre
-      if (g.includes('jazz')) {
-          weights['Groove'] += 0.6; weights['Complexity'] += 0.4; weights['Dynamics'] += 0.2; weights['Ornamentation'] += 0.3; weights['Organic'] += 0.5; weights['Space'] += 0.2;
-      } else if (g.includes('electronic') || g.includes('gaming')) {
-          weights['Density'] += 0.8; weights['Attack'] += 0.5; weights['Groove'] += 0.7; weights['Brightness'] += 0.4; weights['Texture'] += 0.4; weights['Atmosphere'] += 0.5;
-      } else if (g.includes('rock') || g.includes('pop')) {
-          weights['Attack'] += 0.6; weights['Dynamics'] += 0.5; weights['Groove'] += 0.4; weights['Presence'] += 0.3; weights['Width'] += 0.3; weights['Authenticity'] += 0.2;
-      } else if (g.includes('spiritual') || g.includes('classic') || g.includes('marching')) {
-          // Increase width and density for orchestral feeling
-          weights['Space'] += 0.3; weights['Atmosphere'] += 0.4; weights['Dynamics'] += 0.5; weights['Width'] += 0.7; weights['Density'] += 0.4;
-      } else {
-          weights['Dynamics'] += 0.3; weights['Space'] += 0.2; weights['Organic'] += 0.4; weights['Atmosphere'] += 0.1; weights['Variation'] += 0.2;
-      }
-
-      // High authenticity boost for specific genres and styles requiring authenticity
-      const authenticKeywords = ['traditional', 'spiritual', 'classical', 'folk', 'regional', 'african', 'indian', 'irish', 'spanish', 'oriental', 'romanian', 'western', 'hawaiian', 'marching', 'cinematic', 'ballad', 'orchestral', 'baroque', 'choir', 'opera', 'flamenco', 'bossa', 'salsa', 'reggae', 'blues', 'jazz', 'acoustic', 'celtic'];
-      if (authenticKeywords.some(kw => g.includes(kw) || style.toLowerCase().includes(kw))) {
-          weights['Authenticity'] += 2.8;
-          weights['Organic'] += 2.0;
-          weights['Space'] += 0.5;
-      }
-
-      // If genre is locked, increase authenticity, guidance and reduce density
-      if (this.toolbarLocks.genre) {
-          weights['Authenticity'] += 4.5;
-          weights['Guidance'] += 4.0;
-          weights['Density'] -= 2.5;
-      }
-
-      // Accurate solos require increased guidance and presence
-      if (this.isSoloActive()) {
-          weights['Guidance'] += 4.0;
-          weights['Authenticity'] += 1.8;
-          weights['Presence'] += 1.5;
-      }
-
-      if (mood !== 'None') {
-          switch (mood) {
-              case 'Aggressive':
-              case 'Intense':
-              case 'Tense':
-                  weights['Attack'] += 0.9; weights['Density'] += 0.7; weights['Dynamics'] += 0.5;
-                  break;
-              case 'Calm':
-              case 'Peaceful':
-              case 'Meditative':
-                  weights['Space'] += 0.9; weights['Density'] -= 0.6; weights['Atmosphere'] += 0.4; weights['Dynamics'] -= 0.3;
-                  break;
-              case 'Epic':
-              case 'Heroic':
-              case 'Cinematic':
-              case 'Dramatic':
-                  weights['Width'] += 0.9; weights['Atmosphere'] += 0.7; weights['Dynamics'] += 0.8; weights['Density'] += 0.4;
-                  break;
-              case 'Ethereal':
-              case 'Dreamy':
-              case 'Spiritual':
-              case 'Mysterious':
-                  weights['Space'] += 0.9; weights['Atmosphere'] += 0.9; weights['Glide'] += 0.4; weights['Width'] += 0.5;
-                  break;
-              case 'Happy':
-              case 'Joyful':
-              case 'Uplifting':
-              case 'Energetic':
-              case 'Party':
-                  weights['Brightness'] += 0.7; weights['Groove'] += 0.6; weights['Attack'] += 0.4; weights['Presence'] += 0.5;
-                  break;
-              case 'Sad':
-              case 'Melancholic':
-              case 'Sentimental':
-              case 'Nostalgic':
-                  weights['Authenticity'] += 0.8; weights['Organic'] += 0.7; weights['Dynamics'] -= 0.2; weights['Space'] += 0.3;
-                  break;
-              case 'Dark':
-              case 'Ominous':
-                  weights['Atmosphere'] += 0.8; weights['Brightness'] -= 0.6; weights['Density'] += 0.3; weights['Space'] += 0.4;
-                  break;
-              case 'Groovy':
-              case 'Sexy':
-              case 'Hypnotic':
-                  weights['Groove'] += 0.9; weights['Texture'] += 0.5; weights['Presence'] += 0.4;
-                  break;
-              case 'Romantic':
-              case 'Elegant':
-                  weights['Organic'] += 0.8; weights['Dynamics'] += 0.4; weights['Authenticity'] += 0.6;
-                  break;
-              case 'Whimsical':
-              case 'Quirky':
-                  weights['Ornamentation'] += 0.8; weights['Staccato'] += 0.6; weights['Variation'] += 0.5;
-                  break;
-              case 'Soulful':
-                  weights['Authenticity'] += 0.9; weights['Organic'] += 0.7; weights['Dynamics'] += 0.5;
-                  break;
-              case 'Triumphal':
-                  weights['Brightness'] += 0.8; weights['Dynamics'] += 0.7; weights['Attack'] += 0.6; weights['Width'] += 0.5;
-                  break;
-          }
-      }
-
-      if (this.isVocalInstrumentActive()) weights['Authenticity'] += 0.8;
-
-      // Increase Guidance importance when channels are locked to ensure strict adherence
-      if (this.channelsLocked) {
-          weights['Guidance'] += 2.0; 
-      }
-
-      const sorted = Object.entries(weights).filter(([k, v]) => v > 0 || k === 'Guidance').sort((a, b) => b[1] - a[1]);
-      const chosen = new Set(sorted.slice(0, activeLimit).map(s => s[0]));
-      
+  public resetKnobsToZero() {
       this.prompts.forEach(p => {
-          if (chosen.has(p.text)) p.weight = weights[p.text] || (0.5 + Math.random());
-          else p.weight = 0;
-          p.volume = p.weight / 2;
+          p.weight = 0;
+          p.volume = 0;
       });
-
-      const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-      channels.forEach(ch => { this.instruments[ch].weight = 1.0; });
-      if (g.includes('ambient') || g.includes('spiritual')) {
-          this.instruments.rhythm.weight = 0.4;
-          this.instruments.bass.weight = 0.7;
-      } else if (g.includes('electronic') || g.includes('gaming')) {
-          this.instruments.rhythm.weight = 1.2;
-      } else if (g.includes('romanian')) {
-          this.instruments.lead.weight = 1.2;
-          this.instruments.rhythm.weight = 1.1;
-      }
-      
-      this.dispatchEvent(new CustomEvent('conductor-instruments-update', { detail: this.instruments }));
       this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts }));
       this.scheduleRefresh();
   }
@@ -907,7 +595,8 @@ export class LiveMusicHelper extends EventTarget {
       const templates: { name: string, type: string, durationPct: number }[][] = [];
       
       const isClassical = ['Classic', 'Cinematic', 'Spiritual', 'Victorian', 'Renascentist', 'Ambient', 'Oriental', 'Marching'].includes(genre);
-      const isJazz = ['Jazz', 'Blues', 'Western'].includes(genre);
+      const isJazz = ['Jazz', 'Blues'].includes(genre);
+      const isWestern = ['Western', 'Hawaiian'].includes(genre);
       const isElectronic = ['Electronic', 'Gaming'].includes(genre);
       
       // --- Classical / Traditional / Cinematic / Marching ---
@@ -968,7 +657,34 @@ export class LiveMusicHelper extends EventTarget {
               ]);
           }
       } 
-      // --- Jazz / Blues / Western ---
+      // --- Western / Hawaiian ---
+      else if (isWestern) {
+          // 1. Cowboy Ballad (Slow, storytelling)
+          templates.push([
+              { name: "Lonesome Intro", type: 'intro', durationPct: 0.15 },
+              { name: "Campfire Verse", type: 'main', durationPct: 0.25 },
+              { name: "Trail Ride", type: 'groove', durationPct: 0.2 },
+              { name: "Sunset Chorus", type: 'climax', durationPct: 0.25 },
+              { name: "Fade to Prairie", type: 'outro', durationPct: 0.15 }
+          ]);
+          // 2. Bluegrass Hoedown (Fast, energetic)
+          templates.push([
+              { name: "Banjo Pickin'", type: 'intro', durationPct: 0.1 },
+              { name: "Fiddle Tune", type: 'main', durationPct: 0.25 },
+              { name: "Barn Dance", type: 'groove', durationPct: 0.25 },
+              { name: "Hoedown Finale", type: 'climax', durationPct: 0.25 },
+              { name: "Goodnight Y'all", type: 'outro', durationPct: 0.15 }
+          ]);
+          // 3. Spaghetti Western (Cinematic, dramatic)
+          templates.push([
+              { name: "Desert Wind", type: 'intro', durationPct: 0.2 },
+              { name: "Gunfighter's Theme", type: 'main', durationPct: 0.25 },
+              { name: "Showdown at Noon", type: 'build', durationPct: 0.2 },
+              { name: "Final Duel", type: 'climax', durationPct: 0.25 },
+              { name: "Ride into Sunset", type: 'outro', durationPct: 0.1 }
+          ]);
+      }
+      // --- Jazz / Blues ---
       else if (isJazz) {
           // 1. Standard Jazz Form
           templates.push([
@@ -1027,7 +743,7 @@ export class LiveMusicHelper extends EventTarget {
       return templates[Math.floor(Math.random() * templates.length)];
   }
 
-  private generatePerformancePlan(startOffset: number = 0) {
+  public generatePerformancePlan(startOffset: number = 0) {
       this.currentPlan = [];
       const totalSec = this.maxDurationMinutes * 60;
       
@@ -1093,13 +809,254 @@ export class LiveMusicHelper extends EventTarget {
       }
   }
 
+  // === GENRE KNOB DATABANK ===
+  // Musical instruction profiles for each genre — defines appropriate knob ranges
+  // Format: { knob: [min, max, default] } — DJ interpolates within these bounds
+  private static readonly GENRE_KNOB_PROFILES: Record<string, Record<string, [number, number, number]>> = {
+      'Jazz': {
+          'Guidance': [0.8, 1.5, 1.2], 'Authenticity': [0.8, 1.5, 1.0], 'Organic': [0.8, 1.5, 1.2],
+          'Dynamics': [0.6, 1.4, 1.0], 'Presence': [0.6, 1.2, 0.9], 'Space': [0.4, 1.0, 0.7],
+          'Width': [0.3, 0.8, 0.5], 'Brightness': [0.3, 0.8, 0.5], 'Texture': [0.3, 0.8, 0.5],
+          'Atmosphere': [0.4, 1.0, 0.6], 'Groove': [0.8, 1.5, 1.2], 'Complexity': [0.5, 1.2, 0.8],
+          'Ornamentation': [0.3, 0.9, 0.6], 'Variation': [0.2, 0.8, 0.4], 'Density': [0.2, 0.7, 0.4],
+          'Attack': [0.1, 0.5, 0.3], 'Staccato': [0.0, 0.4, 0.2], 'Glide': [0.2, 0.8, 0.5]
+      },
+      'Blues': {
+          'Guidance': [0.8, 1.5, 1.2], 'Authenticity': [1.0, 1.8, 1.4], 'Organic': [1.0, 1.6, 1.3],
+          'Dynamics': [0.7, 1.4, 1.0], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.5, 1.1, 0.8],
+          'Width': [0.3, 0.7, 0.5], 'Brightness': [0.2, 0.6, 0.4], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.5, 1.0, 0.7], 'Groove': [0.9, 1.5, 1.2], 'Complexity': [0.3, 0.8, 0.5],
+          'Ornamentation': [0.4, 1.0, 0.7], 'Variation': [0.2, 0.6, 0.4], 'Density': [0.2, 0.6, 0.4],
+          'Attack': [0.2, 0.6, 0.4], 'Staccato': [0.0, 0.3, 0.1], 'Glide': [0.3, 0.9, 0.6]
+      },
+      'Western': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.0, 1.6, 1.4],
+          'Dynamics': [0.5, 1.2, 0.8], 'Presence': [0.6, 1.2, 0.9], 'Space': [0.8, 1.5, 1.2],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.3, 0.7, 0.5], 'Texture': [0.2, 0.6, 0.4],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [0.5, 1.0, 0.7], 'Complexity': [0.2, 0.6, 0.4],
+          'Ornamentation': [0.3, 0.8, 0.5], 'Variation': [0.2, 0.6, 0.4], 'Density': [0.1, 0.5, 0.3],
+          'Attack': [0.1, 0.4, 0.2], 'Staccato': [0.0, 0.3, 0.1], 'Glide': [0.4, 1.0, 0.7]
+      },
+      'Hawaiian': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.0, 1.6, 1.4],
+          'Dynamics': [0.4, 1.0, 0.7], 'Presence': [0.5, 1.1, 0.8], 'Space': [0.9, 1.5, 1.2],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.4, 0.8, 0.6], 'Texture': [0.2, 0.5, 0.3],
+          'Atmosphere': [0.7, 1.3, 1.0], 'Groove': [0.4, 0.9, 0.6], 'Complexity': [0.1, 0.5, 0.3],
+          'Ornamentation': [0.2, 0.6, 0.4], 'Variation': [0.1, 0.5, 0.3], 'Density': [0.1, 0.4, 0.2],
+          'Attack': [0.0, 0.3, 0.1], 'Staccato': [0.0, 0.2, 0.1], 'Glide': [0.5, 1.1, 0.8]
+      },
+      'Electronic': {
+          'Guidance': [0.8, 1.4, 1.1], 'Authenticity': [0.3, 0.8, 0.5], 'Organic': [0.2, 0.6, 0.4],
+          'Dynamics': [0.8, 1.5, 1.2], 'Presence': [0.7, 1.4, 1.0], 'Space': [0.3, 0.8, 0.5],
+          'Width': [0.5, 1.2, 0.8], 'Brightness': [0.5, 1.2, 0.8], 'Texture': [0.6, 1.3, 0.9],
+          'Atmosphere': [0.4, 1.0, 0.7], 'Groove': [0.8, 1.5, 1.2], 'Complexity': [0.4, 1.0, 0.7],
+          'Ornamentation': [0.2, 0.7, 0.4], 'Variation': [0.4, 1.0, 0.7], 'Density': [0.6, 1.3, 1.0],
+          'Attack': [0.5, 1.2, 0.8], 'Staccato': [0.3, 0.9, 0.6], 'Glide': [0.2, 0.7, 0.4]
+      },
+      'Gaming': {
+          'Guidance': [0.8, 1.4, 1.1], 'Authenticity': [0.4, 0.9, 0.6], 'Organic': [0.3, 0.7, 0.5],
+          'Dynamics': [0.9, 1.6, 1.3], 'Presence': [0.8, 1.5, 1.1], 'Space': [0.4, 0.9, 0.6],
+          'Width': [0.6, 1.3, 0.9], 'Brightness': [0.5, 1.1, 0.8], 'Texture': [0.5, 1.2, 0.8],
+          'Atmosphere': [0.5, 1.1, 0.8], 'Groove': [0.7, 1.4, 1.0], 'Complexity': [0.5, 1.1, 0.8],
+          'Ornamentation': [0.3, 0.8, 0.5], 'Variation': [0.5, 1.1, 0.8], 'Density': [0.5, 1.2, 0.9],
+          'Attack': [0.6, 1.3, 0.9], 'Staccato': [0.4, 1.0, 0.7], 'Glide': [0.3, 0.8, 0.5]
+      },
+      'Rock': {
+          'Guidance': [0.9, 1.5, 1.2], 'Authenticity': [0.6, 1.2, 0.9], 'Organic': [0.5, 1.1, 0.8],
+          'Dynamics': [1.0, 1.6, 1.3], 'Presence': [0.9, 1.5, 1.2], 'Space': [0.3, 0.7, 0.5],
+          'Width': [0.6, 1.2, 0.9], 'Brightness': [0.6, 1.2, 0.9], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.3, 0.8, 0.5], 'Groove': [0.7, 1.3, 1.0], 'Complexity': [0.4, 0.9, 0.6],
+          'Ornamentation': [0.3, 0.7, 0.5], 'Variation': [0.3, 0.8, 0.5], 'Density': [0.6, 1.2, 0.9],
+          'Attack': [0.7, 1.4, 1.0], 'Staccato': [0.4, 0.9, 0.6], 'Glide': [0.1, 0.5, 0.3]
+      },
+      'Pop': {
+          'Guidance': [0.9, 1.5, 1.2], 'Authenticity': [0.5, 1.0, 0.7], 'Organic': [0.4, 0.9, 0.6],
+          'Dynamics': [0.8, 1.4, 1.1], 'Presence': [0.8, 1.4, 1.1], 'Space': [0.4, 0.8, 0.6],
+          'Width': [0.5, 1.1, 0.8], 'Brightness': [0.6, 1.2, 0.9], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.4, 0.9, 0.6], 'Groove': [0.8, 1.4, 1.1], 'Complexity': [0.3, 0.8, 0.5],
+          'Ornamentation': [0.3, 0.7, 0.5], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.5, 1.0, 0.7],
+          'Attack': [0.5, 1.0, 0.7], 'Staccato': [0.3, 0.7, 0.5], 'Glide': [0.3, 0.7, 0.5]
+      },
+      'Classic': {
+          'Guidance': [1.0, 1.8, 1.4], 'Authenticity': [1.4, 2.0, 1.7], 'Organic': [1.2, 1.8, 1.5],
+          'Dynamics': [0.6, 1.4, 1.0], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.8, 1.5, 1.2],
+          'Width': [0.7, 1.4, 1.0], 'Brightness': [0.4, 0.9, 0.6], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.7, 1.4, 1.0], 'Groove': [0.3, 0.8, 0.5], 'Complexity': [0.6, 1.3, 0.9],
+          'Ornamentation': [0.5, 1.1, 0.8], 'Variation': [0.3, 0.8, 0.5], 'Density': [0.3, 0.8, 0.5],
+          'Attack': [0.2, 0.6, 0.4], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.5, 1.1, 0.8]
+      },
+      'Opera': {
+          'Guidance': [1.1, 1.8, 1.5], 'Authenticity': [1.5, 2.0, 1.8], 'Organic': [1.3, 1.8, 1.6],
+          'Dynamics': [0.8, 1.6, 1.2], 'Presence': [0.9, 1.5, 1.2], 'Space': [0.9, 1.6, 1.3],
+          'Width': [0.8, 1.5, 1.1], 'Brightness': [0.5, 1.0, 0.7], 'Texture': [0.6, 1.1, 0.8],
+          'Atmosphere': [0.8, 1.5, 1.1], 'Groove': [0.2, 0.6, 0.4], 'Complexity': [0.7, 1.4, 1.0],
+          'Ornamentation': [0.6, 1.2, 0.9], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.4, 0.9, 0.6],
+          'Attack': [0.3, 0.7, 0.5], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.6, 1.2, 0.9]
+      },
+      'Marching': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.3, 1.9, 1.6], 'Organic': [0.8, 1.4, 1.1],
+          'Dynamics': [0.9, 1.6, 1.3], 'Presence': [1.0, 1.6, 1.3], 'Space': [0.5, 1.0, 0.7],
+          'Width': [0.8, 1.4, 1.1], 'Brightness': [0.6, 1.1, 0.8], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.4, 0.9, 0.6], 'Groove': [0.8, 1.4, 1.1], 'Complexity': [0.4, 0.9, 0.6],
+          'Ornamentation': [0.3, 0.8, 0.5], 'Variation': [0.2, 0.6, 0.4], 'Density': [0.6, 1.2, 0.9],
+          'Attack': [0.7, 1.3, 1.0], 'Staccato': [0.6, 1.2, 0.9], 'Glide': [0.1, 0.4, 0.2]
+      },
+      'Ambient': {
+          'Guidance': [0.8, 1.4, 1.1], 'Authenticity': [0.9, 1.6, 1.3], 'Organic': [1.0, 1.7, 1.4],
+          'Dynamics': [0.3, 0.9, 0.6], 'Presence': [0.4, 1.0, 0.7], 'Space': [1.0, 1.8, 1.5],
+          'Width': [0.7, 1.4, 1.0], 'Brightness': [0.2, 0.6, 0.4], 'Texture': [0.6, 1.2, 0.9],
+          'Atmosphere': [0.9, 1.6, 1.3], 'Groove': [0.1, 0.5, 0.3], 'Complexity': [0.3, 0.8, 0.5],
+          'Ornamentation': [0.2, 0.6, 0.4], 'Variation': [0.3, 0.8, 0.5], 'Density': [0.1, 0.5, 0.3],
+          'Attack': [0.0, 0.3, 0.1], 'Staccato': [0.0, 0.2, 0.1], 'Glide': [0.7, 1.4, 1.0]
+      },
+      'Spiritual': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.4, 2.0, 1.7], 'Organic': [1.2, 1.8, 1.5],
+          'Dynamics': [0.4, 1.0, 0.7], 'Presence': [0.6, 1.2, 0.9], 'Space': [1.0, 1.7, 1.4],
+          'Width': [0.6, 1.2, 0.9], 'Brightness': [0.3, 0.7, 0.5], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.9, 1.6, 1.3], 'Groove': [0.2, 0.6, 0.4], 'Complexity': [0.4, 0.9, 0.6],
+          'Ornamentation': [0.4, 0.9, 0.6], 'Variation': [0.2, 0.6, 0.4], 'Density': [0.2, 0.6, 0.4],
+          'Attack': [0.1, 0.4, 0.2], 'Staccato': [0.0, 0.3, 0.1], 'Glide': [0.6, 1.2, 0.9]
+      },
+      'African': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.7, 1.4, 1.0], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.6, 1.2, 0.9],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.5, 1.0, 0.7], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [1.0, 1.6, 1.3], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.4, 0.9, 0.6], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.4, 0.9, 0.6],
+          'Attack': [0.4, 0.9, 0.6], 'Staccato': [0.3, 0.8, 0.5], 'Glide': [0.3, 0.8, 0.5]
+      },
+      'Indian': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.3, 1.9, 1.6], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.5, 1.1, 0.8], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.7, 1.4, 1.0],
+          'Width': [0.5, 1.0, 0.7], 'Brightness': [0.4, 0.9, 0.6], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.7, 1.3, 1.0], 'Groove': [0.6, 1.2, 0.9], 'Complexity': [0.6, 1.2, 0.9],
+          'Ornamentation': [0.6, 1.2, 0.9], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.3, 0.7, 0.5],
+          'Attack': [0.2, 0.6, 0.4], 'Staccato': [0.1, 0.5, 0.3], 'Glide': [0.5, 1.1, 0.8]
+      },
+      'Irish': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.6, 1.3, 0.9], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.7, 1.3, 1.0],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.5, 1.0, 0.7], 'Texture': [0.3, 0.8, 0.5],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [0.7, 1.3, 1.0], 'Complexity': [0.4, 0.9, 0.6],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.3, 0.8, 0.5], 'Density': [0.3, 0.7, 0.5],
+          'Attack': [0.3, 0.7, 0.5], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.4, 0.9, 0.6]
+      },
+      'Spanish': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.0, 1.6, 1.3],
+          'Dynamics': [0.7, 1.4, 1.0], 'Presence': [0.8, 1.4, 1.1], 'Space': [0.6, 1.2, 0.9],
+          'Width': [0.5, 1.0, 0.7], 'Brightness': [0.5, 1.0, 0.7], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [0.8, 1.4, 1.1], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.4, 0.8, 0.6],
+          'Attack': [0.4, 0.9, 0.6], 'Staccato': [0.3, 0.8, 0.5], 'Glide': [0.4, 0.9, 0.6]
+      },
+      'Oriental': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.3, 1.9, 1.6], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.4, 1.0, 0.7], 'Presence': [0.6, 1.2, 0.9], 'Space': [0.8, 1.5, 1.2],
+          'Width': [0.5, 1.0, 0.7], 'Brightness': [0.3, 0.8, 0.5], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.8, 1.4, 1.1], 'Groove': [0.4, 0.9, 0.6], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.3, 0.7, 0.5], 'Density': [0.2, 0.6, 0.4],
+          'Attack': [0.1, 0.5, 0.3], 'Staccato': [0.1, 0.4, 0.2], 'Glide': [0.6, 1.2, 0.9]
+      },
+      'Romanian': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.6, 1.3, 0.9], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.7, 1.3, 1.0],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.4, 0.9, 0.6], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [0.7, 1.3, 1.0], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.3, 0.7, 0.5],
+          'Attack': [0.3, 0.7, 0.5], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.4, 0.9, 0.6]
+      },
+      'Victorian': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.3, 1.9, 1.6], 'Organic': [1.0, 1.6, 1.3],
+          'Dynamics': [0.6, 1.3, 0.9], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.8, 1.4, 1.1],
+          'Width': [0.6, 1.2, 0.9], 'Brightness': [0.4, 0.9, 0.6], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.7, 1.3, 1.0], 'Groove': [0.4, 0.9, 0.6], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.3, 0.7, 0.5], 'Density': [0.3, 0.7, 0.5],
+          'Attack': [0.2, 0.6, 0.4], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.5, 1.0, 0.7]
+      },
+      'Renascentist': {
+          'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.4, 2.0, 1.7], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.5, 1.1, 0.8], 'Presence': [0.6, 1.2, 0.9], 'Space': [0.9, 1.5, 1.2],
+          'Width': [0.5, 1.0, 0.7], 'Brightness': [0.4, 0.8, 0.6], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.8, 1.4, 1.1], 'Groove': [0.3, 0.7, 0.5], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.2, 0.6, 0.4], 'Density': [0.2, 0.6, 0.4],
+          'Attack': [0.1, 0.5, 0.3], 'Staccato': [0.1, 0.4, 0.2], 'Glide': [0.5, 1.1, 0.8]
+      }
+  };
+
+  // Stage modifiers — how much to adjust from the genre default for each stage type
+  private static readonly STAGE_MODIFIERS: Record<string, Record<string, number>> = {
+      'intro':      { 'Density': -0.3, 'Dynamics': -0.3, 'Space': +0.3, 'Atmosphere': +0.3, 'Brightness': -0.2, 'Attack': -0.2 },
+      'percussion': { 'Groove': +0.5, 'Attack': +0.4, 'Density': +0.3, 'Dynamics': +0.3, 'Staccato': +0.3 },
+      'verse':      { 'Groove': +0.2, 'Dynamics': +0.1, 'Presence': +0.1, 'Density': +0.1, 'Variation': +0.1 },
+      'main':       { 'Groove': +0.2, 'Dynamics': +0.1, 'Presence': +0.1, 'Density': +0.1, 'Variation': +0.1 },
+      'chorus':     { 'Dynamics': +0.5, 'Width': +0.4, 'Brightness': +0.3, 'Density': +0.3, 'Presence': +0.4, 'Attack': +0.3, 'Atmosphere': +0.2 },
+      'climax':     { 'Dynamics': +0.5, 'Width': +0.4, 'Brightness': +0.3, 'Density': +0.3, 'Presence': +0.4, 'Attack': +0.3, 'Atmosphere': +0.2 },
+      'build':      { 'Dynamics': +0.3, 'Density': +0.2, 'Atmosphere': +0.3, 'Variation': +0.2, 'Presence': +0.2 },
+      'solo':       { 'Presence': +0.5, 'Ornamentation': +0.4, 'Dynamics': +0.3, 'Space': -0.1, 'Authenticity': +0.3, 'Organic': +0.3 },
+      'duet':       { 'Presence': +0.3, 'Space': +0.2, 'Dynamics': +0.2, 'Organic': +0.2, 'Authenticity': +0.2 },
+      'breakdown':  { 'Density': -0.4, 'Space': +0.4, 'Atmosphere': +0.4, 'Dynamics': -0.3, 'Brightness': -0.3, 'Attack': -0.3 },
+      'groove':     { 'Groove': +0.5, 'Density': +0.3, 'Attack': +0.2, 'Dynamics': +0.2, 'Staccato': +0.2 },
+      'outro':      { 'Space': +0.5, 'Atmosphere': +0.5, 'Dynamics': -0.4, 'Density': -0.4, 'Brightness': -0.3, 'Glide': +0.3 }
+  };
+
+  private getKnobTargetsForStage(type: string): { parameterName: string; targetValue: number }[] {
+      const g = this.genre;
+      const profile = LiveMusicHelper.GENRE_KNOB_PROFILES[g] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
+      const stageMod = LiveMusicHelper.STAGE_MODIFIERS[type] || {};
+
+      const merged: Record<string, number> = {};
+
+      // Apply genre profile defaults + stage modifiers
+      Object.entries(profile).forEach(([knob, [min, max, defaultVal]]) => {
+          const modifier = stageMod[knob] || 0;
+          let value = defaultVal + modifier;
+          // Clamp to genre-appropriate range
+          value = Math.max(min, Math.min(max, value));
+          merged[knob] = value;
+      });
+
+      // === CACOPHONY PREVENTION ===
+      // Mutual exclusion: Density vs Space
+      if (merged['Density'] > 0.7 && merged['Space'] > 0.7) {
+          if (merged['Density'] > merged['Space']) merged['Space'] = 0.4;
+          else merged['Density'] = 0.4;
+      }
+      // Brightness vs Atmosphere
+      if (merged['Brightness'] > 0.8 && merged['Atmosphere'] > 0.8) {
+          merged['Brightness'] = 0.6;
+      }
+      // Attack vs Glide
+      if (merged['Attack'] > 0.7 && merged['Glide'] > 0.5) {
+          merged['Glide'] = 0.3;
+      }
+      // Staccato vs Glide
+      if (merged['Staccato'] > 0.5 && merged['Glide'] > 0.3) {
+          merged['Glide'] = 0.2;
+      }
+
+      // Limit active knobs
+      const MAX_ACTIVE_KNOBS = 8;
+      const activeKnobs = Object.entries(merged).filter(([_, v]) => v > 0.3);
+      if (activeKnobs.length > MAX_ACTIVE_KNOBS) {
+          const sorted = activeKnobs.sort((a, b) => b[1] - a[1]);
+          sorted.slice(MAX_ACTIVE_KNOBS).forEach(([k]) => { merged[k] = 0; });
+      }
+
+      // Ensure harmonic foundation
+      merged['Guidance'] = Math.max(merged['Guidance'] || 0, 0.8);
+
+      return Object.entries(merged)
+          .filter(([_, v]) => v > 0.05)
+          .map(([parameterName, targetValue]) => ({ parameterName, targetValue }));
+  }
+
   private addStage(time: number, name: string, availableKeys: Array<keyof InstrumentSet>, type: string) {
       const stage: PerformancePlanStage = {
           stageName: name,
           stageStartTimeSec: time,
           activeChannels: { lead: false, alto: false, harmonic: false, bass: false, rhythm: false },
           channelWeights: { lead: 0, alto: 0, harmonic: 0, bass: 0, rhythm: 0 },
-          targets: []
+          targets: this.getKnobTargetsForStage(type)
       };
 
       const setStrict = (keys: Array<keyof InstrumentSet>, weight: number = 1.0) => {
@@ -1108,11 +1065,17 @@ export class LiveMusicHelper extends EventTarget {
               stage.activeChannels[k] = false;
               stage.channelWeights[k] = 0;
           });
+          
+          // Apply dynamic gain scaling to prevent clipping (distortion)
+          // If 3+ channels are active, reduce weight to share headroom
+          const activeCount = keys.length;
+          const effectiveWeight = activeCount > 2 ? weight * (2 / activeCount) : weight;
+
           // Enable specific
           keys.forEach(k => {
               if (availableKeys.includes(k)) {
                   stage.activeChannels[k] = true;
-                  stage.channelWeights[k] = weight;
+                  stage.channelWeights[k] = effectiveWeight;
               }
           });
       };
@@ -1226,7 +1189,13 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private startConductor() { if (this.conductorTimer) clearInterval(this.conductorTimer); if (!this.conductorMode) return; this.conductorTimer = window.setInterval(() => this.updateConductor(), 200); }
-  private stopConductor() { if (this.conductorTimer) { clearInterval(this.conductorTimer); this.conductorTimer = null; } this.activeHands = []; }
+  public stopConductor() { 
+      if (this.conductorTimer) { 
+          clearInterval(this.conductorTimer); 
+          this.conductorTimer = null; 
+      } 
+      this.activeHands = []; 
+  }
   
   private updateConductor() {
       if (!this.conductorMode || (this.playbackState !== 'playing' && this.playbackState !== 'recording' && this.playbackState !== 'warmup' && this.playbackState !== 'preparing')) return;
@@ -1398,11 +1367,18 @@ export class LiveMusicHelper extends EventTarget {
     if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }
     this.playbackStartTime = performance.now();
     const startOffset = this.elapsedSeconds;
+    let smoothedElapsed = startOffset;
     const tick = () => {
       if (this.playbackState === 'playing' || this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing') {
         const now = performance.now();
         const duration = (now - this.playbackStartTime) / 1000;
-        let nextElapsed = startOffset + duration;
+        const rawElapsed = startOffset + duration;
+
+        // Exponential moving average to smooth out rAF timing jitter
+        const alpha = 0.3;
+        smoothedElapsed = smoothedElapsed + alpha * (rawElapsed - smoothedElapsed);
+        // Snap to 1ms precision to eliminate sub-millisecond oscillation
+        const nextElapsed = Math.round(smoothedElapsed * 1000) / 1000;
 
         if (this.playbackState === 'recording') {
             this.recordSnapshot(nextElapsed);
@@ -1504,16 +1480,12 @@ export class LiveMusicHelper extends EventTarget {
     this.audioContext.resume();
     this.currentStatusMessage = '';
 
-    if (this.conductorMode) {
-        this.applyAuthenticPresets(this.genre, this.style, this.mood, this.generationMode);
-    }
-    
     // Always use fallback/procedural routine for standalone conductor
     this.generatePerformancePlan(0);
 
     this.setPlaybackState('loading');
     
-    await this.startSession();
+    await this.connect();
 
     if (this.conductorMode) {
       const d = this.maxDurationMinutes;
@@ -1566,7 +1538,12 @@ export class LiveMusicHelper extends EventTarget {
         onclose: () => this.stop(), 
       } 
     });
-    return this.sessionPromise;
+    this.session = await this.sessionPromise;
+    // Set prompts and config before starting the stream
+    await this.refreshSessionPrompts();
+    // Start the music stream - required by Lyria API
+    this.session.play();
+    return this.session;
   }
 
   private setPlaybackState(state: PlaybackState) { 
@@ -1586,9 +1563,10 @@ export class LiveMusicHelper extends EventTarget {
     source.buffer = audioBuffer; 
 
     const chunkGain = this.audioContext.createGain();
-    const startTime = this.nextStartTime > this.audioContext.currentTime ? this.nextStartTime : this.audioContext.currentTime + 0.05;
+    // Increased safety buffer for startup timing to prevent clicking/stuttering
+    const startTime = this.nextStartTime > this.audioContext.currentTime ? this.nextStartTime : this.audioContext.currentTime + 0.1;
     chunkGain.gain.setValueAtTime(0.01, startTime);
-    chunkGain.gain.exponentialRampToValueAtTime(1.0, startTime + 0.02);
+    chunkGain.gain.exponentialRampToValueAtTime(1.0, startTime + 0.05);
 
     source.connect(chunkGain);
     chunkGain.connect(this.rawGain);
@@ -1603,6 +1581,7 @@ export class LiveMusicHelper extends EventTarget {
       this.activeSources.delete(source);
     };
 
+    // Schedule next segment
     this.nextStartTime += audioBuffer.duration;
   }
 
@@ -1653,10 +1632,33 @@ export class LiveMusicHelper extends EventTarget {
     }, (this.maxDurationMinutes * 60 + 5) * 1000);
   }
 
-  private async startSession() { this.session = await this.connect(); await this.refreshSessionPrompts(); this.session.play(); }
+  public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string): Promise<string> {
+      if (!this.ai) {
+          console.error("AI not initialized");
+          return "Error: AI not initialized.";
+      }
+      try {
+          const prompt = songTitle
+              ? `Translate or adapt 2 verses of the song "${songTitle}" into ${lang}. The style should fit a ${genre} genre.`
+              : `Create ${verseCount} verses of lyrics, with ${lineCount} lines per verse, for a ${genre} song in ${lang}. 
+                 Return ONLY the lyrics in standard block format (e.g. [Verse 1], [Chorus]). Do not include any intro, outro, explanations, or commentary.`;
+          
+          console.log("Generating lyrics with prompt:", prompt);
+          
+          // Try gemini-3.1-flash-lite
+          const result = await (this.ai as any).models.generateContent({
+              model: 'gemini-3.1-flash-lite',
+              contents: prompt
+          });
+          
+          return (result.text || "Could not generate lyrics.").trim();
+      } catch (e) {
+          console.error("Lyrics generation failed:", e);
+          return `Error: ${e}`;
+      }
+  }
 
   public async stop(saveRecording = true, resetToZero = false) {
-    this.stopConductor();
     this.stopTimeTracking(); uiSounds.stopRewindSound();
     this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
     if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }

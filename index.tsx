@@ -12,6 +12,7 @@ import { ToastMessage } from './components/ToastMessage';
 import { TopToolbar, MUSIC_DATA } from './components/TopToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
+import { VocalDialog } from './components/VocalDialog';
 import { Timeline } from './components/Timeline';
 import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
@@ -24,6 +25,7 @@ function main() {
   const topToolbar = new TopToolbar();
   const leftSidebar = new LeftSidebar();
   const rightSidebar = new RightSidebar();
+  const vocalDialog = new VocalDialog();
   const timeline = new Timeline();
   const pdjMidi = new PromptDjMidi();
   
@@ -63,12 +65,50 @@ function main() {
   pdjMidi.interactionEnabled = true; 
   document.body.appendChild(topToolbar as any);
   document.body.appendChild(leftSidebar as any);
+  document.body.appendChild(vocalDialog as any);
+  
+  (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {
+    vocalDialog.show = !vocalDialog.show;
+    vocalDialog.genre = topToolbar.genre;
+  });
+
+  (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
+    const { genre, lang, verseCount, lineCount } = e.detail;
+    pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre}...`, "info");
+    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, verseCount, lineCount);
+    vocalDialog.vocalText = lyrics;
+  });
+
+  (vocalDialog as any).addEventListener('request-song-translation', async (e: CustomEvent) => {
+    const { genre, lang, songTitle } = e.detail;
+    pdjMidi.setMessage(`TRANSLATING ${songTitle.toUpperCase()}...`, "info");
+    // Pass default verseCount/lineCount for translation (or reasonable defaults)
+    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, 2, 4, songTitle);
+    vocalDialog.vocalText = lyrics;
+  });
+
+  (vocalDialog as any).addEventListener('send-vocal-command', (e: CustomEvent) => {
+    liveMusicHelper.setSpecialInstruction(`VOCAL DIRECTIVE: ${e.detail}`);
+    pdjMidi.setMessage(`VOCAL DIRECTIVE SENT`, "info");
+    
+    // If we were waiting for the conductor or preparing, try to start
+    if (liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing') {
+        (liveMusicHelper as any).playRecording();
+    }
+  });
   document.body.appendChild(pdjMidi as any);
   document.body.appendChild(rightSidebar as any);
   document.body.appendChild(timeline as any);
   const toastMessage = new ToastMessage();
   document.body.appendChild(toastMessage as any);
   const liveMusicHelper = new LiveMusicHelper(ai, model);
+  
+  // Resume AudioContext on first interaction
+  document.addEventListener('click', () => {
+      if (liveMusicHelper.audioContext.state === 'suspended') {
+          liveMusicHelper.audioContext.resume();
+      }
+  }, { once: true });
   liveMusicHelper.setWeightedPrompts(initialPrompts);
   
   liveMusicHelper.setMaxDuration(3); 
@@ -91,7 +131,6 @@ function main() {
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
       topToolbar.randomizeInstruments(); 
-      liveMusicHelper.applyAuthenticPresets('Jazz', 'Acid Jazz', 'None', leftSidebar.primaryMode);
   }, 100);
 
   window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -121,26 +160,22 @@ function main() {
       cancelAutoLoop();
       userChangedMode = false;
       const genre = (e as CustomEvent<string>).detail;
+      rightSidebar.genre = genre;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
           pdjMidi.setMessage(`GENRE: ${genre.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setGlobalSettings({ genre });
-      if (liveMusicHelper.playbackState === 'stopped') {
-        liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, leftSidebar.primaryMode);
-      }
   }));
 
   (topToolbar as any).addEventListener('style-changed', ((e: Event) => {
       cancelAutoLoop();
       userChangedMode = false;
       const style = (e as CustomEvent<string>).detail;
+      rightSidebar.musicStyle = style;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
           pdjMidi.setMessage(`STYLE: ${style.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setGlobalSettings({ style });
-      if (liveMusicHelper.playbackState === 'stopped') {
-        liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, leftSidebar.primaryMode);
-      }
   }));
 
   (topToolbar as any).addEventListener('mood-changed', ((e: Event) => {
@@ -150,9 +185,6 @@ function main() {
           pdjMidi.setMessage(`MOOD: ${mood.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setMood(mood);
-      if (liveMusicHelper.playbackState === 'stopped') {
-        liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, leftSidebar.primaryMode);
-      }
   }));
   (topToolbar as any).addEventListener('key-changed', ((e: Event) => {
       cancelAutoLoop();
@@ -185,6 +217,11 @@ function main() {
       cancelAutoLoop();
       const val = (e as CustomEvent<number>).detail;
       liveMusicHelper.setEvolution(val);
+  }));
+
+  (rightSidebar as any).addEventListener('volume-changed', ((e: Event) => {
+      const vol = (e as CustomEvent<number>).detail;
+      liveMusicHelper.setVolume(vol);
   }));
 
   (topToolbar as any).addEventListener('duration-changed-manually', ((e: Event) => {
@@ -346,10 +383,6 @@ function main() {
       userChangedMode = true;
       liveMusicHelper.setGenerationMode(mode);
       pdjMidi.setMessage(`MODE: ${mode}`, "info");
-      
-      if (liveMusicHelper.playbackState === 'stopped') {
-        liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, mode);
-      }
   }));
 
   (leftSidebar as any).addEventListener('theme-changed', ((e: Event) => {
@@ -415,7 +448,17 @@ function main() {
       leftSidebar.isShuffling = true;
       
       // 1. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
-      const selectedGenre = topToolbar.randomize();
+      // Suppress events to prevent premature UI updates
+      const currentMood = topToolbar.currentMood;
+
+      topToolbar.currentMood = currentMood;
+      rightSidebar.resetWeightsToZero();
+
+      topToolbar.randomize(true); 
+
+      // Sync RightSidebar with the new genre/style before randomizing instruments
+      rightSidebar.genre = topToolbar.genre;
+      rightSidebar.musicStyle = topToolbar.musicStyle;
 
       // 3. Use Current Evolution (Do not Randomize, just respect it)
       const currentEvo = rightSidebar.evolution;
@@ -424,12 +467,17 @@ function main() {
       // 4. Update Instruments and Manifest based on Style Matrix for current tab
       const rsLocks = (rightSidebar as any).locks;
       if (!rsLocks.channels) {
-          const lyraGenres = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
-          const shouldBeLyra = lyraGenres.includes(selectedGenre);
-          rightSidebar.currentTab = shouldBeLyra ? 'Lyra' : 'Band';
+          const lyriaGenres = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
+          const shouldBeLyria = lyriaGenres.includes(topToolbar.genre);
+          rightSidebar.currentTab = shouldBeLyria ? 'Lyria' : 'Band';
       }
-      const isLyra = rightSidebar.currentTab === 'Lyra' || (rightSidebar.currentTab as any) === 'Lira';
-      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode, isLyra);
+      const isLyria = rightSidebar.currentTab === 'Lyria';
+      
+      // Pass genre/style explicitly (via topToolbar property) to randomizeInstruments
+      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode, isLyria);
+      
+      // Reset knobs to zero — dice roll gives a clean slate
+      liveMusicHelper.resetKnobsToZero();
       
       // 5. Intelligent Mode Selection based on Instruments
       const settings = rightSidebar.settings;
@@ -449,18 +497,37 @@ function main() {
           if (leftSidebar.primaryMode === 'VOCALIZATION') newMode = 'QUALITY';
           else newMode = leftSidebar.primaryMode;
       }
-      
       leftSidebar.primaryMode = newMode;
+      
+      // Update sidebar
+      rightSidebar.requestUpdate();
+      leftSidebar.requestUpdate();
+      
+      // Stop shuffling
+      leftSidebar.isShuffling = false;
+
       liveMusicHelper.setGenerationMode(newMode);
 
       // 6. Apply Special Reference Instruction
-      const genreRefs = SONG_REFERENCES[selectedGenre] || SONG_REFERENCES['Pop'];
+      const genreRefs = SONG_REFERENCES[topToolbar.genre] || SONG_REFERENCES['Pop'];
       const ref = genreRefs[Math.floor(Math.random() * genreRefs.length)];
-      liveMusicHelper.setSpecialInstruction(ref);
-
-      // 7. Apply Knobs for Authentic Style Presets
-      liveMusicHelper.applyAuthenticPresets(topToolbar.genre, topToolbar.musicStyle, topToolbar.currentMood, newMode);
       
+      // Enforce channel isolation, harmonic cohesion, and vocal style authenticity in special instructions
+      const activeInstruments = Object.entries(rightSidebar.settings)
+          .filter(([_, ch]) => ch.active && ch.visible !== false)
+          .map(([_, ch]) => ch.instrument);
+          
+      const genreVocalHint = (() => {
+          const g = topToolbar.genre.toLowerCase();
+          if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          return 'Use vocal styles appropriate for the genre.';
+      })();
+
+      liveMusicHelper.setSpecialInstruction(`${ref}. IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`);
+
       pdjMidi.setMessage(`DICE ROLL: ${topToolbar.genre}, ${topToolbar.musicStyle} (${newMode})`, 'info');
       
       setTimeout(() => { leftSidebar.isShuffling = false; }, 800);
@@ -483,14 +550,11 @@ function main() {
       timeline.hasRecording = false;
       leftSidebar.hasRecording = false;
       timeline.resetHistory(true);
-      topToolbar.reset();
       rightSidebar.reset(); 
       pdjMidi.reset(); 
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
-      liveMusicHelper.setSpecialInstruction(null);
-
-      await topToolbar.randomizeInstruments();
+      
       pdjMidi.setMessage('ENGINE RESET', 'info');
       setTimeout(() => { leftSidebar.isResetting = false; }, 800);
   });
@@ -514,10 +578,10 @@ function main() {
               pdjMidi.setMessage(`VOICE CHANNEL ACTIVE -> VOCALIZATION ENABLED`, "info");
           }
       } else if (liveMusicHelper.generationMode === 'VOCALIZATION' && !vocalInManifest) {
-          liveMusicHelper.setGenerationMode('QUALITY');
-          leftSidebar.primaryMode = 'QUALITY';
+          liveMusicHelper.setGenerationMode('DIVERSITY');
+          leftSidebar.primaryMode = 'DIVERSITY';
           userChangedMode = false;
-          pdjMidi.setMessage(`MODE REVERT: NO VOCAL INSTRUMENT`, "info");
+          pdjMidi.setMessage(`MODE REVERT: NO VOCAL INSTRUMENT -> DIVERSITY`, "info");
       }
 
       timeline.visibleChannels = { 
@@ -599,6 +663,7 @@ function main() {
     timeline.elapsedSeconds = liveMusicHelper.elapsedSeconds;
     timeline.recordedDuration = liveMusicHelper.recordedDuration;
     timeline.isRewinding = liveMusicHelper.isRewinding;
+    timeline.bufferTime = liveMusicHelper.bufferTime;
     leftSidebar.elapsedSeconds = liveMusicHelper.elapsedSeconds;
     leftSidebar.isRewinding = liveMusicHelper.isRewinding;
     timeline.isLooping = liveMusicHelper.isLooping;

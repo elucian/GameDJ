@@ -8,55 +8,99 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, MusicGenerationMode, ChannelState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
 import { SONG_REFERENCES, VOCAL_STRINGS } from '../utils/LiveMusicHelper';
-import { MUSIC_DATA } from './TopToolbar'; // Import MUSIC_DATA to access genre/style info if needed directly
+import { MUSIC_DATA } from './TopToolbar';
+import songsData from '../data/songs.json';
+
+
 
 @customElement('left-sidebar')
 export class LeftSidebar extends LitElement {
   static styles = css`
     .vocal-prompt-overlay {
-      position: absolute;
-      left: 60px;
-      bottom: 20px;
+      position: fixed;
+      top: 80px;
+      left: 70px; /* Sidebar width */
       background: var(--surface-color);
       border: 1px solid var(--border-color);
-      padding: 12px;
-      z-index: 100;
+      padding: 20px;
+      z-index: 99999;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      box-shadow: var(--outer-shadow);
-      border-radius: 8px;
-      width: 250px;
+      gap: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      border-radius: 12px;
+      width: 300px;
+      height: 360px;
       pointer-events: auto;
+    }
+    .vocal-prompt-overlay .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      background: transparent;
+      border: none;
+      color: var(--text-color);
+      cursor: pointer;
+      font-size: 18px;
+    }
+    .vocal-prompt-overlay .dialog-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .vocal-prompt-overlay .dialog-controls button {
+      flex: 1;
+      padding: 8px 16px;
+      cursor: pointer;
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .vocal-prompt-overlay .dialog-controls button:hover {
+      background: var(--accent-color);
+      color: #000;
     }
     .vocal-prompt-overlay textarea {
       background: var(--bg-color);
       border: 1px solid var(--border-color);
       color: var(--text-color);
-      padding: 8px;
-      font-size: 18.4px;
-      border-radius: 4px;
+      padding: 12px;
+      font-size: 14px;
+      border-radius: 12px;
       resize: none;
-      outline: none;
-      font-family: inherit;
+      width: 100%;
+      flex-grow: 1;
+      box-sizing: border-box;
+      min-height: 100px;
     }
-    .vocal-prompt-overlay textarea:focus {
-      border-color: var(--accent-color);
-    }
-    .vocal-prompt-overlay button.send-btn {
-      background: var(--accent-color);
-      color: #000;
-      border: none;
-      padding: 6px 0;
-      border-radius: 4px;
+    .vocal-prompt-overlay .send-btn {
+      padding: 10px 40px;
       cursor: pointer;
-      font-size: 12.65px;
-      font-weight: bold;
+      background: var(--accent-color);
+      border: none;
+      color: #000;
+      border-radius: 9999px;
+      font-size: 14px;
+      font-weight: 700;
+      align-self: center;
+      margin-top: 10px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      white-space: nowrap;
       text-transform: uppercase;
-      transition: opacity 0.2s;
+      opacity: 1 !important; /* Force override */
+      width: fit-content;
+      min-width: 150px;
     }
-    .vocal-prompt-overlay button.send-btn:hover {
-      opacity: 0.8;
+    .vocal-prompt-overlay .send-btn:hover {
+      opacity: 0.9 !important;
     }
     :host {
       display: flex;
@@ -324,9 +368,6 @@ export class LeftSidebar extends LitElement {
   @property({ type: String }) primaryMode: MusicGenerationMode = 'QUALITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
 
-  @state() private showVocalPrompt = false;
-  @state() private vocalText = '';
-
   private toggleTheme() {
     uiSounds.playButton();
     this.isDarkTheme = !this.isDarkTheme;
@@ -460,6 +501,9 @@ export class LeftSidebar extends LitElement {
         <button class="dj-btn ${this.isConductorActive ? 'active-blue' : ''}" @click=${this.toggleDj} title="DJ/Conductor">
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></span>
         </button>
+        <button class="theme-btn" @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog'))} ?disabled=${this.primaryMode !== 'VOCALIZATION'} title="Vocal Commands">
+          <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
+        </button>
       </div>
 
       <div class="group-divider"></div>
@@ -493,12 +537,6 @@ export class LeftSidebar extends LitElement {
           </button>
         </div>
         
-        ${this.primaryMode === 'VOCALIZATION' ? html`
-        <button class="theme-btn" style="position: relative;" @click=${() => this.showVocalPrompt = !this.showVocalPrompt} title="Vocal Commands">
-          <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
-        </button>
-        ` : ''}
-
         <div class="rotary-container">
           <div class="status-dot dot-0 ${formatIdx === 0 ? 'active' : ''}"></div>
           <div class="status-dot dot-1 ${formatIdx === 1 ? 'active' : ''}"></div>
@@ -516,25 +554,7 @@ export class LeftSidebar extends LitElement {
         </button>
       </div>
 
-      ${this.showVocalPrompt && this.primaryMode === 'VOCALIZATION' ? html`
-      <div class="vocal-prompt-overlay">
-        <textarea 
-            rows="3" 
-            placeholder="Enter vocal lyrics, words, or letters..."
-            .value=${this.vocalText}
-            @input=${(e: any) => this.vocalText = e.target.value}
-        ></textarea>
-        <button class="send-btn" @click=${() => this.sendVocalCommand()}>Send Vocal</button>
-      </div>
-      ` : ''}
     `;
-  }
-
-  private sendVocalCommand() {
-      if (!this.vocalText.trim()) return;
-      (this as any).dispatchEvent(new CustomEvent('send-vocal-command', { detail: this.vocalText.trim() }));
-      this.vocalText = '';
-      this.showVocalPrompt = false;
   }
 }
 declare global {

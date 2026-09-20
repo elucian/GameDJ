@@ -24,6 +24,7 @@ export class AudioAnalyser extends EventTarget {
     
     this.splitter.connect(this.analyserL, 0);
     this.splitter.connect(this.analyserR, 1);
+    this.splitter.connect(context.destination);
     
     // The node property is the entry point for the audio graph
     this.node = this.splitter;

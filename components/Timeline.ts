@@ -282,15 +282,33 @@ export class Timeline extends LitElement {
       z-index: 10;
     }
 
-    .playhead {
+    /* Cursor track: matches the 20px margins of the lane, pure % positioning inside */
+    .cursor-track {
       position: absolute;
       top: 0;
       bottom: 20px;
-      width: 2px;
-      background: var(--accent-secondary);
+      left: 20px;
+      right: 20px;
+      pointer-events: none;
       z-index: 100;
+    }
+    .playhead {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
       pointer-events: none;
       transform: translateX(-50%);
+    }
+    .playhead.playback {
+      background: #00ff00; /* Green - audible playback position (behind) */
+      width: 4px;
+      opacity: 0.9;
+      box-shadow: 0 0 6px rgba(0, 255, 0, 0.6);
+    }
+    .playhead.recording {
+      background: #ff0000; /* Red - buffer write position (ahead) */
+      box-shadow: 0 0 6px rgba(255, 0, 0, 0.6);
     }
     .playhead::after {
       content: '';
@@ -301,6 +319,22 @@ export class Timeline extends LitElement {
       border-left: 6px solid transparent;
       border-right: 6px solid transparent;
       border-top: 10px solid var(--accent-secondary);
+    }
+    .playhead.playback::after {
+      border-top-color: #00ff00;
+    }
+    .playhead.recording::after {
+      border-top-color: #ff0000;
+    }
+    /* Buffered region between green (playback) and red (write) cursors */
+    .buffer-region {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, rgba(0, 255, 0, 0.08), rgba(255, 0, 0, 0.15));
+      border-top: 1px dashed rgba(255, 255, 255, 0.25);
+      pointer-events: none;
+      z-index: 60;
     }
     
     .label-container {
@@ -361,6 +395,15 @@ export class Timeline extends LitElement {
     return Math.log2(duration / 60 + 1);
   }
 
+  willUpdate(changed: Map<string, any>) {
+    if (changed.has('maxDuration')) {
+      const scale = this.getFadeScale(this.maxDuration);
+      this.fadeIn = Math.max(0.1, this._baseFadeIn * scale);
+      this.fadeOut = Math.max(0.1, this._baseFadeOut * scale);
+      this.dispatchFade();
+    }
+  }
+
   updated(changed: Map<string, any>) {
     if (changed.has('playbackState')) {
       const oldState = changed.get('playbackState');
@@ -375,13 +418,6 @@ export class Timeline extends LitElement {
 
     if (changed.has('activeChannels') && this.playbackState === 'recording') {
         this.updateHistoryOnChannelChange();
-    }
-
-    if (changed.has('maxDuration')) {
-      const scale = this.getFadeScale(this.maxDuration);
-      this.fadeIn = Math.max(0.1, this._baseFadeIn * scale);
-      this.fadeOut = Math.max(0.1, this._baseFadeOut * scale);
-      this.dispatchFade();
     }
   }
 
@@ -537,15 +573,31 @@ export class Timeline extends LitElement {
     });
   }
 
+  @property({ type: Number }) bufferTime = 3.0;
+
+
   render() {
     const isManifestEmpty = !this.visibleChannels.lead && !this.visibleChannels.alto && !this.visibleChannels.harmonic && !this.visibleChannels.bass && !this.visibleChannels.rhythm;
     const duration = this.effectiveDuration;
-    const playheadPct = (this.elapsedSeconds / duration) * 100;
     const fadeInPct = (this.fadeIn / duration) * 100;
     const fadeOutStartPct = ((this.maxDuration - this.fadeOut) / duration) * 100;
     const fadeOutWidthPct = (this.fadeOut / duration) * 100;
     
     const handleLeft = (pct: number) => `calc(20px + (100% - 40px) * ${pct/100})`;
+
+    const isRecording = this.playbackState === 'recording';
+    const isPlaying = this.playbackState === 'playing';
+    const isPaused = this.playbackState === 'paused';
+    const isLive = isRecording || this.playbackState === 'warmup' || this.playbackState === 'preparing';
+
+    // RED cursor = buffer write head (ahead) — where Lyria is generating music
+    const writeHeadPct = (this.elapsedSeconds / duration) * 100;
+    // GREEN cursor = audible playback position (behind by buffer/cache amount)
+    // Stays at 0 until the buffer has filled (elapsed > bufferTime)
+    const bufferFilled = this.elapsedSeconds >= this.bufferTime;
+    const playbackHeadPct = bufferFilled ? ((this.elapsedSeconds - this.bufferTime) / duration) * 100 : 0;
+    // Buffer region spans between green and red cursors
+    const bufferRegionWidthPct = Math.max(0, writeHeadPct - playbackHeadPct);
 
     return html`
       <div class="ruler" @pointerdown=${this.handlePointerDown}>${this.renderRuler()}</div>
@@ -569,7 +621,19 @@ export class Timeline extends LitElement {
              <div class="fade-overlay" style="left: ${handleLeft(fadeOutStartPct)}; width: calc((100% - 40px) * ${fadeOutWidthPct/100})"></div>
              <div class="fade-handle fade-in" style="left: ${handleLeft(fadeInPct)}"></div>
              <div class="fade-handle fade-out" style="left: ${handleLeft(fadeOutStartPct)}"></div>
-             <div class="playhead" style="left: ${handleLeft(playheadPct)}"></div>
+             
+             <!-- Cursor track: pure % positioning, no mixed-unit calc = no vibration -->
+             <div class="cursor-track">
+               ${isRecording ? html`
+                 <div class="buffer-region" style="left: ${playbackHeadPct}%; width: ${bufferRegionWidthPct}%"></div>
+                 ${bufferFilled ? html`<div class="playhead playback" style="left: ${playbackHeadPct}%"></div>` : ''}
+                 <div class="playhead recording" style="left: ${writeHeadPct}%"></div>
+               ` : ''}
+               ${isPlaying || isPaused ? html`
+                 <div class="playhead playback" style="left: ${writeHeadPct}%"></div>
+               ` : ''}
+             </div>
+             
              <div class="label-gutter"><div class="label-container"><div class="fade-label" style="left: ${handleLeft(fadeInPct)}">IN: ${this.fadeIn.toFixed(1)}s</div><div class="fade-label" style="left: ${handleLeft(fadeOutStartPct)}">OUT: ${this.fadeOut.toFixed(1)}s</div></div></div>
            </div>
         </div>

@@ -6,6 +6,10 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, InstrumentSet, MusicGenerationMode } from '../types';
+import { isVocalInstrument } from '../utils/LiveMusicHelper';
+import { FALLBACK_POOLS } from '../constants/instruments';
+
+
 import { uiSounds } from '../utils/UISounds';
 
 export const MOODS = [
@@ -17,13 +21,6 @@ export const MOODS = [
     'Soulful', 'Spiritual', 'Tense', 'Triumphal', 'Uplifting', 'Whimsical'
 ];
 
-const FALLBACK_POOLS = {
-  lead: ['Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Viola', 'Oboe', 'English Horn', 'French Horn', 'Bassoon', 'Harmonica', 'Chromatic Harmonica', 'Vocal Chops', 'Choir', 'Accordion', 'Banjo', 'Mandolin', 'Sitar', 'Koto', 'Erhu', 'Oud', 'Bagpipes', 'Bell Synth', 'Whistle', 'Didgeridoo', 'Recorder', 'Pan Flute', 'Pipe Flute', 'Marimba', 'Xylophone', 'Ocarina'],
-  alto: ['Saxophone', 'Trumpet', 'Trombone', 'Clarinet', 'Viola', 'Violin', 'Cello', 'French Horn', 'English Horn', 'Bassoon', 'Oboe', 'Brass Section', 'Strings', 'Flute', 'Recorder', 'Accordion', 'Synthesizer', 'Electric Piano', 'Vibraphone', 'Harp', 'Low Whistle', 'Mandocello', 'Pan Flute', 'Harmonica', 'Chromatic Harmonica', 'Electric Violin', 'Pipe Flute'],
-  harmonic: ['Piano', 'Electric Piano', 'Acoustic Guitar', 'Electric Guitar', 'Organ', 'Strings', 'Pads', 'Choir', 'Harpsichord', 'Harp', 'Marimba', 'Cimbalom', 'Tanpura', 'Synthesizer', 'Stab Chords', 'Accordion', 'Harmonium', 'Guzheng', 'Qanun', 'Celesta'],
-  bass: ['Electric Bass', 'Synth Bass', 'Double Bass', 'Tuba', 'Trombone', 'French Horn', 'Cello', 'Bassoon', 'Bass Clarinet', 'Baritone Saxophone', 'Didgeridoo', 'Timpani', 'Bass Harmonica', 'Bass Recorder', 'Bass Trombone'],
-  rhythm: ['Drum Kit', 'Electronic Drums', 'Hand Drum', 'Tabla', 'Djembe', 'Congas', 'Bongos', 'Timbales', 'Taiko Drums', 'Percussion', 'Shakers', 'Tambourine', 'Bells', 'Stomps', 'Industrial Percussion', 'Woodblock', 'Cowbell', 'Snare Drum', 'Cymbals', 'Bass Drum', 'Gong', 'Triangle', 'Wind Chimes']
-};
 
 const VOCAL_MARKERS = ['choir', 'vocal', 'soprano', 'vocals', 'voice', 'tenor', 'baritone', 'female', 'male', 'boy', 'girl', 'bou', 'chant', 'soloist'];
 
@@ -33,6 +30,7 @@ interface StyleSignature {
     meters: string[];
     keys: string[]; 
     mode: 'Natural' | 'Minor';
+    defaultMode?: 'Lyra' | 'Band';
     mood: string;
     manifest: { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
     instrumentPools: { 
@@ -56,17 +54,17 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Synth-Pop': {
         bpm: 120, bpmRange: [100, 130], meters: ['4/4'], keys: ['C Minor', 'Bb Major', 'G Minor', 'Eb Major', 'F Minor', 'A Minor'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Bell Synth'], alto: ['Synthesizer', 'Pads'], harmonic: ['Synthesizer', 'Pads'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Bell Synth', 'Electric Guitar', 'Vocal Chops'], alto: ['Synthesizer', 'Pads', 'Electric Piano'], harmonic: ['Synthesizer', 'Pads', 'Electric Piano'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       },
       'Disco Pop': {
         bpm: 124, bpmRange: [115, 130], meters: ['4/4'], keys: ['D Major', 'G Major', 'A Major', 'E Minor', 'B Minor', 'C Major', 'F Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Electric Guitar', 'Trumpet'], alto: ['Saxophone', 'Brass Section'], harmonic: ['Piano', 'Strings', 'Electric Piano'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Saxophone', 'Electric Guitar', 'Trumpet'], alto: ['Saxophone', 'Brass Section'], harmonic: ['Piano', 'Strings', 'Electric Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'K-Pop': {
         bpm: 128, bpmRange: [110, 145], meters: ['4/4'], keys: ['A Minor', 'E Minor', 'F# Minor', 'B Minor', 'C# Minor', 'G Major', 'C Major'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Vocal Chops', 'Synthesizer'], alto: ['Bell Synth', 'Synthesizer'], harmonic: ['Synthesizer', 'Stab Chords'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Vocal Chops', 'Synthesizer'], alto: ['Bell Synth', 'Synthesizer'], harmonic: ['Synthesizer', 'Stab Chords'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       },
       'R&B': {
         bpm: 90, bpmRange: [60, 120], meters: ['4/4', '6/8'], keys: ['Ab Major', 'F Minor', 'Db Major', 'Eb Major', 'C Minor', 'Bb Major', 'Gb Major', 'B Major'], mode: 'Minor', mood: 'Sexy',
@@ -82,12 +80,12 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Indie Pop': {
         bpm: 110, bpmRange: [90, 125], meters: ['4/4'], keys: ['G Major', 'C Major', 'D Major', 'A Major', 'E Major', 'B Major', 'F# Major'], mode: 'Natural', mood: 'Nostalgic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Whistle'], alto: ['Acoustic Guitar', 'Clarinet', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Whistle'], alto: ['Acoustic Guitar', 'Clarinet', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'Pop Rock': {
         bpm: 122, bpmRange: [110, 140], meters: ['4/4'], keys: ['E Major', 'A Major', 'G Major', 'D Major', 'B Major', 'C Major'], mode: 'Natural', mood: 'Uplifting',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Piano'], harmonic: ['Piano', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Acoustic Guitar'], alto: ['Electric Guitar', 'Piano'], harmonic: ['Piano', 'Electric Guitar'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       }
     }
   },
@@ -97,27 +95,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Delta Blues': {
         bpm: 75, bpmRange: [60, 90], meters: ['4/4', '12/8'], keys: ['E Major', 'A Major', 'G Major', 'B Major', 'D Major'], mode: 'Natural', mood: 'Melancholic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica'], alto: ['Acoustic Guitar', 'Harmonica'], harmonic: ['Acoustic Guitar'], bass: ['Double Bass', 'Harmonica'], rhythm: [] }
+        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica'], alto: ['Acoustic Guitar', 'Harmonica'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass'], rhythm: [] }
       },
       'Chicago Blues': {
         bpm: 110, bpmRange: [90, 130], meters: ['4/4'], keys: ['A Major', 'D Major', 'G Major', 'C Major', 'E Major', 'F Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano', 'Electric Guitar', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Texas Blues': {
         bpm: 130, bpmRange: [110, 160], meters: ['4/4'], keys: ['Eb Major', 'Bb Major', 'E Major', 'Ab Major', 'A Major', 'G Major'], mode: 'Natural', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Electric Guitar', 'Organ'], harmonic: ['Piano', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Electric Guitar', 'Organ'], harmonic: ['Piano', 'Electric Guitar', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Blues Rock': {
         bpm: 120, bpmRange: [100, 145], meters: ['4/4'], keys: ['E Minor', 'A Minor', 'D Minor', 'G Minor', 'B Minor', 'C Minor'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Synthesizer', 'Harmonica'], alto: ['Organ', 'Electric Guitar'], harmonic: ['Organ', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Synthesizer', 'Harmonica'], alto: ['Organ', 'Electric Guitar'], harmonic: ['Organ', 'Electric Guitar', 'Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'Soul Blues': {
         bpm: 85, bpmRange: [70, 100], meters: ['4/4', '6/8'], keys: ['C Major', 'F Major', 'Bb Major', 'G Major', 'Eb Major', 'Ab Major'], mode: 'Natural', mood: 'Sentimental',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Saxophone', 'Harmonica'], alto: ['Trombone', 'Brass Section'], harmonic: ['Electric Piano', 'Brass Section'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Trumpet', 'Saxophone', 'Harmonica'], alto: ['Trombone', 'Brass Section'], harmonic: ['Electric Piano', 'Brass Section', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       }
     }
   },
@@ -127,27 +125,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Acid Jazz': {
         bpm: 110, bpmRange: [100, 120], meters: ['4/4', '3/4'], keys: ['C Minor', 'A Minor', 'F Minor', 'D Minor', 'G Minor', 'Bb Minor', 'Eb Minor'], mode: 'Minor', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Trumpet', 'Synthesizer'], alto: ['Vibraphone', 'Electric Piano'], harmonic: ['Electric Piano', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Saxophone', 'Trumpet', 'Synthesizer'], alto: ['Vibraphone', 'Electric Piano'], harmonic: ['Electric Piano', 'Electric Guitar', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Jazz Fusion': {
         bpm: 130, bpmRange: [110, 150], meters: ['4/4', '5/4', '7/8'], keys: ['G Major', 'D Major', 'C Major', 'F Major', 'Bb Major', 'Eb Major', 'Ab Major'], mode: 'Natural', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Violin', 'Synthesizer'], alto: ['Electric Piano', 'Vibraphone'], harmonic: ['Electric Piano', 'Electric Guitar'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Violin', 'Synthesizer'], alto: ['Electric Piano', 'Vibraphone'], harmonic: ['Electric Piano', 'Electric Guitar', 'Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'Bebop': {
         bpm: 180, bpmRange: [160, 240], meters: ['4/4'], keys: ['Bb Major', 'Eb Major', 'F Major', 'Ab Major', 'Db Major', 'G Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Trumpet'], alto: ['Trumpet', 'Clarinet'], harmonic: ['Piano'], bass: ['Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Saxophone', 'Trumpet'], alto: ['Trumpet', 'Clarinet', 'Saxophone'], harmonic: ['Piano', 'Electric Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit'] }
       },
       'Cool Jazz': {
         bpm: 90, bpmRange: [70, 110], meters: ['4/4', '3/4'], keys: ['C Major', 'G Major', 'A Major', 'F Major', 'D Minor', 'Bb Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Clarinet'], alto: ['Saxophone', 'Flute'], harmonic: ['Piano', 'Electric Piano'], bass: ['Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Trumpet', 'Clarinet'], alto: ['Saxophone', 'Flute'], harmonic: ['Piano', 'Electric Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Smooth Jazz': {
         bpm: 95, bpmRange: [80, 110], meters: ['4/4'], keys: ['F Major', 'Bb Major', 'Eb Major', 'Ab Major', 'Db Major', 'G Major'], mode: 'Natural', mood: 'Romantic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Flute'], alto: ['Electric Piano', 'Vibraphone'], harmonic: ['Electric Piano', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Saxophone', 'Flute'], alto: ['Electric Piano', 'Vibraphone'], harmonic: ['Electric Piano', 'Electric Guitar', 'Pads'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       }
     }
   },
@@ -157,27 +155,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Techno': {
         bpm: 128, bpmRange: [124, 132], meters: ['4/4'], keys: ['C Minor', 'F Minor', 'G Minor', 'A Minor', 'D Minor', 'B Minor'], mode: 'Minor', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer'], alto: ['Synthesizer'], harmonic: ['Pads'], bass: ['Synth Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Bell Synth'], alto: ['Synthesizer', 'Pads'], harmonic: ['Pads', 'Synthesizer', 'Stab Chords'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Industrial Percussion'] }
       },
       'Drum & Bass': {
         bpm: 174, bpmRange: [165, 180], meters: ['4/4'], keys: ['F Minor', 'C Minor', 'G Minor', 'E Minor', 'Bb Minor', 'A Minor'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer'], alto: ['Synthesizer'], harmonic: ['Pads'], bass: ['Synth Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Bell Synth'], alto: ['Synthesizer', 'Pads'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Industrial Percussion'] }
       },
       'Vaporwave': {
         bpm: 85, bpmRange: [70, 100], meters: ['4/4'], keys: ['E Major', 'A Major', 'D Major', 'B Major', 'F# Major', 'Db Major'], mode: 'Natural', mood: 'Dreamy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Synthesizer'], alto: ['Piano', 'Electric Piano'], harmonic: ['Electric Piano', 'Pads'], bass: ['Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Saxophone', 'Synthesizer'], alto: ['Piano', 'Electric Piano'], harmonic: ['Electric Piano', 'Pads'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       },
       'Deep House': {
         bpm: 122, bpmRange: [118, 126], meters: ['4/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Minor', 'B Minor', 'C Minor'], mode: 'Minor', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Piano', 'Synthesizer'], alto: ['Electric Piano', 'Pads'], harmonic: ['Pads', 'Electric Piano'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Piano', 'Synthesizer'], alto: ['Electric Piano', 'Pads'], harmonic: ['Pads', 'Electric Piano', 'Organ'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       },
       'Synthwave': {
         bpm: 110, bpmRange: [90, 130], meters: ['4/4'], keys: ['C Minor', 'G Minor', 'Bb Major', 'F Minor', 'Eb Major', 'A Minor', 'D Minor'], mode: 'Minor', mood: 'Nostalgic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Bell Synth'], alto: ['Pads'], harmonic: ['Pads'], bass: ['Synth Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Bell Synth'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads', 'Synthesizer', 'Electric Piano'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       }
     }
   },
@@ -187,22 +185,22 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Classic Rock': {
         bpm: 120, bpmRange: [100, 140], meters: ['4/4', '12/8'], keys: ['E Major', 'A Major', 'G Major', 'D Major', 'C Major', 'F Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Piano', 'Organ'], harmonic: ['Organ', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Acoustic Guitar'], alto: ['Piano', 'Organ', 'Electric Guitar'], harmonic: ['Organ', 'Electric Guitar', 'Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Shoegaze': {
         bpm: 110, bpmRange: [90, 120], meters: ['4/4'], keys: ['G Major', 'D Major', 'A Major', 'E Major', 'B Major', 'C# Minor'], mode: 'Natural', mood: 'Dreamy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Strings'], harmonic: ['Strings', 'Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Synthesizer'], alto: ['Electric Guitar', 'Strings'], harmonic: ['Strings', 'Electric Guitar', 'Pads'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'Heavy Metal': {
         bpm: 150, bpmRange: [120, 190], meters: ['4/4', '3/4'], keys: ['E Minor', 'A Minor', 'D Minor', 'C# Minor', 'F# Minor', 'B Minor', 'G Minor'], mode: 'Minor', mood: 'Aggressive',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Bassoon'], harmonic: ['Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Organ'], harmonic: ['Electric Guitar', 'Organ'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit'] }
       },
       'Indie Rock': {
         bpm: 125, bpmRange: [110, 145], meters: ['4/4'], keys: ['D Major', 'G Major', 'C Major', 'A Major', 'E Major', 'F Major'], mode: 'Natural', mood: 'Uplifting',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Acoustic Guitar', 'Piano', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Acoustic Guitar'], alto: ['Acoustic Guitar', 'Piano', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Piano', 'Electric Guitar'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       }
     }
   },
@@ -212,62 +210,62 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Deep Space': {
         bpm: 60, bpmRange: [40, 80], meters: ['Free'], keys: ['C Minor', 'G Minor', 'D Minor', 'F Minor', 'Eb Minor', 'A Minor'], mode: 'Minor', mood: 'Mysterious',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads'], harmonic: ['Pads'], bass: ['Synth Bass', 'Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Double Bass'], rhythm: [] }
       },
       'Lofi Chill': {
         bpm: 85, bpmRange: [75, 95], meters: ['4/4'], keys: ['A Minor', 'D Minor', 'E Minor', 'C Major', 'F Major', 'G Major', 'Bb Major'], mode: 'Minor', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Piano', 'Electric Piano', 'Ocarina'], alto: ['Electric Piano', 'Acoustic Guitar'], harmonic: ['Acoustic Guitar', 'Pads'], bass: ['Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Piano', 'Electric Piano', 'Ocarina'], alto: ['Electric Piano', 'Acoustic Guitar'], harmonic: ['Acoustic Guitar', 'Pads', 'Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       },
       'Cinematic': {
         bpm: 70, bpmRange: [50, 100], meters: ['4/4', '3/4'], keys: ['D Minor', 'G Minor', 'A Minor', 'C Minor', 'E Minor', 'F Minor', 'B Minor'], mode: 'Minor', mood: 'Cinematic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Cello', 'French Horn', 'Ocarina'], alto: ['Viola', 'French Horn'], harmonic: ['Strings', 'Piano'], bass: ['Double Bass', 'Timpani'], rhythm: ['Taiko Drums'] }
+        instrumentPools: { lead: ['Cello', 'French Horn', 'Ocarina'], alto: ['Viola', 'French Horn'], harmonic: ['Strings', 'Piano'], bass: ['Double Bass', 'Timpani'], rhythm: ['Taiko Drums', 'Timpani'] }
       },
       'Nature Soundscape': {
         bpm: 50, bpmRange: [30, 70], meters: ['Free'], keys: ['F Major', 'C Major', 'G Major', 'D Major', 'Bb Major', 'Eb Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Flute', 'Pan Flute', 'Ocarina'], alto: ['Flute', 'Harp', 'Pan Flute'], harmonic: ['Pads', 'Harp'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Flute', 'Pan Flute', 'Ocarina'], alto: ['Flute', 'Harp', 'Pan Flute'], harmonic: ['Pads', 'Harp'], bass: ['Double Bass', 'Synth Bass'], rhythm: [] }
       },
       'Dark Ambient': {
         bpm: 45, bpmRange: [30, 60], meters: ['Free'], keys: ['D Minor', 'Bb Minor', 'Ab Minor', 'C# Minor', 'F Minor', 'E Minor'], mode: 'Minor', mood: 'Ominous',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads'], harmonic: ['Pads'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads', 'Synthesizer'], bass: ['Double Bass', 'Synth Bass'], rhythm: [] }
       },
       'Arctic Tundra': {
         bpm: 40, bpmRange: [30, 55], meters: ['Free'], keys: ['Eb Major', 'C Minor', 'F Minor', 'Db Major', 'Ab Major'], mode: 'Natural', mood: 'Ethereal',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Crystal Lead', 'Synthesizer', 'Ocarina'], alto: ['Pads', 'Crystal Lead'], harmonic: ['Pads'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Crystal Lead', 'Synthesizer', 'Ocarina'], alto: ['Pads', 'Crystal Lead'], harmonic: ['Pads', 'Synthesizer'], bass: ['Double Bass', 'Synth Bass'], rhythm: [] }
       },
       'Solar Wind': {
         bpm: 55, bpmRange: [45, 70], meters: ['Free'], keys: ['A Major', 'F# Minor', 'E Major', 'C# Minor', 'B Major'], mode: 'Natural', mood: 'Ethereal',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads'], harmonic: ['Pads'], bass: ['Synth Bass', 'Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Double Bass'], rhythm: [] }
       },
       'Industrial Decay': {
         bpm: 65, bpmRange: [50, 80], meters: ['4/4', 'Free'], keys: ['F Minor', 'B Minor', 'C Minor', 'G# Minor', 'Eb Minor'], mode: 'Minor', mood: 'Ominous',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Violin', 'Ocarina'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Industrial Percussion'] }
+        instrumentPools: { lead: ['Synthesizer', 'Violin', 'Ocarina'], alto: ['Pads', 'Synthesizer'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Industrial Percussion', 'Electronic Drums'] }
       },
       'Deep Forest': {
         bpm: 40, bpmRange: [40, 65], meters: ['Free', '4/4'], keys: ['G Major', 'E Minor', 'A Minor', 'C Major', 'D Major', 'F Major'], mode: 'Natural', mood: 'Mysterious',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Flute', 'Pan Flute', 'Ocarina'], alto: ['Clarinet', 'Flute', 'Low Whistle', 'Pan Flute'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Flute', 'Pan Flute', 'Ocarina'], alto: ['Clarinet', 'Flute', 'Low Whistle', 'Pan Flute'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Synth Bass'], rhythm: [] }
       },
       'Australian Desert': {
         bpm: 45, bpmRange: [35, 60], meters: ['Free'], keys: ['D Minor', 'A Minor', 'E Minor', 'B Minor', 'G Minor'], mode: 'Minor', mood: 'Spiritual',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Didgeridoo', 'Flute', 'Ocarina'], alto: ['Bassoon', 'Flute'], harmonic: ['Pads'], bass: ['Didgeridoo', 'Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Didgeridoo', 'Flute', 'Ocarina'], alto: ['Bassoon', 'Flute'], harmonic: ['Pads', 'Synthesizer'], bass: ['Didgeridoo', 'Double Bass'], rhythm: ['Hand Drum', 'Taiko Drums'] }
       },
       'African Jungle': {
         bpm: 90, bpmRange: [75, 110], meters: ['4/4'], keys: ['F Major', 'C Major', 'G Major', 'Bb Major', 'D Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Kalimba', 'Flute', 'Ocarina'], alto: ['Saxophone', 'Flute'], harmonic: ['Harp'], bass: ['Electric Bass'], rhythm: ['Djembe'] }
+        instrumentPools: { lead: ['Kalimba', 'Flute', 'Ocarina'], alto: ['Saxophone', 'Flute'], harmonic: ['Harp', 'Pads'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Djembe', 'Hand Drum', 'Congas'] }
       },
       'Vast Ocean': {
         bpm: 35, bpmRange: [25, 50], meters: ['Free'], keys: ['Bb Major', 'Eb Major', 'F Major', 'Ab Major', 'Db Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Cello', 'Choir', 'Ocarina'], alto: ['Pads', 'French Horn'], harmonic: ['Pads', 'Harp'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Cello', 'Choir', 'Ocarina'], alto: ['Pads', 'French Horn'], harmonic: ['Pads', 'Harp'], bass: ['Double Bass', 'Synth Bass'], rhythm: [] }
       }
     }
   },
@@ -277,52 +275,52 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       '8-Bit Retro': {
         bpm: 140, bpmRange: [120, 160], meters: ['4/4'], keys: ['C Major', 'G Major', 'F Major', 'A Minor', 'D Minor', 'E Minor'], mode: 'Natural', mood: 'Whimsical',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Pulse Wave', 'Synthesizer', 'Ocarina'], alto: ['Synthesizer'], harmonic: ['Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Pulse Wave', 'Synthesizer', 'Ocarina'], alto: ['Synthesizer', 'Marimba'], harmonic: ['Synthesizer', 'Stab Chords'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       },
       'Epic Boss': {
         bpm: 150, bpmRange: [130, 170], meters: ['4/4', '7/8'], keys: ['E Minor', 'D Minor', 'B Minor', 'C Minor', 'F Minor', 'G Minor'], mode: 'Minor', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Organ', 'Ocarina'], alto: ['Brass Section', 'Organ'], harmonic: ['Brass Section'], bass: ['Synth Bass', 'Timpani', 'Electric Bass'], rhythm: ['Taiko Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Organ', 'Ocarina'], alto: ['Brass Section', 'Organ'], harmonic: ['Brass Section', 'Strings'], bass: ['Synth Bass', 'Timpani', 'Electric Bass'], rhythm: ['Taiko Drums', 'Timpani'] }
       },
       'RPG Adventure': {
         bpm: 115, bpmRange: [90, 140], meters: ['3/4', '4/4'], keys: ['G Major', 'D Major', 'E Minor', 'A Minor', 'F Major', 'C Major'], mode: 'Natural', mood: 'Epic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Oboe', 'Ocarina'], alto: ['Flute', 'Viola'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass'], rhythm: ['Hand Drum', 'Timpani'] }
+        instrumentPools: { lead: ['Violin', 'Oboe', 'Ocarina'], alto: ['Flute', 'Viola'], harmonic: ['Harp', 'Acoustic Guitar', 'Strings'], bass: ['Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Timpani'] }
       },
       'Cyberpunk': {
         bpm: 105, bpmRange: [90, 120], meters: ['4/4'], keys: ['C Minor', 'F Minor', 'Gb Major', 'Eb Minor', 'Bb Minor', 'G Minor'], mode: 'Minor', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Synthesizer'], harmonic: ['Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Ocarina'], alto: ['Synthesizer', 'Pads'], harmonic: ['Synthesizer', 'Pads'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Industrial Percussion'] }
       },
       'Stealth': {
         bpm: 90, bpmRange: [75, 110], meters: ['4/4', '5/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'F# Minor', 'B Minor', 'G Minor'], mode: 'Minor', mood: 'Tense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Trumpet', 'Ocarina'], alto: ['Synthesizer'], harmonic: ['Pads'], bass: ['Synth Bass', 'Double Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Trumpet', 'Ocarina'], alto: ['Synthesizer', 'Pads'], harmonic: ['Pads', 'Piano'], bass: ['Synth Bass', 'Double Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       },
       'Dungeon Crawler': {
         bpm: 70, bpmRange: [50, 90], meters: ['4/4', '3/4'], keys: ['D Minor', 'A Minor', 'G Minor', 'E Phrygian', 'B Minor'], mode: 'Minor', mood: 'Dark',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Cello', 'Oboe', 'Ocarina'], alto: ['Viola', 'Cello'], harmonic: ['Strings'], bass: ['Double Bass'], rhythm: ['Taiko Drums'] }
+        instrumentPools: { lead: ['Cello', 'Oboe', 'Ocarina'], alto: ['Viola', 'Cello'], harmonic: ['Strings', 'Organ'], bass: ['Double Bass', 'Cello'], rhythm: ['Taiko Drums', 'Timpani'] }
       },
       'Racing Arcade': {
         bpm: 160, bpmRange: [140, 180], meters: ['4/4'], keys: ['G Major', 'E Major', 'A Major', 'F Major', 'D Major', 'B Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Synthesizer', 'Ocarina'], alto: ['Synthesizer'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Synthesizer', 'Ocarina'], alto: ['Synthesizer', 'Electric Guitar'], harmonic: ['Pads', 'Synthesizer'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
       },
       'Cozy Simulation': {
         bpm: 95, bpmRange: [80, 110], meters: ['4/4', '3/4'], keys: ['C Major', 'G Major', 'F Major', 'D Major', 'A Major', 'Bb Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Clarinet', 'Whistle', 'Ocarina'], alto: ['Flute', 'Ukulele'], harmonic: ['Ukulele', 'Acoustic Guitar', 'Piano'], bass: ['Electric Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Clarinet', 'Whistle', 'Ocarina'], alto: ['Flute', 'Ukulele'], harmonic: ['Ukulele', 'Acoustic Guitar', 'Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Shakers'] }
       },
       'Platformer Bounce': {
         bpm: 132, bpmRange: [110, 150], meters: ['4/4'], keys: ['C Major', 'F Major', 'G Major', 'Bb Major', 'D Major', 'Eb Major'], mode: 'Natural', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Marimba', 'Ocarina'], alto: ['Marimba', 'Woodblock'], harmonic: ['Synthesizer', 'Ukulele'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Marimba', 'Ocarina'], alto: ['Marimba', 'Woodblock'], harmonic: ['Synthesizer', 'Ukulele'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] }
       },
       'Survival Horror': {
         bpm: 60, bpmRange: [40, 80], meters: ['Free', '3/4'], keys: ['D Minor', 'Eb Minor', 'F Minor', 'C# Minor', 'G Minor', 'B Minor'], mode: 'Minor', mood: 'Ominous',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Choir', 'Ocarina'], alto: ['Viola'], harmonic: ['Pads', 'Piano'], bass: ['Double Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Violin', 'Choir', 'Ocarina'], alto: ['Viola', 'Pads'], harmonic: ['Pads', 'Piano'], bass: ['Double Bass', 'Synth Bass'], rhythm: ['Electronic Drums', 'Industrial Percussion'] }
       },
       'Victory Theme': {
         bpm: 135, bpmRange: [120, 150], meters: ['4/4'], keys: ['C Major', 'Eb Major', 'F Major', 'Bb Major', 'D Major', 'G Major'], mode: 'Natural', mood: 'Triumphal',
@@ -425,27 +423,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Royal Court': {
         bpm: 120, bpmRange: [110, 130], meters: ['4/4', '2/2'], keys: ['G Major', 'C Major', 'F Major', 'D Major', 'Bb Major', 'A Minor'], mode: 'Natural', mood: 'Elegant',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Lute', 'Recorder'], alto: ['Recorder', 'Lute'], harmonic: ['Harpsichord'], bass: ['Viola da Gamba', 'Double Bass', 'Recorder'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Lute', 'Recorder'], alto: ['Recorder', 'Lute'], harmonic: ['Harpsichord', 'Harp'], bass: ['Viola da Gamba', 'Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
       },
       'Cathedral': {
         bpm: 70, bpmRange: [60, 80], meters: ['Free', '4/4'], keys: ['D Minor', 'A Minor', 'G Minor', 'E Minor', 'F Major', 'C Major'], mode: 'Minor', mood: 'Spiritual',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Choir'], alto: ['Choir', 'Recorder'], harmonic: ['Choir'], bass: ['Choir', 'Double Bass', 'Recorder'], rhythm: [] }
+        instrumentPools: { lead: ['Choir'], alto: ['Choir', 'Recorder'], harmonic: ['Choir', 'Organ'], bass: ['Choir', 'Double Bass'], rhythm: [] }
       },
       'Minstrel Ballad': {
         bpm: 85, bpmRange: [70, 100], meters: ['3/4', '4/4'], keys: ['D Minor', 'G Major', 'C Major', 'A Minor', 'F Major', 'E Minor'], mode: 'Natural', mood: 'Sentimental',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Lute', 'Recorder', 'Pipe Flute'], alto: ['Lute', 'Recorder', 'Pipe Flute'], harmonic: ['Harp'], bass: ['Cello', 'Double Bass', 'Recorder'], rhythm: ['Tambourine'] }
+        instrumentPools: { lead: ['Lute', 'Recorder', 'Pipe Flute'], alto: ['Lute', 'Recorder', 'Pipe Flute'], harmonic: ['Harp', 'Lute'], bass: ['Cello', 'Double Bass'], rhythm: ['Tambourine', 'Hand Drum'] }
       },
       'Tudor Dance': {
         bpm: 130, bpmRange: [115, 145], meters: ['6/8', '2/2'], keys: ['G Major', 'D Major', 'F Major', 'C Major', 'A Minor', 'E Minor'], mode: 'Natural', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Recorder'], alto: ['Recorder', 'Lute'], harmonic: ['Lute'], bass: ['Viola da Gamba', 'Double Bass', 'Recorder'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Violin', 'Recorder'], alto: ['Recorder', 'Lute'], harmonic: ['Lute', 'Harpsichord'], bass: ['Viola da Gamba', 'Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
       },
       'Village Festival': {
         bpm: 110, bpmRange: [90, 130], meters: ['4/4', '3/4'], keys: ['A Minor', 'E Minor', 'D Major', 'G Major', 'C Major', 'F Major'], mode: 'Natural', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Lute', 'Recorder', 'Pipe Flute'], alto: ['Recorder', 'Lute', 'Pipe Flute'], harmonic: ['Harpsichord'], bass: ['Viola da Gamba', 'Double Bass', 'Recorder'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Lute', 'Recorder', 'Pipe Flute'], alto: ['Recorder', 'Lute', 'Pipe Flute'], harmonic: ['Harpsichord', 'Harp'], bass: ['Viola da Gamba', 'Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
       }
     }
   },
@@ -455,7 +453,7 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Gothic Horror': {
         bpm: 60, bpmRange: [50, 75], meters: ['4/4', '3/4'], keys: ['C Minor', 'D Minor', 'G Minor', 'F Minor', 'B Minor', 'E Minor', 'A Minor'], mode: 'Minor', mood: 'Ominous',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Cello', 'Organ'], alto: ['Organ', 'Viola'], harmonic: ['Strings'], bass: ['Brass Section', 'Double Bass', 'Harmonica'], rhythm: ['Timpani'] }
+        instrumentPools: { lead: ['Cello', 'Organ'], alto: ['Organ', 'Viola'], harmonic: ['Strings', 'Organ'], bass: ['Brass Section', 'Double Bass'], rhythm: ['Timpani', 'Taiko Drums'] }
       },
       'Parlour Waltz': {
         bpm: 105, bpmRange: [90, 120], meters: ['3/4'], keys: ['Eb Major', 'Ab Major', 'Bb Major', 'F Major', 'G Major', 'C Major'], mode: 'Natural', mood: 'Elegant',
@@ -465,17 +463,17 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Steampunk Factory': {
         bpm: 125, bpmRange: [110, 140], meters: ['4/4', '7/8'], keys: ['A Minor', 'G Minor', 'E Minor', 'D Minor', 'C Minor', 'F# Minor'], mode: 'Minor', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Accordion', 'Violin', 'Harmonica'], alto: ['Harmonica', 'Accordion'], harmonic: ['Piano', 'Harpsichord'], bass: ['Tuba', 'Double Bass'], rhythm: ['Industrial Percussion'] }
+        instrumentPools: { lead: ['Accordion', 'Violin', 'Harmonica'], alto: ['Harmonica', 'Accordion'], harmonic: ['Piano', 'Harpsichord'], bass: ['Tuba', 'Double Bass'], rhythm: ['Industrial Percussion', 'Drum Kit'] }
       },
       'Industrial Revolution': {
         bpm: 115, bpmRange: [100, 130], meters: ['4/4', '2/4'], keys: ['C Minor', 'D Minor', 'G Minor', 'F Minor', 'A Minor'], mode: 'Minor', mood: 'Tense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Whistle', 'Trumpet'], alto: ['Trumpet'], harmonic: ['Strings', 'Pads'], bass: ['Tuba', 'Double Bass'], rhythm: ['Industrial Percussion'] }
+        instrumentPools: { lead: ['Whistle', 'Trumpet'], alto: ['Trumpet', 'Brass Section'], harmonic: ['Strings', 'Pads'], bass: ['Tuba', 'Double Bass'], rhythm: ['Industrial Percussion', 'Drum Kit'] }
       },
       'Detective Mystery': {
         bpm: 80, bpmRange: [65, 95], meters: ['4/4', '5/4'], keys: ['D Minor', 'A Minor', 'E Minor', 'C Minor', 'B Minor', 'G Minor'], mode: 'Minor', mood: 'Mysterious',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Cello'], alto: ['Clarinet', 'Flute'], harmonic: ['Piano', 'Harp'], bass: ['Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Cello'], alto: ['Clarinet', 'Flute'], harmonic: ['Piano', 'Harp'], bass: ['Double Bass', 'Cello'], rhythm: ['Drum Kit', 'Hand Drum'] }
       }
     }
   },
@@ -485,7 +483,7 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Gregorian Chant': {
         bpm: 50, bpmRange: [40, 60], meters: ['Free'], keys: ['D Dorian', 'A Aeolian', 'D Minor', 'A Minor', 'E Minor', 'G Mixolydian'], mode: 'Natural', mood: 'Spiritual',
         manifest: { lead: true, alto: true, harmonic: false, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Choir'], alto: ['Choir'], harmonic: [], bass: ['Double Bass', 'Recorder'], rhythm: [] }
+        instrumentPools: { lead: ['Choir'], alto: ['Choir'], harmonic: [], bass: ['Double Bass'], rhythm: [] }
       },
       'Byzantine Chant': {
         bpm: 55, bpmRange: [45, 65], meters: ['Free'], keys: ['D Minor', 'E Minor', 'A Minor', 'B Minor', 'G Minor', 'C Minor'], mode: 'Minor', mood: 'Spiritual',
@@ -495,22 +493,22 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Gospel': {
         bpm: 90, bpmRange: [70, 120], meters: ['4/4', '12/8'], keys: ['Db Major', 'Ab Major', 'Gb Major', 'Eb Major', 'Bb Major', 'F Major', 'C Major'], mode: 'Natural', mood: 'Uplifting',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Choir'], alto: ['Choir', 'Saxophone'], harmonic: ['Piano', 'Choir'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Choir'], alto: ['Choir', 'Saxophone'], harmonic: ['Piano', 'Choir', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum', 'Tambourine'] }
       },
       'New Age Healing': {
         bpm: 60, bpmRange: [40, 80], meters: ['Free', '4/4'], keys: ['C Major', 'G Major', 'F Major', 'D Major', 'A Major', 'Bb Major', 'Eb Major'], mode: 'Natural', mood: 'Meditative',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Flute', 'Harp'], alto: ['Harp', 'Pads'], harmonic: ['Pads'], bass: ['Double Bass'], rhythm: ['Bells'] }
+        instrumentPools: { lead: ['Flute', 'Harp'], alto: ['Harp', 'Pads'], harmonic: ['Pads', 'Harp'], bass: ['Double Bass', 'Synth Bass'], rhythm: ['Bells', 'Wind Chimes'] }
       },
       'Shamanic Pulse': {
         bpm: 100, bpmRange: [80, 120], meters: ['4/4', '2/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Minor', 'B Minor', 'C Minor', 'F# Minor'], mode: 'Minor', mood: 'Hypnotic',
         manifest: { lead: true, alto: true, harmonic: false, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Flute', 'Pan Flute'], alto: ['Flute', 'Low Whistle', 'Pan Flute'], harmonic: [], bass: ['Didgeridoo', 'Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Flute', 'Pan Flute'], alto: ['Flute', 'Low Whistle', 'Pan Flute'], harmonic: [], bass: ['Didgeridoo', 'Double Bass'], rhythm: ['Hand Drum', 'Taiko Drums'] }
       },
       'Zen Meditation': {
         bpm: 40, bpmRange: [30, 50], meters: ['Free'], keys: ['G Major', 'D Major', 'A Major', 'E Major', 'C Major', 'F Major'], mode: 'Natural', mood: 'Meditative',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Shakuhachi', 'Pipe Flute'], alto: ['Flute', 'Koto', 'Pipe Flute'], harmonic: ['Koto'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Shakuhachi', 'Pipe Flute'], alto: ['Flute', 'Koto', 'Pipe Flute'], harmonic: ['Koto', 'Pads'], bass: ['Double Bass'], rhythm: ['Hand Drum', 'Bells'] }
       },
       'Christmas Carols': {
         bpm: 85, bpmRange: [65, 115], meters: ['4/4', '3/4', '6/8'], keys: ['G Major', 'C Major', 'D Major', 'F Major', 'Bb Major', 'A Major', 'Eb Major'], mode: 'Natural', mood: 'Joyful',
@@ -519,7 +517,7 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
           lead: ['Choir', 'Violin', 'Recorder', 'Flute'], 
           alto: ['Flute', 'Viola', 'Recorder'],
           harmonic: ['Piano', 'Organ', 'Harp', 'Acoustic Guitar'], 
-          bass: ['Double Bass', 'Electric Bass', 'Recorder'], 
+          bass: ['Double Bass', 'Electric Bass'], 
           rhythm: ['Bells', 'Hand Drum', 'Tambourine'] 
         }
       }
@@ -531,27 +529,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Afrobeats': {
         bpm: 110, bpmRange: [100, 120], meters: ['4/4'], keys: ['F Major', 'G Minor', 'Bb Major', 'Eb Major', 'C Minor', 'Ab Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Electric Guitar'], alto: ['Trumpet', 'Saxophone'], harmonic: ['Piano', 'Pads'], bass: ['Electric Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
+        instrumentPools: { lead: ['Saxophone', 'Electric Guitar'], alto: ['Trumpet', 'Saxophone'], harmonic: ['Piano', 'Pads'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Electronic Drums', 'Hand Drum', 'Congas'] }
       },
       'Malian Blues': {
         bpm: 90, bpmRange: [80, 110], meters: ['4/4'], keys: ['G Major', 'C Major', 'D Major', 'A Minor', 'E Minor', 'F Major'], mode: 'Natural', mood: 'Soulful',
         manifest: { lead: true, alto: true, harmonic: false, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Kora', 'Acoustic Guitar'], alto: ['Kora', 'Acoustic Guitar'], harmonic: [], bass: ['Electric Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Kora', 'Acoustic Guitar'], alto: ['Kora', 'Acoustic Guitar'], harmonic: [], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Djembe'] }
       },
       'Highlife': {
         bpm: 115, bpmRange: [100, 130], meters: ['4/4'], keys: ['C Major', 'G Major', 'D Major', 'F Major', 'Bb Major', 'Eb Major'], mode: 'Natural', mood: 'Uplifting',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Electric Guitar'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano'], bass: ['Electric Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
+        instrumentPools: { lead: ['Trumpet', 'Electric Guitar'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Drum Kit', 'Congas'] }
       },
       'Desert Rock': {
         bpm: 100, bpmRange: [85, 115], meters: ['4/4'], keys: ['D Minor', 'G Minor', 'A Minor', 'E Minor', 'B Minor', 'C Minor'], mode: 'Minor', mood: 'Hypnotic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Acoustic Guitar'], harmonic: ['Acoustic Guitar'], bass: ['Electric Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar'], alto: ['Electric Guitar', 'Acoustic Guitar'], harmonic: ['Acoustic Guitar', 'Electric Guitar'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
       },
       'Marabi/Soweto': {
         bpm: 125, bpmRange: [110, 140], meters: ['4/4'], keys: ['C Major', 'F Major', 'G Major', 'Bb Major', 'D Major', 'Eb Major'], mode: 'Natural', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Trumpet'], alto: ['Trumpet', 'Saxophone'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Saxophone', 'Trumpet'], alto: ['Trumpet', 'Saxophone'], harmonic: ['Piano', 'Acoustic Guitar', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       }
     }
   },
@@ -596,22 +594,22 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Jig': {
         bpm: 110, bpmRange: [100, 130], meters: ['6/8'], keys: ['D Major', 'G Major', 'A Major', 'E Minor', 'B Minor', 'A Dorian'], mode: 'Natural', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Bagpipes', 'Harmonica', 'Recorder', 'Ocarina'], alto: ['Whistle', 'Recorder', 'Low Whistle'], harmonic: ['Harp'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Violin', 'Whistle', 'Recorder', 'Ocarina'], alto: ['Whistle', 'Recorder', 'Low Whistle'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
       },
       'Reel': {
         bpm: 125, bpmRange: [115, 140], meters: ['4/4', '2/2'], keys: ['G Major', 'D Major', 'A Minor', 'E Minor', 'A Major', 'B Minor', 'C Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Flute', 'Recorder', 'Ocarina'], alto: ['Violin', 'Flute', 'Recorder', 'Low Whistle'], harmonic: ['Acoustic Guitar'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Violin', 'Flute', 'Recorder', 'Ocarina'], alto: ['Violin', 'Flute', 'Recorder', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Harp'], bass: ['Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
       },
       'Air': {
         bpm: 60, bpmRange: [40, 80], meters: ['Free'], keys: ['D Major', 'G Major', 'A Minor', 'E Minor', 'F Major', 'C Major', 'Bb Major'], mode: 'Natural', mood: 'Melancholic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Whistle', 'Cello', 'Harmonica', 'Recorder', 'Pan Flute', 'Ocarina'], alto: ['Flute', 'Whistle', 'Recorder', 'Low Whistle', 'Pan Flute'], harmonic: ['Harp'], bass: ['Double Bass', 'Recorder'], rhythm: [] }
+        instrumentPools: { lead: ['Whistle', 'Cello', 'Harmonica', 'Recorder', 'Pan Flute', 'Ocarina'], alto: ['Flute', 'Whistle', 'Recorder', 'Low Whistle', 'Pan Flute'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Cello'], rhythm: [] }
       },
       'Celtic Punk/Rock': {
         bpm: 140, bpmRange: [125, 160], meters: ['4/4'], keys: ['D Major', 'G Major', 'A Minor', 'E Minor', 'B Minor', 'A Major', 'C Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Electric Guitar', 'Bagpipes', 'Harmonica', 'Ocarina'], alto: ['Electric Guitar', 'Accordion', 'Harmonica', 'Whistle', 'Low Whistle'], harmonic: ['Electric Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Electric Guitar', 'Bagpipes', 'Harmonica', 'Ocarina'], alto: ['Electric Guitar', 'Accordion', 'Harmonica', 'Whistle', 'Low Whistle'], harmonic: ['Electric Guitar', 'Acoustic Guitar'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       }
     }
   },
@@ -621,37 +619,37 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Salsa': {
         bpm: 180, bpmRange: [160, 210], meters: ['4/4'], keys: ['A Minor', 'D Minor', 'G Minor', 'C Minor', 'F Minor', 'E Minor', 'B Minor'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Trombone'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano'], bass: ['Electric Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Trumpet', 'Trombone'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano', 'Electric Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Congas', 'Bongos', 'Timbales', 'Hand Drum'] }
       },
       'Bossa Nova': {
         bpm: 120, bpmRange: [100, 140], meters: ['4/4'], keys: ['F Major', 'C Major', 'G Major', 'Bb Major', 'Eb Major', 'D Minor', 'A Minor'], mode: 'Natural', mood: 'Romantic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Flute'], alto: ['Flute', 'Electric Piano'], harmonic: ['Piano', 'Electric Piano'], bass: ['Electric Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Acoustic Guitar', 'Flute'], alto: ['Flute', 'Electric Piano'], harmonic: ['Piano', 'Electric Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Shakers'] }
       },
       'Guitar': {
         bpm: 115, bpmRange: [90, 140], meters: ['4/4', '3/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Major', 'B Minor', 'F# Minor', 'C Major'], mode: 'Minor', mood: 'Sentimental',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar'], alto: ['Acoustic Guitar'], harmonic: ['Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Acoustic Guitar', 'Electric Guitar'], alto: ['Acoustic Guitar', 'Electric Guitar'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
       },
       'Tango': {
         bpm: 115, bpmRange: [100, 130], meters: ['4/4', '2/4'], keys: ['A Minor', 'D Minor', 'G Minor', 'C Minor', 'E Major', 'F Minor', 'B Minor'], mode: 'Minor', mood: 'Dramatic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Accordion', 'Violin', 'Harmonica'], alto: ['Viola', 'Accordion', 'Harmonica'], harmonic: ['Piano'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Accordion', 'Violin', 'Harmonica'], alto: ['Viola', 'Accordion', 'Harmonica'], harmonic: ['Piano', 'Accordion'], bass: ['Double Bass', 'Cello'], rhythm: [] }
       },
       'Reggaeton': {
         bpm: 95, bpmRange: [85, 105], meters: ['4/4'], keys: ['C Minor', 'Bb Major', 'G Minor', 'F Minor', 'Eb Major', 'Ab Major'], mode: 'Minor', mood: 'Sexy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer'], alto: ['Synthesizer'], harmonic: ['Pads', 'Electric Guitar'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Synthesizer', 'Electric Guitar'], alto: ['Synthesizer', 'Pads'], harmonic: ['Pads', 'Electric Guitar'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       },
       'Flamenco': {
         bpm: 140, bpmRange: [110, 170], meters: ['12/8', '3/4', '4/4'], keys: ['A Minor', 'E Phrygian', 'D Minor', 'E Minor', 'B Minor', 'F# Phrygian'], mode: 'Minor', mood: 'Dramatic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
         instrumentPools: { 
-          lead: ['Acoustic Guitar'], 
-          alto: ['Acoustic Guitar', 'Clapping'],
-          harmonic: ['Acoustic Guitar'], 
-          bass: ['Double Bass'], 
-          rhythm: ['Clapping', 'Hand Drum'] 
+          lead: ['Acoustic Guitar', 'Violin'], 
+          alto: ['Acoustic Guitar', 'Flute'],
+          harmonic: ['Acoustic Guitar', 'Piano'], 
+          bass: ['Double Bass', 'Electric Bass'], 
+          rhythm: ['Hand Drum', 'Tambourine', 'Stomps'] 
         }
       },
       'Bolero': {
@@ -662,7 +660,7 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Paso Doble': {
         bpm: 120, bpmRange: [110, 130], meters: ['2/4'], keys: ['G Major', 'C Major', 'F Major', 'A Minor', 'E Major', 'D Major'], mode: 'Natural', mood: 'Dramatic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Castanets'], alto: ['Trumpet', 'Accordion'], harmonic: ['Strings'], bass: ['Tuba', 'Double Bass'], rhythm: ['Hand Drum', 'Tambourine'] }
+        instrumentPools: { lead: ['Trumpet', 'Brass Section'], alto: ['Trumpet', 'Accordion'], harmonic: ['Strings', 'Brass Section'], bass: ['Tuba', 'Double Bass'], rhythm: ['Hand Drum', 'Tambourine', 'Snare Drum'] }
       }
     }
   },
@@ -672,27 +670,27 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Arabic Classical': {
         bpm: 90, bpmRange: [70, 110], meters: ['10/8', '8/4', '4/4'], keys: ['D Minor', 'G Minor', 'A Minor', 'C Minor', 'E Minor', 'F Minor', 'B Minor'], mode: 'Minor', mood: 'Meditative',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Oud', 'Pan Flute'], alto: ['Pan Flute', 'Oud'], harmonic: ['Qanun'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Oud', 'Flute'], alto: ['Flute', 'Oud'], harmonic: ['Qanun', 'Pads'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Tabla'] }
       },
       'Japanese Folk': {
         bpm: 75, bpmRange: [60, 100], meters: ['Free', '4/4'], keys: ['G Major', 'D Major', 'A Minor', 'E Minor', 'C Major', 'B Minor'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Koto', 'Shakuhachi'], alto: ['Shakuhachi', 'Flute'], harmonic: ['Guzheng'], bass: ['Double Bass'], rhythm: ['Taiko Drums'] }
+        instrumentPools: { lead: ['Koto', 'Shakuhachi'], alto: ['Shakuhachi', 'Flute'], harmonic: ['Koto', 'Pads'], bass: ['Double Bass'], rhythm: ['Taiko Drums', 'Hand Drum'] }
       },
       'Chinese Traditional': {
         bpm: 85, bpmRange: [60, 110], meters: ['4/4', '2/4'], keys: ['C Major', 'G Major', 'D Major', 'F Major', 'Bb Major', 'A Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Erhu', 'Flute'], alto: ['Pipa', 'Erhu'], harmonic: ['Guzheng', 'Pipa'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Erhu', 'Flute'], alto: ['Pipa', 'Erhu'], harmonic: ['Guzheng', 'Pipa'], bass: ['Double Bass'], rhythm: ['Hand Drum', 'Taiko Drums'] }
       },
       'Turkish Folk': {
         bpm: 110, bpmRange: [90, 130], meters: ['7/8', '9/8', '5/8', '4/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Minor', 'B Minor', 'C Minor'], mode: 'Minor', mood: 'Soulful',
         manifest: { lead: true, alto: true, harmonic: false, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Bağlama', 'Zurna'], alto: ['Bağlama', 'Zurna'], harmonic: [], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Bağlama', 'Zurna'], alto: ['Bağlama', 'Zurna'], harmonic: [], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Tabla'] }
       },
       'Balinese Gamelan': {
         bpm: 120, bpmRange: [90, 140], meters: ['Free', '4/4'], keys: ['C Major', 'G Major', 'D Major', 'F Major', 'Bb Major'], mode: 'Natural', mood: 'Meditative',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Bell Synth'], alto: ['Marimba', 'Bell Synth'], harmonic: ['Marimba'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Bell Synth', 'Marimba'], alto: ['Marimba', 'Bell Synth'], harmonic: ['Marimba', 'Pads'], bass: ['Double Bass', 'Synth Bass'], rhythm: ['Hand Drum', 'Gong'] }
       }
     }
   },
@@ -762,62 +760,62 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Bluegrass': {
         bpm: 145, bpmRange: [120, 180], meters: ['4/4', '2/4'], keys: ['G Major', 'C Major', 'D Major', 'A Major', 'B Major', 'E Major', 'F Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Banjo', 'Mandolin', 'Violin'], alto: ['Violin', 'Mandocello'], harmonic: ['Acoustic Guitar'], bass: ['Double Bass', 'Harmonica'], rhythm: [] }
+        instrumentPools: { lead: ['Banjo', 'Mandolin', 'Violin', 'Harmonica', 'Mandocello', 'Viola', 'Cello', 'Accordion'], alto: ['Violin', 'Mandocello', 'Viola', 'Cello', 'Accordion'], harmonic: ['Acoustic Guitar', 'Banjo'], bass: ['Double Bass'], rhythm: [] }
       },
       'Country': {
         bpm: 105, bpmRange: [80, 125], meters: ['4/4'], keys: ['G Major', 'C Major', 'D Major', 'E Major', 'A Major', 'F Major', 'Bb Major'], mode: 'Natural', mood: 'Nostalgic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Harmonica', 'Acoustic Guitar'], alto: ['Electric Guitar', 'Pedal Steel', 'Piano'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Harmonica', 'Acoustic Guitar', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Electric Guitar', 'Pedal Steel', 'Piano', 'Viola', 'Cello'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Americana': {
         bpm: 92, bpmRange: [75, 115], meters: ['4/4', '3/4'], keys: ['A Minor', 'E Minor', 'G Major', 'D Major', 'C Major', 'B Minor', 'F# Minor', 'A Major'], mode: 'Natural', mood: 'Sentimental',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Banjo'], alto: ['Violin', 'Cello', 'Accordion'], harmonic: ['Acoustic Guitar', 'Organ', 'Piano'], bass: ['Double Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
+        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Banjo', 'Violin', 'Mandolin', 'Accordion'], alto: ['Violin', 'Cello', 'Accordion', 'Viola'], harmonic: ['Acoustic Guitar', 'Organ', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
       },
       'Outlaw Country': {
         bpm: 110, bpmRange: [90, 130], meters: ['4/4'], keys: ['E Major', 'A Major', 'G Major', 'D Major', 'B Major', 'C Major', 'F# Major'], mode: 'Natural', mood: 'Intense',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Electric Guitar', 'Piano'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass'], rhythm: ['Electric Guitar', 'Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Harmonica', 'Violin', 'Banjo', 'Accordion'], alto: ['Electric Guitar', 'Piano', 'Viola', 'Cello'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Honky Tonk': {
         bpm: 115, bpmRange: [100, 130], meters: ['4/4', '2/4'], keys: ['C Major', 'G Major', 'D Major', 'A Major', 'E Major', 'F Major', 'Bb Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Pedal Steel', 'Harmonica'], alto: ['Pedal Steel', 'Accordion', 'Harmonica'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Pedal Steel', 'Harmonica', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Pedal Steel', 'Accordion', 'Harmonica', 'Viola', 'Cello'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Rockabilly': {
         bpm: 165, bpmRange: [140, 190], meters: ['4/4', '2/2'], keys: ['E Major', 'A Major', 'G Major', 'C Major', 'D Major', 'B Major', 'F Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'alto: Acoustic Guitar', 'Piano'], alto: ['Acoustic Guitar', 'Piano'], harmonic: ['Electric Guitar', 'Piano'], bass: ['Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Acoustic Guitar', 'Piano', 'Violin', 'Banjo', 'Accordion'], alto: ['Acoustic Guitar', 'Piano', 'Viola', 'Cello'], harmonic: ['Electric Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Alt-Country': {
         bpm: 115, bpmRange: [95, 135], meters: ['4/4'], keys: ['G Major', 'D Major', 'E Minor', 'A Minor', 'C Major', 'B Minor', 'F# Minor', 'E Major'], mode: 'Natural', mood: 'Melancholic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Electric Guitar', 'Harmonica'], alto: ['Strings', 'Cello'], harmonic: ['Acoustic Guitar', 'Organ'], bass: ['Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Electric Guitar', 'Harmonica', 'Violin', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Strings', 'Cello', 'Viola'], harmonic: ['Acoustic Guitar', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Texas Swing': {
         bpm: 135, bpmRange: [120, 155], meters: ['4/4', '2/4'], keys: ['C Major', 'G Major', 'F Major', 'D Major', 'Bb Major', 'A Major', 'Eb Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Trumpet', 'Clarinet'], alto: ['Saxophone', 'Pedal Steel'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Double Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Trumpet', 'Clarinet', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Saxophone', 'Pedal Steel', 'Viola', 'Cello'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Spaghetti Western': {
         bpm: 85, bpmRange: [70, 105], meters: ['4/4'], keys: ['D Minor', 'A Minor', 'E Minor', 'G Minor', 'C Minor', 'B Minor', 'F# Minor'], mode: 'Minor', mood: 'Cinematic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Harmonica', 'Electric Guitar'], alto: ['Trumpet', 'Electric Guitar'], harmonic: ['Strings', 'Acoustic Guitar'], bass: ['Double Bass', 'Harmonica'], rhythm: ['Timpani', 'Drum Kit'] }
+        instrumentPools: { lead: ['Trumpet', 'Harmonica', 'Electric Guitar', 'Violin', 'Banjo', 'Accordion'], alto: ['Trumpet', 'Electric Guitar', 'Viola', 'Cello'], harmonic: ['Strings', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Timpani', 'Drum Kit'] }
       },
       'Folk Revival': {
         bpm: 95, bpmRange: [80, 110], meters: ['4/4', '3/4'], keys: ['C Major', 'G Major', 'F Major', 'D Major', 'A Minor', 'E Minor', 'Bb Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Recorder'], alto: ['Harmonica', 'Acoustic Guitar', 'Recorder', 'Whistle', 'Low Whistle'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Recorder'], rhythm: [] },
+        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Recorder', 'Violin', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Harmonica', 'Acoustic Guitar', 'Recorder', 'Whistle', 'Low Whistle', 'Viola', 'Cello'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Cello'], rhythm: [] },
       },
       'Western Swing': {
         bpm: 135, bpmRange: [120, 160], meters: ['4/4'], keys: ['G Major', 'C Major', 'D Major', 'A Major', 'F Major', 'Bb Major', 'E Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Violin', 'Lap Steel', 'Electric Guitar'], alto: ['Saxophone', 'Trumpet', 'Low Whistle'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit'] }
+        instrumentPools: { lead: ['Violin', 'Lap Steel', 'Electric Guitar', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Saxophone', 'Trumpet', 'Low Whistle', 'Viola', 'Cello'], harmonic: ['Piano', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Hand Drum'] }
       },
       'Cowboy Ballad': {
         bpm: 68, bpmRange: [50, 85], meters: ['3/4', '4/4'], keys: ['C Major', 'G Major', 'D Major', 'A Minor', 'E Minor', 'F Major', 'A Major'], mode: 'Natural', mood: 'Melancholic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Electric Guitar'], alto: ['Violin', 'Oboe', 'Low Whistle'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass'], rhythm: [] }
+        instrumentPools: { lead: ['Acoustic Guitar', 'Harmonica', 'Electric Guitar', 'Violin', 'Banjo', 'Mandolin', 'Accordion'], alto: ['Violin', 'Oboe', 'Low Whistle', 'Viola', 'Cello'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: [] }
       }
     }
   },
@@ -827,17 +825,17 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Slack Key Guitar': {
         bpm: 90, bpmRange: [70, 110], meters: ['4/4'], keys: ['G Major', 'C Major', 'F Major', 'D Major', 'Bb Major', 'A Major', 'Eb Major'], mode: 'Natural', mood: 'Peaceful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Ukulele', 'Acoustic Guitar'], alto: ['Acoustic Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Ukulele', 'Acoustic Guitar'], alto: ['Acoustic Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Shakers'] }
       },
       'Traditional Hula': {
         bpm: 75, bpmRange: [60, 95], meters: ['4/4'], keys: ['G Major', 'C Major', 'F Major', 'D Major', 'A Major', 'Bb Major'], mode: 'Natural', mood: 'Spiritual',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Ukulele', 'Whistle'], alto: ['Acoustic Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar'], bass: ['Double Bass'], rhythm: ['Hand Drum'] }
+        instrumentPools: { lead: ['Ukulele', 'Whistle'], alto: ['Acoustic Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar', 'Acoustic Guitar'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Shakers'] }
       },
       'Island Reggae': {
         bpm: 100, bpmRange: [90, 115], meters: ['4/4'], keys: ['C Major', 'G Major', 'F Major', 'Bb Major', 'D Major', 'A Major', 'Eb Major'], mode: 'Natural', mood: 'Groovy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Saxophone', 'Trumpet', 'Ukulele'], alto: ['Electric Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar', 'Electric Piano'], bass: ['Electric Bass'], rhythm: ['Electronic Drums'] }
+        instrumentPools: { lead: ['Saxophone', 'Trumpet', 'Ukulele'], alto: ['Electric Guitar', 'Low Whistle'], harmonic: ['Lap Steel Guitar', 'Electric Piano'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       }
     }
   },
@@ -862,10 +860,31 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       }
     }
   }
+  ,
+  'Opera': {
+    genre: 'Opera',
+    styles: {
+      'Baroque Opera': {
+        bpm: 70, bpmRange: [50, 90], meters: ['4/4', '3/4'], keys: ['D Minor', 'G Minor', 'A Minor', 'C Major'], mode: 'Minor', mood: 'Dramatic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Soprano Voice', 'Tenor Voice'], alto: ['Strings', 'Harpsichord'], harmonic: ['Strings', 'Organ'], bass: ['Double Bass', 'Bassoon'], rhythm: ['Timpani', 'Snare Drum'] }
+      },
+      'Romantic Opera': {
+        bpm: 80, bpmRange: [60, 110], meters: ['4/4', '6/8'], keys: ['E Minor', 'A Minor', 'D Minor', 'C Major'], mode: 'Minor', mood: 'Romantic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Soprano Voice', 'Baritone Voice'], alto: ['Strings', 'French Horn'], harmonic: ['Strings', 'Piano'], bass: ['Double Bass', 'Timpani'], rhythm: ['Timpani', 'Cymbals'] }
+      },
+      'Contemporary Opera': {
+        bpm: 90, bpmRange: [70, 130], meters: ['4/4', '5/4'], keys: ['D Minor', 'E Minor', 'F Minor', 'A Minor'], mode: 'Minor', mood: 'Mysterious',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Soprano Voice', 'Tenor Voice', 'Synthesizer'], alto: ['Strings', 'Synthesizer'], harmonic: ['Strings', 'Piano'], bass: ['Double Bass', 'Synth Bass'], rhythm: ['Percussion', 'Electronic Drums'] }
+      }
+    }
+  }
 };
 
 const GENRE_MAP_MODERN = ['Jazz', 'Pop', 'Blues', 'Electronic', 'Rock', 'Ambient', 'Gaming'];
-const GENRE_MAP_TRADITIONAL = ['Classic', 'Marching', 'Renascentist', 'Victorian', 'Spiritual'];
+const GENRE_MAP_TRADITIONAL = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual'];
 const GENRE_MAP_REGIONAL = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
 
 // Final Alto Replacement Audit
@@ -929,7 +948,7 @@ export class TopToolbar extends LitElement {
     /* Increased MOOD and KEY width by 15% */
     .control-group.group-mood { flex: 0 1 131px; min-width: 108px; max-width: 159px; }
     .control-group.group-key { flex: 0 1 127px; min-width: 108px; max-width: 152px; }
-    .control-group.group-tempo { flex: 1.25; min-width: 125px; }
+    .control-group.group-tempo { flex: 1.5; min-width: 150px; }
 
     .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; width: 100%; }
     .label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
@@ -971,7 +990,7 @@ export class TopToolbar extends LitElement {
     .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
     .select-mood, .select-7vw { width: 100%; min-width: 0; flex: 1; }
     .select-key { width: 100%; min-width: 0; flex: 1; }
-    .select-meter { width: 48px; min-width: 48px; max-width: 52px; flex: 0 0 48px; padding: 0 2px; }
+    .select-meter { width: 60px; min-width: 60px; max-width: 65px; flex: 0 0 60px; padding: 0 4px; }
     .value-display { font-family: monospace; font-size: 16.73px; color: var(--accent-color); min-width: 28px; text-align: right; }
     .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 2px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 18px; height: 18px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
@@ -1018,21 +1037,28 @@ export class TopToolbar extends LitElement {
       this.dispatch('locks-changed', this.locked);
   }
 
-  public randomize(): string {
+  public randomize(suppressEvents: boolean = false): string {
     // 1. GENRE
     if (!this.locked.genre) {
       const allGenres = Object.keys(MUSIC_DATA);
       this.genre = allGenres[Math.floor(Math.random() * allGenres.length)];
-      this.dispatch('genre-changed', this.genre);
+      if (!suppressEvents) this.dispatch('genre-changed', this.genre);
     }
     
     const genreData = MUSIC_DATA[this.genre];
     const availableStyles = genreData ? Object.keys(genreData.styles) : [];
     
     // 2. STYLE
-    if (!this.locked.style || !availableStyles.includes(this.musicStyle)) {
-        this.musicStyle = availableStyles[Math.floor(Math.random() * availableStyles.length)];
-        this.dispatch('style-changed', this.musicStyle);
+    if (!this.locked.style) {
+        if (availableStyles.length > 0) {
+            const randomIndex = Math.floor(Math.random() * availableStyles.length);
+            this.musicStyle = availableStyles[randomIndex];
+            console.log(`Randomized style to ${this.musicStyle} (index ${randomIndex}) from ${availableStyles.length} options`);
+            if (!suppressEvents) this.dispatch('style-changed', this.musicStyle);
+        }
+    } else if (availableStyles.length > 0 && !availableStyles.includes(this.musicStyle)) {
+        this.musicStyle = availableStyles[0];
+        if (!suppressEvents) this.dispatch('style-changed', this.musicStyle);
     }
 
     const sig = genreData.styles[this.musicStyle];
@@ -1042,14 +1068,14 @@ export class TopToolbar extends LitElement {
     if (!this.locked.mood) {
         // High probability of picking the style's defined mood, else a random global mood
         this.currentMood = (Math.random() > 0.3) ? sig.mood : MOODS[Math.floor(Math.random() * MOODS.length)];
-        this.dispatch('mood-changed', this.currentMood);
+        if (!suppressEvents) this.dispatch('mood-changed', this.currentMood);
     }
 
     // 4. KEY
     if (!this.locked.key) {
         this.key = sig.keys[Math.floor(Math.random() * sig.keys.length)];
         this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
-        this.dispatch('key-changed', { key: this.key, mode: this.mode });
+        if (!suppressEvents) this.dispatch('key-changed', { key: this.key, mode: this.mode });
     }
 
     // 5. TEMPO
@@ -1148,124 +1174,31 @@ export class TopToolbar extends LitElement {
       const sig = genreDef.styles[this.musicStyle];
       if (!sig) return;
 
-      const LIRA_POOLS = {
-        lead: ['String Orchestra', 'Chamber Strings', 'Symphony Strings', 'Violin Section', 'Cello Ensemble'],
-        alto: ['Solo Violin', 'Solo Cello', 'Solo Flute', 'Solo Trumpet', 'Solo Saxophone', 'Operatic Soloist', 'Solo Male', 'Solo Female', 'Solo Boy', 'Solo Girl'],
-        harmonic: ['Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble'],
-        bass: ['Cinematic Brass', 'Brass Section', 'Tuba', 'Trombones', 'French Horns', 'Low Brass'],
-        rhythm: ['Orchestral Percussion', 'Timpani & Drums', 'Cinematic Drums', 'Taiko Drums']
-      };
-
-      const usedInstruments = new Set<string>();
-
-      const getUniqueInstrument = (channelType: keyof typeof FALLBACK_POOLS, pool: string[]) => {
-          let candidates = pool.filter(i => !!i && i.toLowerCase() !== 'none' && i.toLowerCase() !== 'n/a' && i.toLowerCase() !== "");
-          
-          if (isLiraMode && candidates.length === 0) {
-              candidates = (LIRA_POOLS as any)[channelType] || [];
-          }
-
-          // DIVERSITY INJECTION:
-          // If channel lock is off (implicit during randomization call usually, passed via locks) 
-          // we inject a "less probable" candidate from fallback to increase diversity.
-          if (!locks?.channels && candidates.length > 0 && Math.random() < 0.3) {
-             const fallbackPool = isLiraMode ? ((LIRA_POOLS as any)[channelType] || FALLBACK_POOLS[channelType]) : FALLBACK_POOLS[channelType];
-             const randomFallback = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
-             
-             // Respect Vocal Mode rules for the fallback injection
-             let allowInjection = true;
-             if (mode !== 'VOCALIZATION' && VOCAL_MARKERS.some(v => randomFallback.toLowerCase().includes(v))) {
-                 allowInjection = false;
-             }
-             
-             if (allowInjection && !candidates.includes(randomFallback)) {
-                 candidates.push(randomFallback);
-             }
-          }
-
-          // Rule: Avoid at all cost vocal instruments unless in VOC mode
-          if (mode !== 'VOCALIZATION') {
-              candidates = candidates.filter(inst => !VOCAL_MARKERS.some(v => inst.toLowerCase().includes(v)));
-          } else {
-              // Priority: Find vocal instrument if in VOC mode
-              const vocalOnly = candidates.filter(inst => VOCAL_MARKERS.some(v => inst.toLowerCase().includes(v)));
-              if (vocalOnly.length > 0) candidates = vocalOnly;
-          }
-
-          const shuffledSpecific = [...candidates].sort(() => Math.random() - 0.5);
-          for (const candidate of shuffledSpecific) {
-              if (!usedInstruments.has(candidate)) {
-                  usedInstruments.add(candidate);
-                  return candidate;
-              }
-          }
-
-          let fallbackPool = isLiraMode ? ((LIRA_POOLS as any)[channelType] || FALLBACK_POOLS[channelType]) : FALLBACK_POOLS[channelType];
-          if (mode !== 'VOCALIZATION') {
-              fallbackPool = fallbackPool.filter((inst: string) => !VOCAL_MARKERS.some(v => inst.toLowerCase().includes(v)));
-          } else if (channelType === 'lead' || channelType === 'alto') {
-              // Forced vocal fallback for VOC mode
-              fallbackPool = ['Solo Female', 'Solo Male', 'Solo Girl', 'Solo Boy', 'Choir', 'Vocal Chops', 'Solo Voice', 'Soprano Voice'];
-          }
-
-          const shuffledFallback = [...fallbackPool].sort(() => Math.random() - 0.5);
-          for (const candidate of shuffledFallback) {
-              if (!usedInstruments.has(candidate)) {
-                  usedInstruments.add(candidate);
-                  return candidate;
-              }
-          }
-
-          if (candidates.length > 0) {
-              const fallback = candidates[0];
-              usedInstruments.add(fallback);
-              return fallback;
-          }
-
-          if (fallbackPool.length > 0) {
-              const fallback = fallbackPool[0];
-              usedInstruments.add(fallback);
-              return fallback;
-          }
-
-          const defaults: Record<string, string> = { lead: 'Synthesizer', alto: 'Strings', harmonic: 'Piano', bass: 'Electric Bass', rhythm: 'Drum Kit' };
-          return defaults[channelType] || 'Piano';
-      };
-
-      const effectiveManifest = { lead: true, alto: true, harmonic: true, bass: true, rhythm: true };
       const chosenInstruments: any = {};
-      
-      const getDefaultInst = (ch: string) => {
-          switch(ch) {
-              case 'lead': return isLiraMode ? 'String Orchestra' : 'Synthesizer';
-              case 'alto': return isLiraMode ? 'Solo Violin' : 'Alto Saxophone';
-              case 'harmonic': return isLiraMode ? 'Mixed Choir' : 'Piano';
-              case 'bass': return isLiraMode ? 'Cinematic Brass' : 'Electric Bass';
-              case 'rhythm': return isLiraMode ? 'Orchestral Percussion' : 'Drum Kit';
-              default: return 'Piano';
-          }
-      };
-
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+
       channels.forEach(ch => {
-          const pool = isLiraMode ? (sig.instrumentPools[ch] || LIRA_POOLS[ch as keyof typeof LIRA_POOLS]) : (sig.instrumentPools[ch] || []);
-          
+          // Use style pool, fall back to FALLBACK_POOLS if empty
+          let pool = sig.instrumentPools[ch] || [];
+          if (pool.length === 0) {
+              pool = FALLBACK_POOLS[ch] || [];
+          }
+
           if (locks?.channels && currentInstruments) {
+              // Preserve existing if locked and still in pool
               const cur = currentInstruments[ch].instrument;
-              chosenInstruments[ch] = (cur && cur.toLowerCase() !== 'none' && cur.toLowerCase() !== 'n/a') ? cur : getDefaultInst(ch);
-              usedInstruments.add(chosenInstruments[ch]);
+              chosenInstruments[ch] = (cur && pool.includes(cur)) ? cur : (pool[Math.floor(Math.random() * pool.length)] || "");
           } else {
-              const inst = getUniqueInstrument(ch, pool || []);
-              chosenInstruments[ch] = (inst && inst.toLowerCase() !== 'none' && inst.toLowerCase() !== 'n/a') ? inst : getDefaultInst(ch);
-              usedInstruments.add(chosenInstruments[ch]);
+              // Pick randomly from the pool
+              chosenInstruments[ch] = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : "";
           }
       });
 
       this.dispatch('style-matrix-update', { 
-          manifest: effectiveManifest, 
+          manifest: sig.manifest, 
           instruments: chosenInstruments, 
           style: this.musicStyle, 
-          pools: isLiraMode ? LIRA_POOLS : sig.instrumentPools,
+          pools: sig.instrumentPools,
           locks: locks
       });
   }
