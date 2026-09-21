@@ -345,7 +345,6 @@ export class Timeline extends LitElement {
     }
   `;
 
-  @property({ type: String }) playbackState = 'stopped';
   @property({ type: Number }) maxDuration = 34; 
   @property({ type: Number }) recordedDuration = 0; 
   @property({ type: Boolean, reflect: true }) hasRecording = false;
