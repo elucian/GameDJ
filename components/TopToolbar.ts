@@ -990,7 +990,7 @@ export class TopToolbar extends LitElement {
     .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
     .select-mood, .select-7vw { width: 100%; min-width: 0; flex: 1; }
     .select-key { width: 100%; min-width: 0; flex: 1; }
-    .select-meter { width: 60px; min-width: 60px; max-width: 65px; flex: 0 0 60px; padding: 0 4px; }
+    .select-meter { width: 70px; min-width: 70px; max-width: 75px; flex: 0 0 70px; padding: 0 4px; }
     .value-display { font-family: monospace; font-size: 16.73px; color: var(--accent-color); min-width: 28px; text-align: right; }
     .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 2px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 18px; height: 18px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
@@ -1176,27 +1176,50 @@ export class TopToolbar extends LitElement {
 
       const chosenInstruments: any = {};
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+      const usedInstruments = new Set<string>();
 
+      // First pass: handle locked channels to reserve their instruments
+      if (locks?.channels && currentInstruments) {
+          channels.forEach(ch => {
+              let pool = sig.instrumentPools[ch] || [];
+              if (pool.length === 0) pool = FALLBACK_POOLS[ch] || [];
+              const cur = currentInstruments[ch].instrument;
+              if (cur && pool.includes(cur)) {
+                  chosenInstruments[ch] = cur;
+                  usedInstruments.add(cur);
+              }
+          });
+      }
+
+      // Second pass: pick unique instruments for remaining channels
       channels.forEach(ch => {
-          // Use style pool, fall back to FALLBACK_POOLS if empty
+          if (chosenInstruments[ch] !== undefined) return;
+
           let pool = sig.instrumentPools[ch] || [];
           if (pool.length === 0) {
               pool = FALLBACK_POOLS[ch] || [];
           }
 
-          if (locks?.channels && currentInstruments) {
-              // Preserve existing if locked and still in pool
-              const cur = currentInstruments[ch].instrument;
-              chosenInstruments[ch] = (cur && pool.includes(cur)) ? cur : (pool[Math.floor(Math.random() * pool.length)] || "");
-          } else {
-              // Pick randomly from the pool
-              chosenInstruments[ch] = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : "";
+          // Filter out already used instruments to ensure uniqueness across channels
+          let availablePool = pool.filter((item: string) => !usedInstruments.has(item));
+          if (availablePool.length === 0) {
+              availablePool = pool; // Fallback if pool is exhausted
+          }
+
+          const chosen = availablePool.length > 0 ? availablePool[Math.floor(Math.random() * availablePool.length)] : "";
+          chosenInstruments[ch] = chosen;
+          if (chosen) {
+              usedInstruments.add(chosen);
           }
       });
 
       this.dispatch('style-matrix-update', { 
           manifest: sig.manifest, 
           instruments: chosenInstruments, 
+          weights: channels.reduce((acc, ch) => {
+              acc[ch] = Math.random() * 0.9 + 0.05; // 5% to 95%
+              return acc;
+          }, {} as Record<string, number>),
           style: this.musicStyle, 
           pools: sig.instrumentPools,
           locks: locks

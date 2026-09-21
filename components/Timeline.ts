@@ -359,6 +359,7 @@ export class Timeline extends LitElement {
   
   @property({ type: Number }) elapsedSeconds = 0;
   @property({ type: Boolean }) isRewinding = false;
+  @property({ type: String }) playbackState: string = 'stopped';
 
   @state() private history: ChannelHistory = { lead: [], alto: [], harmonic: [], bass: [], rhythm: [], ghost: [] };
   private isDragging = false;
@@ -629,7 +630,7 @@ export class Timeline extends LitElement {
                  ${bufferFilled ? html`<div class="playhead playback" style="left: ${playbackHeadPct}%"></div>` : ''}
                  <div class="playhead recording" style="left: ${writeHeadPct}%"></div>
                ` : ''}
-               ${isPlaying || isPaused ? html`
+               ${isPlaying || isPaused || this.playbackState === 'rewinding' ? html`
                  <div class="playhead playback" style="left: ${writeHeadPct}%"></div>
                ` : ''}
              </div>

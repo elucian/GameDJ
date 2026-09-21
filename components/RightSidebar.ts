@@ -499,7 +499,7 @@ export class RightSidebar extends LitElement {
     }
   }
 
-  public applyMatrixUpdate(detail: { manifest: any, instruments: any, style: string, pools: any }) {
+  public applyMatrixUpdate(detail: { manifest: any, instruments: any, weights?: any, style: string, pools: any }) {
       this.currentPools = detail.pools || {};
       this.currentStyleManifest = detail.manifest;
       
@@ -515,6 +515,10 @@ export class RightSidebar extends LitElement {
               const recommended = detail.instruments[ch];
               if (recommended) {
                   newSettings[ch].instrument = recommended;
+                  newSettings[ch].active = true;
+                  if (detail.weights && detail.weights[ch] !== undefined) {
+                      newSettings[ch].weight = detail.weights[ch];
+                  }
               }
           }
       });
@@ -598,7 +602,13 @@ export class RightSidebar extends LitElement {
     
     // Deep clone to ensure reactivity
     const newSettings = { ...this.settings };
-    newSettings[channel] = { ...this.settings[channel], instrument: select.value };
+    newSettings[channel] = { ...this.settings[channel], instrument: select.value, active: true }; // Force active
+    
+    // Auto-lock when user manually changes instrument
+    if (!this.channelsLocked) {
+        this.channelsLocked = true;
+        this.dispatch('locks-changed', this.locks);
+    }
     
     this.auditAndCommit(newSettings, channel);
     this.dispatch('instrument-interacted', channel);
@@ -666,7 +676,7 @@ export class RightSidebar extends LitElement {
               <optgroup label="ALL INSTRUMENTS">${allUnique.map(inst => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}</optgroup>
             </select>
           </div>
-          <div class="weight-slider"><input type="range" min="0" max="2.0" step="0.222" .value=${ch.weight} ?disabled=${isInteractionDisabled} @input=${(e: any) => { 
+          <div class="weight-slider"><input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} ?disabled=${isInteractionDisabled} @input=${(e: any) => { 
               if (!isInteractionDisabled) { 
                   const val = parseFloat(e.target.value);
                   this.settings[key].weight = val; 

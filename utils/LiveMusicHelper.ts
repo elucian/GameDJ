@@ -100,6 +100,7 @@ export class LiveMusicHelper extends EventTarget {
     rhythm: { instrument: 'Drum Kit', active: true, weight: 1.0, visible: true }
   };
   private guidance = 3; public conductorMode = false; private isStereo = true; 
+  private soloMuted = false; private choirMuted = false;
   private evolutionValue = 0; 
   private conductorTimer: number | null = null;
   private currentPlan: PerformancePlanStage[] = [];
@@ -209,7 +210,12 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   public setStereo(stereo: boolean) { this.isStereo = stereo; this.scheduleRefresh(); }
-  public setMaxDuration(minutes: number) { this.maxDurationMinutes = minutes; }
+  public setMaxDuration(minutes: number) { 
+      this.maxDurationMinutes = minutes; 
+      if (this.playbackState === 'recording') {
+          this.updateRecordingSchedule();
+      }
+  }
   public setSeed(_seed?: number) { /* Seed removed to ensure prompt authenticity */ }
   public setChannelsLocked(locked: boolean) { this.channelsLocked = locked; }
   
@@ -227,10 +233,7 @@ export class LiveMusicHelper extends EventTarget {
   public setEvolution(val: number) { this.evolutionValue = val; }
   public setGenerationMode(mode: MusicGenerationMode) { 
       let effectiveMode = mode;
-      // CRITICAL: Obey VOC mode rule. Only allow if vocal instrument is active.
-      if (mode === 'VOCALIZATION' && !this.isVocalInstrumentActive()) {
-          effectiveMode = 'QUALITY';
-      }
+      // Removed restriction: Allowing VOCALIZATION mode regardless of current instrument state
       this.generationMode = effectiveMode; 
       this.dispatchEvent(new CustomEvent('mode-changed-internal', { detail: effectiveMode }));
       this.scheduleRefresh(); 
@@ -314,10 +317,10 @@ export class LiveMusicHelper extends EventTarget {
       this.userInteractionCooldowns.set(id, Date.now()); 
   }
 
-  private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 200);
+  private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 1000);
 
   public sendVocalSignal(signal: string, durationMs: number = 5000) {
-    if (!this.isVocalInstrumentActive() && this.generationMode !== 'VOCALIZATION') return;
+    // Vocal signal can now be sent freely regardless of mode or instrument state
 
     // Ensure VOCALIZATION mode is active if a voice channel is active
     if (this.generationMode !== 'VOCALIZATION' && this.isVocalInstrumentActive()) {
@@ -337,6 +340,9 @@ export class LiveMusicHelper extends EventTarget {
     }, durationMs);
   }
 
+  private lastConfig: any = null;
+  private lastPrompts: any = null;
+
   private async refreshSessionPrompts() {
     if (!this.session) return;
     
@@ -344,8 +350,8 @@ export class LiveMusicHelper extends EventTarget {
     const config: any = {
         musicGenerationMode: this.generationMode,
         bpm: this.bpm,
-        guidance: 4.0,
-        temperature: 1.0,
+        guidance: 6.0,
+        temperature: 0.9,
     };
     
     const scaleMap: any = {
@@ -357,44 +363,48 @@ export class LiveMusicHelper extends EventTarget {
     if (scaleMap[this.key]) {
         config.scale = scaleMap[this.key];
     }
-    try { await this.session.setMusicGenerationConfig({ musicGenerationConfig: config }); } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
 
-    // 2. Build Tokenized Prompt (Minimal Tokens)
-    let narrative = `[G:${this.genre}] [S:${this.style}] [M:${this.mood}] [B:${this.bpm}] `;
+    if (JSON.stringify(config) !== JSON.stringify(this.lastConfig)) {
+        try { await this.session.setMusicGenerationConfig({ musicGenerationConfig: config }); this.lastConfig = config; } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
+    }
+
+    // 2. Build Simplified, Authentic Prompt
+    let narrative = `[GENRE:${this.genre}] [STYLE:${this.style}] [KEY:${this.key}] [TEMPO:${this.bpm}] `;
+    narrative += `[AUTHENTICITY:HIGH] [CULTURAL_DIALECT:${this.getRegionalLanguage()}] `;
     
-    // Instrument context
+    const activeInstruments: string[] = [];
     const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
     keys.forEach((k) => {
         const ch = this.instruments[k];
         if (ch.active && ch.visible !== false && ch.weight > 0.05) {
-            narrative += `[${k.toUpperCase()}:${ch.instrument.replace(/\s+/g, '')}] `;
+            const inst = ch.instrument.toLowerCase();
+            const isChoir = inst.includes('choir');
+            if (isChoir && this.choirMuted) return;
+            if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
+            
+            activeInstruments.push(`${k.toUpperCase()}:${ch.instrument}`);
         }
     });
 
-    narrative += `[LANG:${this.getRegionalLanguage()}] [TEMPO_STRICT:${this.bpm}] `;
-
-    // Explicitly suppress vocals when not in VOCALIZATION mode
-    if (this.generationMode !== 'VOCALIZATION') {
-        narrative += `[INSTRUMENTAL_ONLY:true] [NO_VOCALS:true] [NO_SINGING:true] `;
+    if (activeInstruments.length > 0) {
+        narrative += `[INSTRUMENTS:${activeInstruments.join(', ')}] `;
     }
 
     if (this.specialInstruction) {
-        // If mode is not VOCALIZATION, strip any vocal-related instructions from the special instructions
-        let instruction = this.specialInstruction;
-        if (this.generationMode !== 'VOCALIZATION') {
-            instruction = instruction.replace(/vocal/gi, 'instrumental').replace(/singing/gi, 'playing').replace(/choir/gi, 'strings').replace(/voice/gi, 'instrument');
-        }
-        narrative += `[EXTRA:${instruction.substring(0, 150).replace(/\s+/g, '_')}] `;
+        narrative += `[CONTEXT:${this.specialInstruction.substring(0, 100).replace(/\s+/g, '_')}] `;
     }
 
-    const finalPayload = [ { text: narrative, weight: 1.5 } ];
+    const finalPayload = [ { text: narrative, weight: 1.0 } ];
 
     const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
-        return { text: `[N:${p.text.replace(/\s+/g, '')}]`, weight: p.weight * 0.5 };
+        return { text: `[${p.text}]`, weight: p.weight };
     }).filter(p => p.weight > 0.05); 
     
     finalPayload.push(...weightedPrompts);
-    try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); } catch (e) { console.error("setWeightedPrompts failed:", e); }
+
+    if (JSON.stringify(finalPayload) !== JSON.stringify(this.lastPrompts)) {
+        try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); this.lastPrompts = finalPayload; } catch (e) { console.error("setWeightedPrompts failed:", e); }
+    }
   }
   private getRegionalLanguage(): string {
       const g = this.genre.toLowerCase();
@@ -563,9 +573,19 @@ export class LiveMusicHelper extends EventTarget {
       return cues[Math.floor(Math.random() * cues.length)];
   }
 
+  public toggleSolo(active: boolean) { this.soloMuted = !active; this.scheduleRefresh(); }
+  public toggleChoir(active: boolean) { this.choirMuted = !active; this.scheduleRefresh(); }
+
   public isVocalInstrumentActive(): boolean {
       return Object.values(this.instruments).some(ch => {
           if (!ch.active || ch.visible === false || !ch.instrument) return false;
+          
+          const inst = ch.instrument.toLowerCase();
+          const isChoir = inst.includes('choir');
+          
+          if (isChoir && this.choirMuted) return false;
+          if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return false; // Simple heuristic for solo
+          
           return isVocalInstrument(ch.instrument);
       });
   }
@@ -1625,11 +1645,12 @@ export class LiveMusicHelper extends EventTarget {
 
   private updateRecordingSchedule() {
     if (this.autoStopTimer) clearTimeout(this.autoStopTimer);
+    const remainingTimeMs = Math.max(0, (this.maxDurationMinutes * 60) - this.elapsedSeconds) * 1000;
     this.autoStopTimer = window.setTimeout(() => { 
         this.stop(true, false); 
         this.dispatchEvent(new CustomEvent('recording-finished-auto')); 
         if (this.isLooping) { this.elapsedSeconds = 0; this.playRecording(0); }
-    }, (this.maxDurationMinutes * 60 + 5) * 1000);
+    }, remainingTimeMs + 5000);
   }
 
   public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string): Promise<string> {

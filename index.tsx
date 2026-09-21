@@ -91,10 +91,22 @@ function main() {
     liveMusicHelper.setSpecialInstruction(`VOCAL DIRECTIVE: ${e.detail}`);
     pdjMidi.setMessage(`VOCAL DIRECTIVE SENT`, "info");
     
+    // Switch to VOCALIZATION mode if voices are active
+    if (e.detail !== 'VOCAL CONFIG: None') {
+        liveMusicHelper.setGenerationMode('VOCALIZATION');
+        leftSidebar.primaryMode = 'VOCALIZATION'; // Sync UI
+    }
+    
     // If we were waiting for the conductor or preparing, try to start
     if (liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing') {
         (liveMusicHelper as any).playRecording();
     }
+  });
+
+  (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => {
+      liveMusicHelper.setGenerationMode('DIVERSITY');
+      leftSidebar.primaryMode = 'DIVERSITY'; // Sync UI
+      pdjMidi.setMessage(`MODE: DIVERSITY`, "info");
   });
   document.body.appendChild(pdjMidi as any);
   document.body.appendChild(rightSidebar as any);
@@ -116,6 +128,7 @@ function main() {
   
   const audioAnalyser = new AudioAnalyser(liveMusicHelper.audioContext);
   liveMusicHelper.masterDestination = audioAnalyser.node;
+  audioAnalyser.start();
 
   let djEngagingCountdown = false;
   let warmupInterval: number | null = null;
@@ -570,19 +583,7 @@ function main() {
       });
       leftSidebar.hasVocalInstrument = vocalInManifest;
 
-      if (vocalInManifest) {
-          if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
-              liveMusicHelper.setGenerationMode('VOCALIZATION');
-              leftSidebar.primaryMode = 'VOCALIZATION';
-              userChangedMode = false;
-              pdjMidi.setMessage(`VOICE CHANNEL ACTIVE -> VOCALIZATION ENABLED`, "info");
-          }
-      } else if (liveMusicHelper.generationMode === 'VOCALIZATION' && !vocalInManifest) {
-          liveMusicHelper.setGenerationMode('DIVERSITY');
-          leftSidebar.primaryMode = 'DIVERSITY';
-          userChangedMode = false;
-          pdjMidi.setMessage(`MODE REVERT: NO VOCAL INSTRUMENT -> DIVERSITY`, "info");
-      }
+      /* Auto-mode switching removed for manual control */
 
       timeline.visibleChannels = { 
         lead: detail.lead?.visible !== false, 
