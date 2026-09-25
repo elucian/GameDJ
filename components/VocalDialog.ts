@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 
 @customElement('vocal-dialog')
 export class VocalDialog extends LitElement {
-  @property({ type: Boolean }) show = false;
+  @property({ type: Boolean, reflect: true }) show = false;
   @property({ type: String }) genre = 'Pop';
   
   @state() private soloVolume = 80;
@@ -18,6 +18,8 @@ export class VocalDialog extends LitElement {
   private choirOptions = ['None', 'Church', 'Military', 'Youth', 'Children', 'Mixed'];
 
   static styles = css`
+    :host { pointer-events: none; display: block; }
+    :host([show]) { pointer-events: auto; }
     .modal-backdrop {
       position: fixed;
       inset: 0;

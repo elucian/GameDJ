@@ -13,6 +13,7 @@ import { TopToolbar, MUSIC_DATA } from './components/TopToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
+import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
 import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument, LYRIA_GENRES } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
@@ -26,6 +27,7 @@ function main() {
   const leftSidebar = new LeftSidebar();
   const rightSidebar = new RightSidebar();
   const vocalDialog = new VocalDialog();
+  const djPresetDialog = new DjPresetDialog();
   const timeline = new Timeline();
   const pdjMidi = new PromptDjMidi();
   
@@ -65,11 +67,26 @@ function main() {
   pdjMidi.interactionEnabled = true; 
   document.body.appendChild(topToolbar as any);
   document.body.appendChild(leftSidebar as any);
+  document.body.appendChild(djPresetDialog as any);
   document.body.appendChild(vocalDialog as any);
   
   (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {
     vocalDialog.show = !vocalDialog.show;
     vocalDialog.genre = topToolbar.genre;
+  });
+
+  window.addEventListener('toggle-dj-preset-dialog', () => {
+    djPresetDialog.show = !djPresetDialog.show;
+  });
+
+  (djPresetDialog as any).addEventListener('send-dj-config', (e: CustomEvent) => {
+      const { directive, name } = e.detail;
+      liveMusicHelper.setSpecialInstruction(directive);
+      pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
+  });
+
+  (djPresetDialog as any).addEventListener('dj-dialog-cancelled', () => {
+      pdjMidi.setMessage(`DJ CONFIG CANCELLED`, "info");
   });
 
   (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {

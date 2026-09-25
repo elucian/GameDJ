@@ -223,6 +223,8 @@ export class LeftSidebar extends LitElement {
     button.dj-btn { color: #0088ff; }
     button.stop-btn { color: #fff; }
     button.back-start-btn { color: #ff8c00; }
+    button.preset-btn { color: #ccc; }
+
     button.loop-btn { color: #005500; }
     button.loop-btn:disabled:not(.active-green) { color: #005500 !important; opacity: 1 !important; }
     button.play-btn { color: #3dffab; }
@@ -422,6 +424,10 @@ export class LeftSidebar extends LitElement {
   @property({ type: String }) primaryMode: MusicGenerationMode = 'QUALITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
 
+  private onPresetsClick() {
+    this.dispatchEvent(new CustomEvent('toggle-dj-preset-dialog', { bubbles: true, composed: true }));
+  }
+
   private toggleTheme() {
     uiSounds.playButton();
     this.isDarkTheme = !this.isDarkTheme;
@@ -548,10 +554,14 @@ export class LeftSidebar extends LitElement {
         <button class="shuffle-btn ${this.isShuffling ? 'active-blue' : ''}" @click=${this.onRandomizeClick} ?disabled=${isRecording} title="3D Dice Shuffle">
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01 20.73 6.96M12 22.08V12"/><circle cx="12" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="14" r="1" fill="currentColor"/><circle cx="17" cy="14" r="1" fill="currentColor"/></svg></span>
         </button>
+        <button class="preset-btn" @click=${this.onPresetsClick} title="DJ Presets">
+          <span class="icon-span"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"/><path d="M2 12h20"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M2 12a10 10 0 0 0 10 10"/></svg></span>
+        </button>
         <button class="dj-btn ${this.isConductorActive ? 'active-state' : ''}" @click=${this.toggleDj} title="DJ/Conductor">
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></span>
         </button>
-        <button class="theme-btn mic-btn ${this.isVocalActive ? 'active' : ''}" @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog'))} title="Vocal Commands">
+
+        <button class="theme-btn mic-btn ${this.isVocalActive ? 'active' : ''}" @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog', { bubbles: true, composed: true }))} title="Vocal Commands">
           <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
         </button>
       </div>
