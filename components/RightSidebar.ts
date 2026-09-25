@@ -12,6 +12,7 @@ import { MUSIC_DATA } from './TopToolbar';
 
 
 import { FALLBACK_POOLS } from '../constants/instruments';
+import { isVocalInstrument } from '../utils/LiveMusicHelper';
 
 const LIRA_ORCHESTRA = ['String Orchestra', 'Chamber Strings', 'Symphony Strings', 'Violin Section', 'Cello Ensemble'].sort();
 const LIRA_SOLO = ['Solo Male', 'Solo Female', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Solo Cello', 'Solo Violin', 'Solo Piano', 'Solo Flute', 'Solo Trumpet', 'Solo Saxophone', 'Solo Guitar', 'Soloist'].sort();
@@ -28,10 +29,31 @@ export class RightSidebar extends LitElement {
 
   private getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
       const genreDef = MUSIC_DATA[this.genre];
-      const style = genreDef?.styles[this.musicStyle];
-      const pool = style?.instrumentPools[channel] || [];
-      // Fall back to FALLBACK_POOLS if the style pool is empty
-      return pool.length > 0 ? pool : (FALLBACK_POOLS[channel] || []);
+      if (!genreDef) return FALLBACK_POOLS[channel] || [];
+      
+      const allInstruments = new Set<string>();
+      Object.values(genreDef.styles).forEach(style => {
+          (style.instrumentPools[channel] || []).forEach(inst => allInstruments.add(inst));
+      });
+      
+      const pool = Array.from(allInstruments);
+      if (pool.length > 0) return pool;
+
+      // Restrict fallback for traditional genres
+      if (isTraditionalGenre(this.genre)) {
+          return (FALLBACK_POOLS[channel] || []).filter(inst => 
+              !['Synthesizer', 'Electronic Drums', 'Synth Bass', 'Bell Synth', 'Pads'].includes(inst)
+          );
+      }
+
+      return FALLBACK_POOLS[channel] || [];
+  }
+
+  protected updated(changedProperties: Map<string, unknown>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('genre') && !this.channelsLocked) {
+      this.auditAndCommit({ ...this.settings });
+    }
   }
 
   static styles = css`
@@ -378,7 +400,7 @@ export class RightSidebar extends LitElement {
   
   @property({ type: String }) currentTab: 'Band' | 'Lyria' = 'Band';
 
-  @state() private dynamicLead = [...FALLBACK_POOLS.lead];
+  @state() private dynamicLead = [...FALLBACK_POOLS.lead, 'Solo Male', 'Solo Female'];
   @state() private dynamicAlto = [...FALLBACK_POOLS.alto];
   @state() private dynamicHarmonic = [...FALLBACK_POOLS.harmonic];
   @state() private dynamicBass = [...FALLBACK_POOLS.bass];
@@ -440,6 +462,12 @@ export class RightSidebar extends LitElement {
       }
       
       this.settings = { ...newSettings };
+      
+      const isAnyVocal = Object.values(newSettings).some(st => isVocalInstrument(st.instrument));
+      if (isAnyVocal) {
+          window.dispatchEvent(new CustomEvent('change-primary-mode', { detail: { mode: 'VOCALIZATION' } }));
+      }
+
       (this as any).requestUpdate();
       this.dispatchChannelsChanged();
   }

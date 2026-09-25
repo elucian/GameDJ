@@ -14,7 +14,7 @@ import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument, LYRIA_GENRES } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -352,13 +352,16 @@ function main() {
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
+          // DJ plans music settings and can change instruments before music starts
+          const shouldBeLyria = LYRIA_GENRES.includes(topToolbar.genre);
+          rightSidebar.currentTab = shouldBeLyria ? 'Lyria' : 'Band';
+          
+          const rsLocks = (rightSidebar as any).locks;
+          if (!rsLocks.channels) {
+              await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, leftSidebar.primaryMode, shouldBeLyria);
+          }
+          
           if (!isLive) {
-              // DJ plans music settings and can change instruments before music starts if not locked
-              const rsLocks = (rightSidebar as any).locks;
-              const isLyra = rightSidebar.currentTab === 'Lyra' || (rightSidebar.currentTab as any) === 'Lira';
-              if (!rsLocks.channels) {
-                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, leftSidebar.primaryMode, isLyra);
-              }
               liveMusicHelper.generatePerformancePlan(0);
               pdjMidi.setMessage("DJ PLANNED MUSIC SETTINGS & READY", "info");
           } else {
@@ -396,6 +399,29 @@ function main() {
       userChangedMode = true;
       liveMusicHelper.setGenerationMode(mode);
       pdjMidi.setMessage(`MODE: ${mode}`, "info");
+
+      // Replace vocal instruments when switching away from VOCALIZATION
+      if (mode !== 'VOCALIZATION' && !rightSidebar.locks.channels) {
+          const settings = { ...rightSidebar.settings };
+          let changed = false;
+          
+          Object.keys(settings).forEach((ch) => {
+              const channel = ch as keyof InstrumentSet;
+              const inst = settings[channel].instrument;
+              if (isVocalInstrument(inst)) {
+                  const pool = (rightSidebar as any).getRecommendedInstruments(channel);
+                  const nonVocalPool = pool.filter((i: string) => !isVocalInstrument(i));
+                  if (nonVocalPool.length > 0) {
+                      settings[channel].instrument = nonVocalPool[Math.floor(Math.random() * nonVocalPool.length)];
+                      changed = true;
+                  }
+              }
+          });
+          
+          if (changed) {
+              (rightSidebar as any).auditAndCommit(settings);
+          }
+      }
   }));
 
   (leftSidebar as any).addEventListener('theme-changed', ((e: Event) => {

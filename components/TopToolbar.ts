@@ -619,43 +619,43 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
       'Salsa': {
         bpm: 180, bpmRange: [160, 210], meters: ['4/4'], keys: ['A Minor', 'D Minor', 'G Minor', 'C Minor', 'F Minor', 'E Minor', 'B Minor'], mode: 'Minor', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Trumpet', 'Trombone'], alto: ['Saxophone', 'Trumpet'], harmonic: ['Piano', 'Electric Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Congas', 'Bongos', 'Timbales', 'Hand Drum'] }
+        instrumentPools: { lead: ['Trumpet', 'Trombone', 'Saxophone'], alto: ['Saxophone', 'Trumpet', 'Piano'], harmonic: ['Piano', 'Electric Piano', 'Tres'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Congas', 'Bongos', 'Timbales', 'Hand Drum'] }
       },
       'Bossa Nova': {
         bpm: 120, bpmRange: [100, 140], meters: ['4/4'], keys: ['F Major', 'C Major', 'G Major', 'Bb Major', 'Eb Major', 'D Minor', 'A Minor'], mode: 'Natural', mood: 'Romantic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Flute'], alto: ['Flute', 'Electric Piano'], harmonic: ['Piano', 'Electric Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Shakers'] }
+        instrumentPools: { lead: ['Spanish Guitar', 'Flute', 'Saxophone'], alto: ['Flute', 'Electric Piano', 'Solo Female'], harmonic: ['Piano', 'Electric Piano', 'Acoustic Guitar'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Hand Drum', 'Shakers', 'Congas'] }
       },
       'Guitar': {
         bpm: 115, bpmRange: [90, 140], meters: ['4/4', '3/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Major', 'B Minor', 'F# Minor', 'C Major'], mode: 'Minor', mood: 'Sentimental',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Electric Guitar'], alto: ['Acoustic Guitar', 'Electric Guitar'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Drum Kit'] }
+        instrumentPools: { lead: ['Spanish Guitar', 'Classical Guitar', 'Flamenco Guitar'], alto: ['Acoustic Guitar', 'Solo Male'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Shakers'] }
       },
       'Tango': {
         bpm: 115, bpmRange: [100, 130], meters: ['4/4', '2/4'], keys: ['A Minor', 'D Minor', 'G Minor', 'C Minor', 'E Major', 'F Minor', 'B Minor'], mode: 'Minor', mood: 'Dramatic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
-        instrumentPools: { lead: ['Accordion', 'Violin', 'Harmonica'], alto: ['Viola', 'Accordion', 'Harmonica'], harmonic: ['Piano', 'Accordion'], bass: ['Double Bass', 'Cello'], rhythm: [] }
+        instrumentPools: { lead: ['Accordion', 'Violin', 'Bandoneon'], alto: ['Viola', 'Accordion', 'Violin'], harmonic: ['Piano', 'Accordion'], bass: ['Double Bass', 'Cello'], rhythm: [] }
       },
       'Reggaeton': {
         bpm: 95, bpmRange: [85, 105], meters: ['4/4'], keys: ['C Minor', 'Bb Major', 'G Minor', 'F Minor', 'Eb Major', 'Ab Major'], mode: 'Minor', mood: 'Sexy',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Synthesizer', 'Electric Guitar'], alto: ['Synthesizer', 'Pads'], harmonic: ['Pads', 'Electric Guitar'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
+        instrumentPools: { lead: ['Synthesizer', 'Electric Guitar', 'Solo Female'], alto: ['Synthesizer', 'Pads', 'Solo Male'], harmonic: ['Pads', 'Electric Guitar'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Hand Drum'] }
       },
       'Flamenco': {
         bpm: 140, bpmRange: [110, 170], meters: ['12/8', '3/4', '4/4'], keys: ['A Minor', 'E Phrygian', 'D Minor', 'E Minor', 'B Minor', 'F# Phrygian'], mode: 'Minor', mood: 'Dramatic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
         instrumentPools: { 
-          lead: ['Acoustic Guitar', 'Violin'], 
-          alto: ['Acoustic Guitar', 'Flute'],
+          lead: ['Flamenco Guitar', 'Violin', 'Solo Male'], 
+          alto: ['Acoustic Guitar', 'Flute', 'Solo Female'],
           harmonic: ['Acoustic Guitar', 'Piano'], 
           bass: ['Double Bass', 'Electric Bass'], 
-          rhythm: ['Hand Drum', 'Tambourine', 'Stomps'] 
+          rhythm: ['Hand Drum', 'Tambourine', 'Stomps', 'Palmas'] 
         }
       },
       'Bolero': {
         bpm: 85, bpmRange: [75, 95], meters: ['4/4', '3/4'], keys: ['A Minor', 'D Minor', 'E Major', 'G Minor', 'C Major', 'F Major', 'Bb Major'], mode: 'Minor', mood: 'Romantic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
-        instrumentPools: { lead: ['Acoustic Guitar', 'Violin'], alto: ['Trumpet', 'Saxophone'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Percussion', 'Shakers'] }
+        instrumentPools: { lead: ['Spanish Guitar', 'Violin', 'Solo Female'], alto: ['Trumpet', 'Saxophone', 'Solo Male'], harmonic: ['Acoustic Guitar', 'Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Percussion', 'Shakers', 'Congas'] }
       },
       'Paso Doble': {
         bpm: 120, bpmRange: [110, 130], meters: ['2/4'], keys: ['G Major', 'C Major', 'F Major', 'A Minor', 'E Major', 'D Major'], mode: 'Natural', mood: 'Dramatic',

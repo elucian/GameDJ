@@ -21,14 +21,20 @@ export class LeftSidebar extends LitElement {
       this.isVocalActive = e.detail.active;
   }) as EventListener;
 
+  private _handleModeChange = ((e: CustomEvent) => {
+      this.primaryMode = e.detail.mode;
+  }) as EventListener;
+
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener('vocal-state-changed', this._handleVocalStateChange);
+    window.addEventListener('change-primary-mode', this._handleModeChange);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('vocal-state-changed', this._handleVocalStateChange);
+    window.removeEventListener('change-primary-mode', this._handleModeChange);
   }
 
   static styles = css`

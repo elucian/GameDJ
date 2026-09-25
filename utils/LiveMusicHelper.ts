@@ -74,6 +74,12 @@ export const SONG_REFERENCES: Record<string, string[]> = {
   'Indian': ['Jai Ho', 'Tum Hi Ho', 'Chaiyya Chiaayya', 'Kesariya', 'Kal Ho Naa Ho', 'Pasoori', 'A.R. Rahman style', 'R.D. Burman groove', 'Shankar-Ehsaan-Loy production'],
   'Romanian': ['Dragostea Din Tei', 'Ciuleandra', 'Trandafir de la Moldova', 'Constantine, Constantine', 'Luna Alba', 'Gheorghe Zamfir style', 'Maria Tanase aesthetic']
 };
+export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
+export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
+
+export function isTraditionalGenre(genre: string): boolean {
+    return TRADITIONAL_GENRES.includes(genre);
+}
 
 export class LiveMusicHelper extends EventTarget {
   private ai: GoogleGenAI; private model: string;
@@ -156,6 +162,12 @@ export class LiveMusicHelper extends EventTarget {
   constructor(ai: GoogleGenAI, model: string) {
     super(); this.ai = ai; this.model = model.startsWith('models/') ? model : `models/${model}`; this.prompts = new Map();
     this.audioContext = new AudioContext({ sampleRate: 48000 });
+    
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+    });
     this.rawGain = this.audioContext.createGain(); this.masterGain = this.audioContext.createGain(); 
     this.masterGain.gain.value = this.userVolume;
     this.recordingDestination = this.audioContext.createMediaStreamDestination();
@@ -212,7 +224,8 @@ export class LiveMusicHelper extends EventTarget {
   public setStereo(stereo: boolean) { this.isStereo = stereo; this.scheduleRefresh(); }
   public setMaxDuration(minutes: number) { 
       this.maxDurationMinutes = minutes; 
-      if (this.playbackState === 'recording') {
+      if (this.playbackState === 'recording' || this.playbackState === 'playing') {
+          this.generatePerformancePlan(this.elapsedSeconds);
           this.updateRecordingSchedule();
       }
   }
@@ -230,7 +243,7 @@ export class LiveMusicHelper extends EventTarget {
   public setFades(fadeIn: number, fadeOut: number) { this.fadeIn = fadeIn; this.fadeOut = fadeOut; }
   public setGuidance(value: number) { this.guidance = value; this.scheduleRefresh(); }
   public setMood(mood: string) { this.mood = mood; this.scheduleRefresh(); }
-  public setEvolution(val: number) { this.evolutionValue = val; }
+  public setEvolution(val: number) { this.evolutionValue = val; this.scheduleRefresh(); }
   public setGenerationMode(mode: MusicGenerationMode) { 
       let effectiveMode = mode;
       // Removed restriction: Allowing VOCALIZATION mode regardless of current instrument state
@@ -350,7 +363,7 @@ export class LiveMusicHelper extends EventTarget {
     const config: any = {
         musicGenerationMode: this.generationMode,
         bpm: this.bpm,
-        guidance: 6.0,
+        guidance: 9.5, // Stronger adherence
         temperature: 0.9,
     };
     
@@ -370,7 +383,20 @@ export class LiveMusicHelper extends EventTarget {
 
     // 2. Build Simplified, Authentic Prompt
     let narrative = `[GENRE:${this.genre}] [STYLE:${this.style}] [KEY:${this.key}] [TEMPO:${this.bpm}] `;
-    narrative += `[AUTHENTICITY:HIGH] [CULTURAL_DIALECT:${this.getRegionalLanguage()}] `;
+    narrative += `[AUTHENTICITY:MAX] [CULTURAL_DIALECT:${this.getRegionalLanguage()}] `;
+    
+    // Inject Evolution Modifiers
+    if (this.evolutionValue > 0) {
+        narrative += `[COMPLEXITY:HIGH] [EVOLUTION:PROGRESSIVE] [DYNAMICS:DYNAMIC] `;
+    } else if (this.evolutionValue < 0) {
+        narrative += `[STABLE:TRUE] [EVOLUTION:MINIMAL] [DYNAMICS:STEADY] `;
+    } else {
+        narrative += `[EVOLUTION:NEUTRAL] `;
+    }
+    
+    if (this.currentVocalSignal) {
+        narrative += `[DJ_DIRECTIVE:${this.currentVocalSignal.substring(0, 50).replace(/\s+/g, '_')}] `;
+    }
     
     const activeInstruments: string[] = [];
     const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
@@ -395,6 +421,10 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     const finalPayload = [ { text: narrative, weight: 1.0 } ];
+
+    if (this.currentVocalSignal && activeInstruments.length > 0) {
+        finalPayload.push({ text: `[FORCE_FOCUS:${activeInstruments.join(', ')}]`, weight: 2.0 });
+    }
 
     const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
         return { text: `[${p.text}]`, weight: p.weight };
@@ -1303,6 +1333,8 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private interpolateParameters() {
+      if (isTraditionalGenre(this.genre)) return; // DJ HANDS OFF knobs for traditional genres
+
       const currentTimeMs = Date.now();
       const currentStage = this.currentPlan?.[this.currentPlanIdx]; 
       if (!currentStage) return;
@@ -1543,8 +1575,20 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private async connect(): Promise<LiveMusicSession> {
+    // Ensure any stale session is closed before reconnecting
+    if (this.session) {
+        try { (this.session as any).close(); } catch(e) {}
+        this.session = null;
+    }
+    
     this.sessionCounter++; const currentSessionId = this.sessionCounter;
-    this.sessionPromise = this.ai.live.music.connect({ 
+
+    // Create a timeout promise to prevent hanging indefinitely
+    const timeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Connection to Lyria API timed out")), 10000)
+    );
+
+    const connectPromise = this.ai.live.music.connect({ 
       model: this.model, 
       callbacks: { 
         onmessage: async (e) => { 
@@ -1552,13 +1596,24 @@ export class LiveMusicHelper extends EventTarget {
         }, 
         onerror: (err: any) => { 
           this.stop(); 
-          const errStr = err?.message || err?.toString() || 'API quota exceeded or connection error';
-          this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { text: `API Error: ${errStr}. Please check billing/quota details.`, type: 'error' } })); 
+          const errStr = err?.message || err?.toString() || 'API connection error';
+          this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { text: `API Error: ${errStr}.`, type: 'error' } })); 
         }, 
         onclose: () => this.stop(), 
       } 
     });
-    this.session = await this.sessionPromise;
+
+    try {
+        this.sessionPromise = Promise.race([connectPromise, timeout]) as Promise<LiveMusicSession>;
+        this.session = await this.sessionPromise;
+    } catch (err) {
+        this.session = null;
+        this.sessionPromise = null;
+        this.setPlaybackState('stopped');
+        this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { text: `Failed to connect to music engine: ${err instanceof Error ? err.message : 'Unknown error'}`, type: 'error' } }));
+        throw err;
+    }
+
     // Set prompts and config before starting the stream
     await this.refreshSessionPrompts();
     // Start the music stream - required by Lyria API
