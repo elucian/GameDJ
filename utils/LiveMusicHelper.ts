@@ -363,7 +363,7 @@ export class LiveMusicHelper extends EventTarget {
     const config: any = {
         musicGenerationMode: this.generationMode,
         bpm: this.bpm,
-        guidance: 9.5, // Stronger adherence
+        guidance: 10.0,
         temperature: 0.9,
     };
     
@@ -381,22 +381,8 @@ export class LiveMusicHelper extends EventTarget {
         try { await this.session.setMusicGenerationConfig({ musicGenerationConfig: config }); this.lastConfig = config; } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
     }
 
-    // 2. Build Simplified, Authentic Prompt
-    let narrative = `[GENRE:${this.genre}] [STYLE:${this.style}] [KEY:${this.key}] [TEMPO:${this.bpm}] `;
-    narrative += `[AUTHENTICITY:MAX] [CULTURAL_DIALECT:${this.getRegionalLanguage()}] `;
-    
-    // Inject Evolution Modifiers
-    if (this.evolutionValue > 0) {
-        narrative += `[COMPLEXITY:HIGH] [EVOLUTION:PROGRESSIVE] [DYNAMICS:DYNAMIC] `;
-    } else if (this.evolutionValue < 0) {
-        narrative += `[STABLE:TRUE] [EVOLUTION:MINIMAL] [DYNAMICS:STEADY] `;
-    } else {
-        narrative += `[EVOLUTION:NEUTRAL] `;
-    }
-    
-    if (this.currentVocalSignal) {
-        narrative += `[DJ_DIRECTIVE:${this.currentVocalSignal.substring(0, 50).replace(/\s+/g, '_')}] `;
-    }
+    // 2. Build Rich, Descriptive Narrative Prompt
+    let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM. `;
     
     const activeInstruments: string[] = [];
     const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
@@ -408,29 +394,58 @@ export class LiveMusicHelper extends EventTarget {
             if (isChoir && this.choirMuted) return;
             if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
             
-            activeInstruments.push(`${k.toUpperCase()}:${ch.instrument}`);
+            activeInstruments.push(`${k} ${ch.instrument}`);
         }
     });
 
     if (activeInstruments.length > 0) {
-        narrative += `[INSTRUMENTS:${activeInstruments.join(', ')}] `;
+        narrative += `The arrangement features: ${activeInstruments.join(', ')}. `;
+    }
+
+    // Inject Vocal/Solo Directives
+    if (this.currentVocalSignal) {
+        narrative += `Direct command: ${this.currentVocalSignal}. Please focus on this directive with high emotional expression and tight instrumental response. `;
+    }
+
+    // Evolution modifiers
+    if (this.evolutionValue > 0) {
+        narrative += `The music should be progressive, dynamic, and complex. `;
+    } else if (this.evolutionValue < 0) {
+        narrative += `The music should be stable, minimal, and steady. `;
     }
 
     if (this.specialInstruction) {
-        narrative += `[CONTEXT:${this.specialInstruction.substring(0, 100).replace(/\s+/g, '_')}] `;
+        narrative += `Additional context: ${this.specialInstruction}. `;
     }
 
-    const finalPayload = [ { text: narrative, weight: 1.0 } ];
+    const finalPayload = [ { text: narrative, weight: 2.0 } ];
 
     if (this.currentVocalSignal && activeInstruments.length > 0) {
-        finalPayload.push({ text: `[FORCE_FOCUS:${activeInstruments.join(', ')}]`, weight: 2.0 });
+        finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
     const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
-        return { text: `[${p.text}]`, weight: p.weight };
+        return { text: p.text, weight: p.weight * 1.5 };
     }).filter(p => p.weight > 0.05); 
     
     finalPayload.push(...weightedPrompts);
+    // 3. Build Individual Channel Weighted Prompts
+    const multipliers: Record<string, number> = { lead: 3.0, alto: 2.2, harmonic: 2.0, bass: 2.5, rhythm: 2.2 };
+    keys.forEach((k) => {
+        const ch = this.instruments[k];
+        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
+            const inst = ch.instrument.toLowerCase();
+            const isChoir = inst.includes('choir');
+            if (isChoir && this.choirMuted) return;
+            if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
+            
+            finalPayload.push({ 
+                text: `Featuring ${ch.instrument} as ${k}`, 
+                weight: ch.weight * multipliers[k] 
+            });
+        }
+    });
+
 
     if (JSON.stringify(finalPayload) !== JSON.stringify(this.lastPrompts)) {
         try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); this.lastPrompts = finalPayload; } catch (e) { console.error("setWeightedPrompts failed:", e); }
