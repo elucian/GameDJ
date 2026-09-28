@@ -9,13 +9,60 @@ import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
 import { uiSounds } from './UISounds';
 
+type ChannelKey = keyof InstrumentSet;
+type Formation = 'solo' | 'duet' | 'trio' | 'quartet' | 'full';
+
 interface PerformancePlanStage {
     stageName: string;
     stageStartTimeSec: number;
     activeChannels: { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
     targets: { parameterName: string; targetValue: number }[];
     channelWeights: { lead: number; alto: number; harmonic: number; bass: number; rhythm: number };
+    formation: Formation;
+    featured: ChannelKey | null;
 }
+
+// === DJ RULES ===
+// The DJ may hold at most this many knobs above zero at any moment. Every other knob is driven to 0.
+const MAX_DJ_KNOBS = 4;
+// Knobs are seasoning, not the main course: the DJ never pushes a knob past this value.
+const DJ_KNOB_CEILING = 1.2;
+// Knob pairs that pull the music in opposite directions — the DJ never engages both at once.
+const CONFLICTING_KNOBS: [string, string][] = [
+    ['Density', 'Space'], ['Attack', 'Glide'], ['Staccato', 'Glide'],
+    ['Brightness', 'Atmosphere'], ['Density', 'Atmosphere']
+];
+const MELODIC_CHANNELS: ChannelKey[] = ['lead', 'alto', 'harmonic'];
+// Channel weights (0..1 slider scale) per formation: the featured voice leads, the rest support.
+const FORMATION_SUPPORT_WEIGHT: Record<Formation, number> = { solo: 0, duet: 0.9, trio: 0.8, quartet: 0.75, full: 0.7 };
+// Prompt weight per channel sent to Lyria (multiplied by the channel slider). Kept well above knob
+// weights so the chosen instruments and ensemble size dominate the generation.
+const CHANNEL_PROMPT_WEIGHT: Record<ChannelKey, number> = { lead: 4.0, alto: 3.5, harmonic: 3.2, bass: 3.5, rhythm: 3.5 };
+const ENSEMBLE_PROMPT_WEIGHT = 3.5;
+
+// What each knob asks Lyria for. A bare word like "Groove" is vague to the model; these describe playing
+// qualities only, never instruments, so a knob cannot pull extra instruments into a solo or duet.
+// {genre} and {style} are filled in at send time. Knobs renamed by the user are sent as typed.
+const KNOB_PHRASES: Record<string, string> = {
+    'guidance':      'closely following the described {genre} style and instrumentation',
+    'density':       'busy, note-dense playing with active melodic lines',
+    'dynamics':      'wide dynamic contrast between soft and loud passages',
+    'groove':        'strong rhythmic groove with a steady, locked-in pulse',
+    'attack':        'sharp, percussive note attacks',
+    'staccato':      'short, detached staccato articulation',
+    'brightness':    'bright, clear, sparkling tone',
+    'complexity':    'sophisticated harmony and intricate melodic lines',
+    'ornamentation': 'expressive melodic ornaments, trills and grace notes',
+    'variation':     'evolving variations on the main theme',
+    'glide':         'smooth legato phrasing with slides and portamento',
+    'presence':      'upfront, intimate, close-miked sound',
+    'space':         'spacious sound with natural reverb and room to breathe',
+    'organic':       'organic, human performance feel with natural timing',
+    'texture':       'rich timbral texture and tonal colour',
+    'width':         'wide, immersive stereo image',
+    'atmosphere':    'atmospheric, evocative mood',
+    'authenticity':  'authentic {style} performance true to {genre} tradition'
+};
 
 interface RecordingSegment {
     startTime: number;
@@ -385,6 +432,7 @@ export class LiveMusicHelper extends EventTarget {
     let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM. `;
     
     const activeInstruments: string[] = [];
+    const playingKeys: ChannelKey[] = [];
     const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
     keys.forEach((k) => {
         const ch = this.instruments[k];
@@ -393,14 +441,19 @@ export class LiveMusicHelper extends EventTarget {
             const isChoir = inst.includes('choir');
             if (isChoir && this.choirMuted) return;
             if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
-            
+
             activeInstruments.push(`${k} ${ch.instrument}`);
+            playingKeys.push(k);
         }
     });
 
     if (activeInstruments.length > 0) {
         narrative += `The arrangement features: ${activeInstruments.join(', ')}. `;
     }
+
+    // DJ ensemble directive: name the exact formation so Lyria plays a real solo/duet/trio/quartet/tutti
+    const currentStage = this.conductorMode ? this.currentPlan?.[this.currentPlanIdx] : undefined;
+    const ensembleDirective = currentStage ? this.describeEnsemble(playingKeys, currentStage.featured) : null;
 
     // Inject Vocal/Solo Directives
     if (this.currentVocalSignal) {
@@ -418,32 +471,33 @@ export class LiveMusicHelper extends EventTarget {
         narrative += `Additional context: ${this.specialInstruction}. `;
     }
 
+    // Placed last so the current section's formation overrides the full instrument palette above
+    if (ensembleDirective) {
+        narrative += `Current section: ${ensembleDirective} `;
+    }
+
     const finalPayload = [ { text: narrative, weight: 2.0 } ];
+    if (ensembleDirective) {
+        finalPayload.push({ text: ensembleDirective, weight: ENSEMBLE_PROMPT_WEIGHT });
+    }
 
     if (this.currentVocalSignal && activeInstruments.length > 0) {
         finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
     const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
-        return { text: p.text, weight: p.weight * 1.5 };
-    }).filter(p => p.weight > 0.05); 
+        return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
+    }).filter(p => p.weight > 0.05);
     
     finalPayload.push(...weightedPrompts);
     // 3. Build Individual Channel Weighted Prompts
-    const multipliers: Record<string, number> = { lead: 3.0, alto: 2.2, harmonic: 2.0, bass: 2.5, rhythm: 2.2 };
-    keys.forEach((k) => {
+    playingKeys.forEach((k) => {
         const ch = this.instruments[k];
-        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
-            const inst = ch.instrument.toLowerCase();
-            const isChoir = inst.includes('choir');
-            if (isChoir && this.choirMuted) return;
-            if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
-            
-            finalPayload.push({ 
-                text: `Featuring ${ch.instrument} as ${k}`, 
-                weight: ch.weight * multipliers[k] 
-            });
-        }
+        const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
+        finalPayload.push({
+            text: isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`,
+            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
+        });
     });
 
 
@@ -470,9 +524,25 @@ export class LiveMusicHelper extends EventTarget {
       return 'English';
   }
 
-  private getActiveLimit() {
-      // Allow all 18 knobs to be used if required by the preset/style
-      return 18;
+  private knobPhrase(knobText: string): string {
+      const phrase = KNOB_PHRASES[knobText.trim().toLowerCase()];
+      if (!phrase) return knobText;
+      return phrase.replace('{genre}', this.genre).replace('{style}', this.style);
+  }
+
+  private describeEnsemble(playingKeys: ChannelKey[], featured: ChannelKey | null): string | null {
+      const names = playingKeys.map(k => this.instruments[k].instrument).filter(Boolean);
+      if (names.length === 0) return null;
+      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+      const lead = featured && playingKeys.includes(featured) && MELODIC_CHANNELS.includes(featured) ? this.instruments[featured].instrument : null;
+      const leadHint = lead && names.length > 1 ? ` ${lead} carries the melody.` : '';
+      switch (names.length) {
+          case 1: return `Solo performance: ${list} playing alone, unaccompanied. No other instruments.`;
+          case 2: return `Duet: only ${list} playing together in dialogue. No other instruments.${leadHint}`;
+          case 3: return `Trio: only ${list}. No other instruments.${leadHint}`;
+          case 4: return `Quartet: only ${list}. No other instruments.${leadHint}`;
+          default: return `Full band: ${list} all playing together.${leadHint}`;
+      }
   }
 
   public getActiveVocalDetails() {
@@ -756,7 +826,7 @@ export class LiveMusicHelper extends EventTarget {
               { name: "Intro", type: 'intro', durationPct: 0.1 },
               { name: "Head", type: 'main', durationPct: 0.2 },
               { name: "Solo 1", type: 'solo', durationPct: 0.2 },
-              { name: "Solo 2", type: 'solo', durationPct: 0.2 },
+              { name: "Solo 2 (Rhythm Section)", type: 'trio', durationPct: 0.2 },
               { name: "Head Out", type: 'climax', durationPct: 0.3 }
           ]);
           // 2. Trading Fours
@@ -813,10 +883,11 @@ export class LiveMusicHelper extends EventTarget {
       const totalSec = this.maxDurationMinutes * 60;
       
       // Get all available keys based on visibility (user preferences in RightSidebar)
-      const availableKeys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'].filter(k => 
-          this.instruments[k as keyof InstrumentSet].visible !== false
+      const availableKeys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'].filter(k =>
+          this.instruments[k as keyof InstrumentSet].visible !== false && !!this.instruments[k as keyof InstrumentSet].instrument
       ) as Array<keyof InstrumentSet>;
-      
+
+      this.currentPlanIdx = 0;
       if (availableKeys.length === 0) return;
 
       // If starting mid-stream (takeover), use the improvisation logic
@@ -860,9 +931,12 @@ export class LiveMusicHelper extends EventTarget {
           let name = "Improv Mix";
           let type = 'main';
           
-          if (typeRoll < 0.25 && enabledKeys.length >= 1) { name = "Solo Feature"; type = 'solo'; }
-          else if (typeRoll < 0.5 && enabledKeys.length >= 2) { name = "Duet Session"; type = 'duet'; }
-          else if (typeRoll < 0.75) { name = "Groove Breakdown"; type = 'breakdown'; }
+          // Even spread across ensemble sizes: solo, duet, trio, quartet, full band
+          if (typeRoll < 0.2) { name = "Solo Feature"; type = 'solo'; }
+          else if (typeRoll < 0.4 && enabledKeys.length >= 2) { name = "Duet Session"; type = 'duet'; }
+          else if (typeRoll < 0.6 && enabledKeys.length >= 3) { name = "Trio Section"; type = 'trio'; }
+          else if (typeRoll < 0.8) { name = "Quartet Groove"; type = 'main'; }
+          else { name = "Full Band"; type = 'climax'; }
           
           this.addStage(currentTime, name, enabledKeys, type);
           currentTime += blockDuration;
@@ -1059,196 +1133,133 @@ export class LiveMusicHelper extends EventTarget {
       'build':      { 'Dynamics': +0.3, 'Density': +0.2, 'Atmosphere': +0.3, 'Variation': +0.2, 'Presence': +0.2 },
       'solo':       { 'Presence': +0.5, 'Ornamentation': +0.4, 'Dynamics': +0.3, 'Space': -0.1, 'Authenticity': +0.3, 'Organic': +0.3 },
       'duet':       { 'Presence': +0.3, 'Space': +0.2, 'Dynamics': +0.2, 'Organic': +0.2, 'Authenticity': +0.2 },
+      'trio':       { 'Groove': +0.3, 'Presence': +0.2, 'Organic': +0.2, 'Ornamentation': +0.1 },
       'breakdown':  { 'Density': -0.4, 'Space': +0.4, 'Atmosphere': +0.4, 'Dynamics': -0.3, 'Brightness': -0.3, 'Attack': -0.3 },
       'groove':     { 'Groove': +0.5, 'Density': +0.3, 'Attack': +0.2, 'Dynamics': +0.2, 'Staccato': +0.2 },
       'outro':      { 'Space': +0.5, 'Atmosphere': +0.5, 'Dynamics': -0.4, 'Density': -0.4, 'Brightness': -0.3, 'Glide': +0.3 }
   };
 
+  // DJ knob choice for a stage: up to 2 genre "anchor" knobs (the genre's signature, kept across stages so the
+  // DJ stays in genre) plus stage "flavor" knobs, never more than MAX_DJ_KNOBS and never a contradictory pair.
+  // Every knob not returned here is driven to 0 while the DJ is in control.
   private getKnobTargetsForStage(type: string): { parameterName: string; targetValue: number }[] {
-      const g = this.genre;
-      const profile = LiveMusicHelper.GENRE_KNOB_PROFILES[g] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
+      const profile = LiveMusicHelper.GENRE_KNOB_PROFILES[this.genre] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
       const stageMod = LiveMusicHelper.STAGE_MODIFIERS[type] || {};
 
-      const merged: Record<string, number> = {};
+      // Genre default + stage modifier, clamped to the genre range and the DJ ceiling
+      const valueOf = (knob: string) => {
+          const [min, max, defaultVal] = profile[knob];
+          const value = Math.max(min, Math.min(max, defaultVal + (stageMod[knob] || 0)));
+          return Math.min(DJ_KNOB_CEILING, value);
+      };
+      const conflicts = (a: string, b: string) =>
+          CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
-      // Apply genre profile defaults + stage modifiers
-      Object.entries(profile).forEach(([knob, [min, max, defaultVal]]) => {
-          const modifier = stageMod[knob] || 0;
-          let value = defaultVal + modifier;
-          // Clamp to genre-appropriate range
-          value = Math.max(min, Math.min(max, value));
-          merged[knob] = value;
-      });
+      const chosen: string[] = [];
+      const tryAdd = (knob: string) => {
+          if (chosen.length >= MAX_DJ_KNOBS || chosen.includes(knob) || !profile[knob]) return;
+          if (chosen.some(c => conflicts(c, knob))) return;
+          if (valueOf(knob) < 0.3) return; // A knob the genre barely allows is not worth a slot
+          chosen.push(knob);
+      };
 
-      // === CACOPHONY PREVENTION ===
-      // Mutual exclusion: Density vs Space
-      if (merged['Density'] > 0.7 && merged['Space'] > 0.7) {
-          if (merged['Density'] > merged['Space']) merged['Space'] = 0.4;
-          else merged['Density'] = 0.4;
-      }
-      // Brightness vs Atmosphere
-      if (merged['Brightness'] > 0.8 && merged['Atmosphere'] > 0.8) {
-          merged['Brightness'] = 0.6;
-      }
-      // Attack vs Glide
-      if (merged['Attack'] > 0.7 && merged['Glide'] > 0.5) {
-          merged['Glide'] = 0.3;
-      }
-      // Staccato vs Glide
-      if (merged['Staccato'] > 0.5 && merged['Glide'] > 0.3) {
-          merged['Glide'] = 0.2;
-      }
+      // 1. Genre anchors: the two highest genre defaults ('Guidance' is generic, not a musical colour)
+      Object.entries(profile)
+          .filter(([knob]) => knob !== 'Guidance')
+          .sort((a, b) => b[1][2] - a[1][2])
+          .slice(0, 2)
+          .forEach(([knob]) => tryAdd(knob));
 
-      // Limit active knobs
-      const MAX_ACTIVE_KNOBS = 8;
-      const activeKnobs = Object.entries(merged).filter(([_, v]) => v > 0.3);
-      if (activeKnobs.length > MAX_ACTIVE_KNOBS) {
-          const sorted = activeKnobs.sort((a, b) => b[1] - a[1]);
-          sorted.slice(MAX_ACTIVE_KNOBS).forEach(([k]) => { merged[k] = 0; });
-      }
+      // 2. Stage flavor: knobs this section boosts, strongest first, with a light shuffle between near-equals
+      Object.entries(stageMod)
+          .filter(([, mod]) => mod > 0)
+          .map(([knob, mod]) => [knob, mod + Math.random() * 0.1] as [string, number])
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([knob]) => tryAdd(knob));
 
-      // Ensure harmonic foundation
-      merged['Guidance'] = Math.max(merged['Guidance'] || 0, 0.8);
-
-      return Object.entries(merged)
-          .filter(([_, v]) => v > 0.05)
-          .map(([parameterName, targetValue]) => ({ parameterName, targetValue }));
+      return chosen.map(parameterName => ({ parameterName, targetValue: valueOf(parameterName) }));
   }
 
   private addStage(time: number, name: string, availableKeys: Array<keyof InstrumentSet>, type: string) {
+      const melodic = MELODIC_CHANNELS.filter(k => availableKeys.includes(k));
+      const shuffled = <T>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
+      const isGrooveGenre = !['Classic', 'Cinematic', 'Spiritual', 'Victorian', 'Renascentist', 'Ambient', 'Oriental', 'Opera'].includes(this.genre);
+
+      // Build a lineup of exactly `size` channels: preferred channels first (in order), then any other available one.
+      // The first channel in the lineup is the featured voice.
+      const lineupOf = (preferred: Array<ChannelKey | undefined>, size: number): ChannelKey[] => {
+          const lineup: ChannelKey[] = [];
+          [...preferred, ...availableKeys].forEach(k => {
+              if (k && availableKeys.includes(k) && !lineup.includes(k) && lineup.length < size) lineup.push(k);
+          });
+          return lineup;
+      };
+      const melody = availableKeys.includes('lead') ? 'lead' : (availableKeys.includes('alto') ? 'alto' : melodic[0]);
+
+      let lineup: ChannelKey[];
+      switch (type) {
+          case 'intro':
+          case 'outro':
+              // Sparse: one harmonic/melodic voice opens or closes the piece
+              lineup = lineupOf(['harmonic', 'lead', 'alto'], 1);
+              break;
+          case 'percussion':
+              lineup = lineupOf(['rhythm', 'bass'], 1);
+              break;
+          case 'solo':
+              // True solo: one melodic instrument, unaccompanied
+              lineup = lineupOf(shuffled(melodic), 1);
+              break;
+          case 'duet':
+              // Two melodic voices in dialogue (random pairing for variety)
+              lineup = lineupOf(shuffled(melodic), 2);
+              break;
+          case 'groove':
+              // Rhythm section duet
+              lineup = lineupOf(['bass', 'rhythm'], 2);
+              break;
+          case 'trio':
+              // Soloist over a rhythm section (groove genres) or over harmony + bass (classical genres)
+              lineup = lineupOf([shuffled(melodic)[0], 'bass', isGrooveGenre ? 'rhythm' : 'harmonic'], 3);
+              break;
+          case 'breakdown':
+              // Drums and lead drop out: inner voices carry the bridge
+              lineup = lineupOf(['alto', 'harmonic', 'bass'], 3);
+              break;
+          case 'verse':
+          case 'main':
+              // Quartet: one melody over harmony, bass and drums (avoids competing melodies)
+              lineup = lineupOf([melody, 'harmonic', 'bass', 'rhythm'], 4);
+              break;
+          default:
+              // chorus / climax / build: full band, lead melody on top
+              lineup = lineupOf([melody], 5);
+              break;
+      }
+      if (lineup.length === 0) lineup = [availableKeys[0]];
+
+      const formation = (['solo', 'duet', 'trio', 'quartet', 'full'] as Formation[])[Math.min(lineup.length, 5) - 1];
+      const featured = lineup[0];
       const stage: PerformancePlanStage = {
           stageName: name,
           stageStartTimeSec: time,
           activeChannels: { lead: false, alto: false, harmonic: false, bass: false, rhythm: false },
           channelWeights: { lead: 0, alto: 0, harmonic: 0, bass: 0, rhythm: 0 },
-          targets: this.getKnobTargetsForStage(type)
+          targets: this.getKnobTargetsForStage(type),
+          formation,
+          featured
       };
 
-      const setStrict = (keys: Array<keyof InstrumentSet>, weight: number = 1.0) => {
-          // Reset all first
-          (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(k => {
-              stage.activeChannels[k] = false;
-              stage.channelWeights[k] = 0;
-          });
-          
-          // Apply dynamic gain scaling to prevent clipping (distortion)
-          // If 3+ channels are active, reduce weight to share headroom
-          const activeCount = keys.length;
-          const effectiveWeight = activeCount > 2 ? weight * (2 / activeCount) : weight;
+      // Featured voice at full weight, supporting players slightly under it so the formation stays readable
+      lineup.forEach(k => {
+          stage.activeChannels[k] = true;
+          stage.channelWeights[k] = k === featured ? 1.0 : FORMATION_SUPPORT_WEIGHT[formation];
+      });
 
-          // Enable specific
-          keys.forEach(k => {
-              if (availableKeys.includes(k)) {
-                  stage.activeChannels[k] = true;
-                  stage.channelWeights[k] = effectiveWeight;
-              }
-          });
-      };
-
-      // Helper to get random from available
-      const pick = (arr: Array<keyof InstrumentSet>) => {
-          const valid = arr.filter(k => availableKeys.includes(k));
-          return valid[Math.floor(Math.random() * valid.length)];
-      };
-
-      switch (type) {
-          case 'intro':
-              // Sparse: Harmonic or Rhythm or Lead solo
-              if (availableKeys.includes('harmonic')) setStrict(['harmonic'], 0.8);
-              else if (availableKeys.includes('lead')) setStrict(['lead'], 0.8);
-              else setStrict([availableKeys[0]], 0.8);
-              break;
-
-          case 'percussion':
-              // Drum/Percussion Only
-              {
-                  const drums = availableKeys.filter(k => k === 'rhythm');
-                  if (drums.length > 0) setStrict(drums, 1.2);
-                  else {
-                      // Fallback to bass groove or generic intro if no rhythm channel
-                      const groove = availableKeys.filter(k => k === 'bass');
-                      setStrict(groove.length > 0 ? groove : [availableKeys[0]], 1.0);
-                  }
-              }
-              break;
-
-          case 'verse':
-          case 'main':
-              // Standard: Rhythm section + Lead OR Alto (avoid muddy melody)
-              {
-                  const section = ['bass', 'rhythm', 'harmonic'] as Array<keyof InstrumentSet>;
-                  const melody = availableKeys.includes('lead') ? 'lead' : (availableKeys.includes('alto') ? 'alto' : null);
-                  if (melody) section.push(melody);
-                  setStrict(section, 1.0);
-              }
-              break;
-
-          case 'chorus':
-          case 'climax':
-          case 'build':
-              // Full: All available
-              setStrict(availableKeys, 1.0);
-              break;
-
-          case 'solo':
-              // STRICTLY ONE instrument + quiet backing
-              {
-                  const soloist = pick(['lead', 'alto', 'harmonic', 'bass']);
-                  if (soloist) {
-                      stage.stageName = `${this.instruments[soloist].instrument} Solo`;
-                      // Backing
-                      const backing = availableKeys.filter(k => k !== soloist && (k === 'bass' || k === 'rhythm' || k === 'harmonic'));
-                      setStrict([soloist, ...backing], 1.0);
-                      // Soloist gets 1.2, backing gets 0.5
-                      stage.channelWeights[soloist] = 1.2;
-                      backing.forEach(k => stage.channelWeights[k] = 0.5); // Quiet backing
-                  }
-              }
-              break;
-
-          case 'duet':
-              // STRICTLY TWO instruments
-              {
-                  const options = availableKeys.filter(k => k !== 'rhythm'); // Prefer melodic instruments for duet
-                  if (options.length >= 2) {
-                      const k1 = options[0];
-                      const k2 = options[1];
-                      setStrict([k1, k2], 1.1);
-                  } else if (availableKeys.length >= 2) {
-                      setStrict([availableKeys[0], availableKeys[1]], 1.1);
-                  } else {
-                      setStrict(availableKeys, 1.0); // Fallback
-                  }
-              }
-              break;
-
-          case 'breakdown':
-              // Remove Rhythm or Bass, focus on Harmonic/Alto
-              {
-                  const bridgeKeys = availableKeys.filter(k => k !== 'rhythm' && k !== 'lead');
-                  if (bridgeKeys.length > 0) setStrict(bridgeKeys, 0.9);
-                  else setStrict(availableKeys, 0.7); // Quiet full
-              }
-              break;
-              
-          case 'groove':
-              // Bass + Rhythm focus
-              {
-                  const groove = availableKeys.filter(k => k === 'bass' || k === 'rhythm');
-                  setStrict(groove.length > 0 ? groove : availableKeys, 1.1);
-              }
-              break;
-
-          case 'outro':
-              // Fade out texture, usually Harmonic or Lead
-              if (availableKeys.includes('harmonic')) setStrict(['harmonic'], 0.7);
-              else setStrict([availableKeys[0]], 0.7);
-              break;
-              
-          default:
-              setStrict(availableKeys, 1.0);
-              break;
-      }
+      const formationLabel = formation === 'solo'
+          ? `${this.instruments[featured].instrument} Solo`
+          : formation === 'full' ? 'Full Band' : formation.charAt(0).toUpperCase() + formation.slice(1);
+      stage.stageName = `${name} · ${formationLabel}`;
 
       this.currentPlan.push(stage);
   }
@@ -1348,44 +1359,59 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private interpolateParameters() {
-      if (isTraditionalGenre(this.genre)) return; // DJ HANDS OFF knobs for traditional genres
-
       const currentTimeMs = Date.now();
-      const currentStage = this.currentPlan?.[this.currentPlanIdx]; 
+      const currentStage = this.currentPlan?.[this.currentPlanIdx];
       if (!currentStage) return;
-      
-      const interactionCooldownMs = 10000 - (this.evolutionValue * 500); 
+
+      const interactionCooldownMs = 10000 - (this.evolutionValue * 500);
       // Dynamic base step based on evolution. Higher evolution = faster cuts.
       const baseStep = 0.05 + (this.evolutionValue > 5 ? 0.05 : 0);
       const step = baseStep * (1.0 + (this.evolutionValue / 10.0));
-      
-      if (currentStage.targets) {
-          const targets: Record<string, number> = {}; 
-          currentStage.targets.forEach((t:any) => { if (t && t.parameterName) targets[t.parameterName] = t.targetValue; });
-          const promptsNeedingMove: string[] = [];
+      // Knobs leaving the mix are pulled out faster so new ones can enter without breaking the knob cap
+      const retireStep = Math.max(step, 0.15);
+
+      // DJ HANDS OFF knobs for traditional genres (channels are still conducted below)
+      if (currentStage.targets && !isTraditionalGenre(this.genre)) {
+          // Knobs outside the stage's selection target 0, so at most MAX_DJ_KNOBS stay engaged
+          const targets: Record<string, number> = {};
+          currentStage.targets.forEach(t => { targets[t.parameterName] = t.targetValue; });
+          const targetOf = (p: Prompt) => targets[p.text] ?? 0;
+
+          const isEngaged = (p: Prompt) => p.weight > 0.01;
+          let engagedCount = 0;
+          this.prompts.forEach(p => { if (isEngaged(p)) engagedCount++; });
+
+          const retiring: Prompt[] = [], adjusting: Prompt[] = [], entering: Prompt[] = [];
           this.prompts.forEach(p => {
               const lastInteracted = this.userInteractionCooldowns.get(p.promptId) || 0;
-              if (currentTimeMs - lastInteracted < interactionCooldownMs) return; 
-              const target = targets[p.text] ?? p.weight;
-              if (Math.abs(target - p.weight) > 0.01) promptsNeedingMove.push(p.promptId);
+              if (currentTimeMs - lastInteracted < interactionCooldownMs) return;
+              const target = targetOf(p);
+              if (Math.abs(target - p.weight) <= 0.01) return;
+              if (target === 0) retiring.push(p);
+              else if (isEngaged(p)) adjusting.push(p);
+              else entering.push(p);
           });
-          this.activeHands = this.activeHands.filter(id => promptsNeedingMove.includes(id));
-          while (this.activeHands.length < 2 && promptsNeedingMove.length > 0) {
-              const next = promptsNeedingMove.find(id => !this.activeHands.includes(id));
-              if (next) this.activeHands.push(next); else break;
+
+          // Two hands: retire first, then adjust engaged knobs, and only then bring in new knobs while under the cap
+          const hands: Prompt[] = [];
+          for (const p of [...retiring, ...adjusting, ...entering]) {
+              if (hands.length >= 2) break;
+              if (entering.includes(p)) {
+                  if (engagedCount >= MAX_DJ_KNOBS) continue;
+                  engagedCount++;
+              }
+              hands.push(p);
           }
-          let changed = false;
-          this.activeHands.forEach(id => {
-              const p = this.prompts.get(id);
-              if (!p) return;
-              const target = targets[p.text] ?? p.weight;
+          this.activeHands = hands.map(p => p.promptId);
+
+          hands.forEach(p => {
+              const target = targetOf(p);
               const diff = target - p.weight;
-              const move = Math.sign(diff) * Math.min(Math.abs(diff), step);
+              const move = Math.sign(diff) * Math.min(Math.abs(diff), target === 0 ? retireStep : step);
               p.weight = Math.max(0, Math.min(2.0, p.weight + move));
               p.volume = p.weight / 2;
-              changed = true;
           });
-          if (changed) { this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts })); this.scheduleRefresh(); }
+          if (hands.length > 0) { this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts })); this.scheduleRefresh(); }
       }
 
       if (currentStage.channelWeights || currentStage.activeChannels) {
