@@ -43,16 +43,10 @@ export class PromptDjMidi extends LitElement {
     .prompt-box {
       flex: 1.4 1 0;
       min-width: 0;
-      box-sizing: border-box;
-      height: calc(4 * 1.5em + 12px);
-      padding: 6px 12px;
       border-radius: 4px;
       background: #000;
       border: 1px solid rgba(255, 255, 255, 0.05);
       box-shadow: inset 0 2px 8px rgba(0,0,0,1);
-      font-family: 'Courier New', Courier, monospace;
-      font-size: clamp(10px, 1.5vw, 12px);
-      line-height: 1.5em;
       overflow-y: auto;
       color: #9fb8ad;
       scrollbar-width: thin;
@@ -89,6 +83,18 @@ export class PromptDjMidi extends LitElement {
       border: 1px solid rgba(255, 255, 255, 0.05);
     }
     
+    /* Both displays share the same font, size, line height, padding and height */
+    .display-box, .prompt-box {
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: 700;
+      font-size: clamp(12px, 2vw, 14.55px);
+      letter-spacing: 1px;
+      line-height: 1.5em;
+      height: calc(4 * 1.5em + 12px);
+      padding: 6px 16px;
+      box-sizing: border-box;
+    }
+
     .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 1.5em; flex-shrink: 0; opacity: 0.4; }
     .log-line.latest { opacity: 1; }
     .log-line.error { color: #FF3B30; }
@@ -145,8 +151,7 @@ export class PromptDjMidi extends LitElement {
         padding: 2px 8px; 
         flex-direction: column;
       }
-      .prompt-box { height: calc(4 * 1.5em + 8px); }
-      .display-box { 
+      .display-box, .prompt-box { 
         font-size: 10.5px; 
         padding: 4px 10px;
         height: calc(4 * 1.5em + 8px);
