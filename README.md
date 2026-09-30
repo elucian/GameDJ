@@ -16,5 +16,9 @@ This contains everything you need to deploy this app.
 3. Run the app:
    `npm run dev`
 
+## Documentation
+
+See the [User Guide](manual/USER_GUIDE.md) and the other documents in the [manual](manual) folder.
+
 THIS APP IS DESIGNED USING AI STUDIO & GEMINI AI.
 
