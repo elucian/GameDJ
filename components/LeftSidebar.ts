@@ -203,10 +203,9 @@ export class LeftSidebar extends LitElement {
       box-shadow: 0 2px 4px rgba(0,0,0,0.1), inset 0 1px 1px rgba(255,255,255,0.8);
     }
 
+    /* A physical device: unresponsive, never dimmed */
     button:disabled {
       cursor: not-allowed;
-      pointer-events: none;
-      opacity: 0.2;
     }
 
     button:not(:disabled):hover {
@@ -223,7 +222,6 @@ export class LeftSidebar extends LitElement {
     button.preset-btn { color: #ccc; }
 
     button.loop-btn { color: #005500; }
-    button.loop-btn:disabled:not(.active-green) { color: #005500 !important; opacity: 1 !important; }
     button.play-btn { color: #3dffab; }
     button.pause-btn { color: #fff; }
     button.download-btn { color: #3dffab; }

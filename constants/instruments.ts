@@ -14,10 +14,16 @@ type ChannelName = 'lead' | 'alto' | 'harmonic' | 'bass' | 'rhythm';
 
 export const LYRIA_DEFAULT_POOLS: Record<ChannelName, string[]> = {
   lead: ['Symphony Orchestra', 'String Orchestra', 'Chamber Orchestra', 'Chamber Strings', 'Violin Section', 'Cello Ensemble', 'Woodwind Section', 'Harp & Strings'],
-  alto: ['Solo Voice', 'Duet Voices', 'Choir Voices', 'Chamber Choir'],
+  alto: ['Solo Voice', 'Duet Voices', 'Quartet Voices', 'Choir Voices', 'Chamber Choir'],
   harmonic: ['Mixed Choir', 'Chamber Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gospel Choir', 'Gregorian Chant', 'A Cappella Group'],
   bass: ['Brass Section', 'Low Brass', 'French Horns', 'Trombones', 'Tuba', 'Brass Quintet', 'Cinematic Brass'],
   rhythm: ['Timpani & Drums', 'Orchestral Percussion', 'Cinematic Drums', 'Taiko Drums', 'Snare Ensemble']
+};
+
+// Voice instruments that can always be picked on the Band tab too, so the Voice dialog and the channels can stay in sync.
+export const VOICE_CHANNEL_POOLS: Partial<Record<ChannelName, string[]>> = {
+  alto: ['Solo Voice', 'Duet Voices', 'Quartet Voices'],
+  harmonic: ['Chamber Choir', 'Mixed Choir', 'Gospel Choir', 'Male Choir', 'Female Choir', 'Childrens Choir']
 };
 
 // Per-genre overrides: only the channels listed differ from the default pools.

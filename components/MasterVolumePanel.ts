@@ -56,6 +56,8 @@ export class MasterVolumePanel extends LitElement {
       margin-bottom: 4px;
     }
 
+    .seed-chip { font-size: 9px; font-weight: bold; letter-spacing: 0.5px; color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 3px; padding: 1px 5px; cursor: pointer; white-space: nowrap; }
+    .seed-chip.locked { color: var(--accent-color); border-color: var(--accent-color); }
     .volume-label {
       font-size: 10.58px; 
       font-weight: bold;
@@ -112,6 +114,9 @@ export class MasterVolumePanel extends LitElement {
       background: var(--accent-color);
     }
 
+    .blocked { cursor: not-allowed; }
+    .blocked > * { pointer-events: none; }
+    .stereo-toggle.disabled { cursor: not-allowed; }
     .slider-row {
       display: flex;
       align-items: center;
@@ -228,6 +233,8 @@ export class MasterVolumePanel extends LitElement {
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
   @property({ type: Boolean }) isLocked = false;
+  @property({ type: Number }) seed = 0;
+  @property({ type: Boolean }) seedLocked = false;
   
   @state() private smoothedLevelL = 0;
   @state() private smoothedLevelR = 0;
@@ -243,6 +250,11 @@ export class MasterVolumePanel extends LitElement {
       if (this.audioLevelR === 0) this.smoothedLevelR = 0;
       else this.smoothedLevelR = (this.smoothedLevelR * 0.7) + (targetLevel * 0.3);
     }
+  }
+
+  private toggleSeedLock() {
+    uiSounds.playSwitch();
+    (this as any).dispatchEvent(new CustomEvent('seed-lock-changed', { detail: !this.seedLocked }));
   }
 
   private toggleStereo() {
@@ -267,6 +279,7 @@ export class MasterVolumePanel extends LitElement {
   }
 
   private onEvolutionChange(e: Event) {
+    if (this.isLocked) return;
     const input = e.target as HTMLInputElement;
     const val = parseInt(input.value, 10);
     if (val !== this.evolution) {
@@ -278,6 +291,7 @@ export class MasterVolumePanel extends LitElement {
   }
 
   private onDurationChange(e: Event) {
+      if (this.isLocked) return;
       const input = e.target as HTMLInputElement;
       const idx = parseInt(input.value, 10);
       if (idx !== this.durationIndex) {
@@ -318,13 +332,13 @@ export class MasterVolumePanel extends LitElement {
               <div class="volume-label">DUR.</div>
               <div class="value-display">${FIBONACCI_SERIES[this.durationIndex]}m</div>
             </div>
-            <div class="slider-row">
+            <div class="slider-row ${this.isLocked ? 'blocked' : ''}">
               <input 
                 type="range" 
                 min="0" max="${FIBONACCI_SERIES.length - 1}" step="1" 
                 .value=${this.durationIndex} 
                 @input=${this.onDurationChange}
-                ?disabled=${this.isLocked}
+                tabindex=${this.isLocked ? '-1' : '0'}
               />
             </div>
             <div class="range-markers">
@@ -338,13 +352,13 @@ export class MasterVolumePanel extends LitElement {
               <div class="volume-label">EVO.</div>
               <div class="value-display">${this.evolution > 0 ? '+' : ''}${this.evolution}</div>
             </div>
-            <div class="slider-row">
+            <div class="slider-row ${this.isLocked ? 'blocked' : ''}">
               <input 
                 type="range" 
                 min="-10" max="10" step="1" 
                 .value=${this.evolution} 
                 @input=${this.onEvolutionChange}
-                ?disabled=${this.isLocked}
+                tabindex=${this.isLocked ? '-1' : '0'}
               />
             </div>
             <div class="range-markers">
@@ -356,6 +370,7 @@ export class MasterVolumePanel extends LitElement {
 
         <div class="label-row">
           <div class="volume-label">VOLUME</div>
+          <div class="seed-chip ${this.seedLocked ? 'locked' : ''}" title="Lock the seed to repeat the same take on the next recording" @click=${this.toggleSeedLock}>SEED ${this.seedLocked ? '🔒 ' + this.seed : 'AUTO'}</div>
           <div class="stereo-toggle ${this.isStereo ? 'on' : ''} ${this.isLocked ? 'disabled' : ''}" @click=${this.toggleStereo}>
             <span class="toggle-text ${!this.isStereo ? 'active' : ''}">MONO</span>
             <div class="switch-track">

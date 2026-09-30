@@ -1052,6 +1052,8 @@ export class TopToolbar extends LitElement {
 
     optgroup { font-weight: 800; text-decoration: underline; background: #111; color: var(--accent-color); margin-top: 0px; margin-bottom: 0px; }
 
+    .blocked { cursor: not-allowed; }
+    .blocked > * { pointer-events: none; }
     .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
     .select-mood, .select-7vw { width: 100%; min-width: 0; flex: 1; }
     .select-key { width: 100%; min-width: 0; flex: 1; }
@@ -1417,8 +1419,8 @@ export class TopToolbar extends LitElement {
           <span class="label">Genre</span>
           ${this.renderLock(this.locked.genre, () => this.toggleLock('genre'))}
         </div>
-        <div class="row">
-          <select class="select-genre" .value=${this.genre} @change=${this.onGenreChange} ?disabled=${isRecording}>
+        <div class="row ${isRecording ? 'blocked' : ''}">
+          <select class="select-genre" .value=${this.genre} @change=${this.onGenreChange} tabindex=${isRecording ? '-1' : '0'}>
             <optgroup label="MODERN">${GENRE_MAP_MODERN.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
             <optgroup label="TRADITIONAL">${GENRE_MAP_TRADITIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
             <optgroup label="REGIONAL">${GENRE_MAP_REGIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
@@ -1433,8 +1435,8 @@ export class TopToolbar extends LitElement {
           <span class="label">Style</span>
           ${this.renderLock(this.locked.style, () => this.toggleLock('style'))}
         </div>
-        <div class="row">
-          <select class="select-style" .value=${this.musicStyle} @change=${this.onStyleChange} ?disabled=${isRecording}>
+        <div class="row ${isRecording ? 'blocked' : ''}">
+          <select class="select-style" .value=${this.musicStyle} @change=${this.onStyleChange} tabindex=${isRecording ? '-1' : '0'}>
             ${styles.map(s => html`<option value=${s}>${s}</option>`)}
           </select>
         </div>

@@ -33,7 +33,39 @@ export class PromptDjMidi extends LitElement {
       padding: 4px 12px;
       box-sizing: border-box;
       flex-shrink: 0;
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
     }
+    .display-box { flex: 1 1 0; min-width: 0; }
+
+    /* Right panel: what is actually sent to Lyria (voices, lyrics, prompt) */
+    .prompt-box {
+      flex: 1.4 1 0;
+      min-width: 0;
+      box-sizing: border-box;
+      height: calc(4 * 1.5em + 12px);
+      padding: 6px 12px;
+      border-radius: 4px;
+      background: #000;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: inset 0 2px 8px rgba(0,0,0,1);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: clamp(10px, 1.5vw, 12px);
+      line-height: 1.5em;
+      overflow-y: auto;
+      color: #9fb8ad;
+      scrollbar-width: thin;
+    }
+    .prompt-box .p-head { color: var(--accent-color); font-weight: 700; letter-spacing: 1px; margin-right: 6px; }
+    .prompt-box .p-row { overflow-wrap: anywhere; }
+    .prompt-box .p-empty { opacity: 0.4; }
+
+    /* Commands fly in from the left, and the oldest one flies away toward the prompt panel */
+    @keyframes fly-in { from { transform: translateX(-24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fly-away { from { transform: translateX(0); opacity: 0.4; } to { transform: translateX(60px); opacity: 0; } }
+    .log-line.latest { animation: fly-in 0.35s ease-out; }
+    .log-line.leaving { animation: fly-away 0.6s ease-in forwards; }
     
     .display-box {
       font-family: 'Courier New', Courier, monospace;
@@ -111,7 +143,9 @@ export class PromptDjMidi extends LitElement {
       }
       .display-panel { 
         padding: 2px 8px; 
+        flex-direction: column;
       }
+      .prompt-box { height: calc(4 * 1.5em + 8px); }
       .display-box { 
         font-size: 10.5px; 
         padding: 4px 10px;
@@ -132,7 +166,17 @@ export class PromptDjMidi extends LitElement {
   @property({ type: String }) public playbackState: PlaybackState = 'stopped';
   @state() public audioLevel = 0;
   @state() private messageType: 'info' | 'error' = 'info';
-  @state() private log: { text: string; type: 'info' | 'error' }[] = [{ text: 'SYSTEM READY', type: 'info' }];
+  @state() private log: { text: string; type: 'info' | 'error'; leaving?: boolean }[] = [{ text: 'SYSTEM READY', type: 'info' }];
+  @state() private voicesInfo = '';
+  @state() private lyricsInfo = '';
+  @state() private promptInfo = '';
+
+  /** Right panel content: the voices, the lyrics (or vocal prompt) and the prompt currently sent to Lyria. */
+  public setPromptInfo(info: { voices?: string; lyrics?: string; prompt?: string }) {
+    if (info.voices !== undefined) this.voicesInfo = info.voices;
+    if (info.lyrics !== undefined) this.lyricsInfo = info.lyrics;
+    if (info.prompt !== undefined) this.promptInfo = info.prompt;
+  }
   
   @property({ type: Boolean }) public interactionEnabled = false;
 
@@ -145,7 +189,17 @@ export class PromptDjMidi extends LitElement {
 
   public setMessage(text: string, type: 'info' | 'error' = 'info') {
     this.messageType = type;
-    if (this.log[this.log.length - 1]?.text !== text) this.log = [...this.log, { text, type }].slice(-4);
+    if (this.log[this.log.length - 1]?.text !== text) {
+      // Keep a fifth, outgoing line just long enough to fly away
+      const next = [...this.log.filter(l => !l.leaving), { text, type }];
+      if (next.length > 4) {
+        const out = next.shift()!;
+        this.log = [{ ...out, leaving: true }, ...next];
+        window.setTimeout(() => { this.log = this.log.filter(l => !l.leaving); }, 600);
+      } else {
+        this.log = next;
+      }
+    }
   }
 
   public setPrompts(prompts: Map<string, Prompt>) {
@@ -207,7 +261,12 @@ export class PromptDjMidi extends LitElement {
     return html`
       <div class="display-panel">
         <div class="display-box ${this.messageType}">
-          ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
+          ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${l.leaving ? 'leaving' : i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
+        </div>
+        <div class="prompt-box">
+          <div class="p-row"><span class="p-head">VOICES</span>${this.voicesInfo || html`<span class="p-empty">none</span>`}</div>
+          <div class="p-row"><span class="p-head">LYRICS</span>${this.lyricsInfo || html`<span class="p-empty">none</span>`}</div>
+          <div class="p-row"><span class="p-head">PROMPT</span>${this.promptInfo || html`<span class="p-empty">waiting for the first prompt</span>`}</div>
         </div>
       </div>
       <div class="grid-container">

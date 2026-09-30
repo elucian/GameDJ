@@ -15,7 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, SONG_REFERENCES, isVocalInstrument, chooseDjManifest, chooseDjTab } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, SONG_REFERENCES, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -73,6 +73,8 @@ function main() {
   (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {
     vocalDialog.show = !vocalDialog.show;
     vocalDialog.genre = topToolbar.genre;
+    // Show the lyrics the DJ (or you) wrote
+    if (liveMusicHelper.lyricsText) vocalDialog.vocalText = liveMusicHelper.lyricsText;
   });
 
   window.addEventListener('toggle-dj-preset-dialog', () => {
@@ -91,10 +93,20 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
-    const { genre, lang, verseCount, lineCount } = e.detail;
-    pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre}...`, "info");
-    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, verseCount, lineCount);
+    const { genre, verseCount, lineCount } = e.detail;
+    const lang: string = e.detail.lang === 'Auto' ? chooseDjLanguage(genre).language : e.detail.lang;
+    pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
+    vocalDialog.generating = true;
+    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, verseCount, lineCount, undefined, topToolbar.musicStyle, topToolbar.currentMood);
+    vocalDialog.generating = false;
+    if (lyrics.startsWith('Error') || lyrics.startsWith('Could not')) {
+      pdjMidi.setMessage('LYRICS FAILED: TRY AGAIN', 'error');
+      return;
+    }
     vocalDialog.vocalText = lyrics;
+    liveMusicHelper.setLyrics(lyrics, lang, false);
+    refreshPromptPanel();
+    pdjMidi.setMessage(`LYRICS READY: ${lang.toUpperCase()}`, 'info');
   });
 
   (vocalDialog as any).addEventListener('request-song-translation', async (e: CustomEvent) => {
@@ -124,6 +136,7 @@ function main() {
   (vocalDialog as any).addEventListener('lyrics-set', (e: CustomEvent<string>) => {
     // Lyrics typed or edited by the user: keep the DJ's language, sing them as real words
     if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, undefined, false);
+    refreshPromptPanel();
   });
 
   (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => {
@@ -366,32 +379,105 @@ function main() {
   (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail); });
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
-  // When the DJ picks voice channels it also sets the Voice dialog (solo voices / duet / choir kind) to match.
-  const djConfigureVoices = () => {
+  // Right-hand panel: voices, lyrics / vocal prompt, and the prompt last sent to Lyria
+  let lastPromptText = '';
+  const refreshPromptPanel = () => {
+      const { solos, choir } = vocalDialog.getVoices();
+      const voices = [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', ')
+          + ` · INTENSITY ${Math.round(liveMusicHelper.voiceIntensity * 100)}%`;
+      const lyrics = liveMusicHelper.vocalPrompt || liveMusicHelper.lyricsText.replace(/\s*\n\s*/g, ' / ').slice(0, 200);
+      pdjMidi.setPromptInfo({ voices, lyrics, prompt: lastPromptText });
+  };
+  // Repeatable takes: show the seed, lock it from the mixer panel
+  liveMusicHelper.addEventListener('seed-changed', ((e: Event) => {
+      const { seed, locked } = (e as CustomEvent<{ seed: number | null; locked: boolean }>).detail;
+      rightSidebar.seed = seed ?? 0;
+      rightSidebar.seedLocked = locked;
+      if (locked) pdjMidi.setMessage(`SEED LOCKED: ${seed}`, 'info');
+  }));
+  (rightSidebar as any).addEventListener('seed-lock-changed', ((e: Event) => liveMusicHelper.setSeedLock((e as CustomEvent<boolean>).detail)));
+  liveMusicHelper.addEventListener('prompt-filtered', ((e: Event) => {
+      const { text, filteredReason } = (e as CustomEvent<{ text?: string; filteredReason?: string }>).detail;
+      pdjMidi.setMessage(`PROMPT FILTERED: ${filteredReason || text || 'unknown reason'}`, 'error');
+  }));
+  liveMusicHelper.addEventListener('voice-intensity-changed', () => refreshPromptPanel());
+  liveMusicHelper.addEventListener('prompts-sent', ((e: Event) => {
+      const { prompts, guidance } = (e as CustomEvent<{ prompts: { text: string; weight: number }[]; guidance: number }>).detail;
+      lastPromptText = `[GUIDANCE ${guidance.toFixed(1)}] ` + [...prompts].sort((a, b) => b.weight - a.weight).map(p => `${p.text} (${p.weight.toFixed(1)})`).join(' • ');
+      refreshPromptPanel();
+  }));
+
+  // === Voice dialog <-> voice channels ===
+  const VOICE_NAMES = ['Soprano', 'Alto', 'Tenor', 'Baritone'];
+  const CHOIR_CANDIDATES: Record<string, string[]> = {
+      Church: ['Gregorian Chant', 'Gospel Choir', 'Mixed Choir'], Chamber: ['Chamber Choir'], Military: ['Male Choir'],
+      Youth: ['Female Choir', 'Mixed Choir'], Children: ['Childrens Choir'], Mixed: ['Mixed Choir', 'Epic Choir', 'A Cappella Group']
+  };
+  let syncingFromDialog = false;
+
+  // What the voice channels say about the Voice dialog: choir kind, and how many solo voices (1 solo, 2 duet, 4 quartet).
+  // A choir gets an even number of solo voices. Keeps the voices already chosen when the count still fits.
+  const voicesFromChannels = (current: { solos: string[]; choir: string }) => {
       const s = rightSidebar.settings;
-      const voices = ['Soprano', 'Alto', 'Tenor', 'Baritone'];
-      const pick = (n: number) => [...voices].sort(() => Math.random() - 0.5).slice(0, n);
-      const solos = new Set<string>();
-      let choir = 'None';
+      let soloCount = 0; let choir = 'None';
+      const hints: string[] = [];
       (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
           const c = s[ch];
           if (c.visible === false || !c.active || !isVocalInstrument(c.instrument)) return;
           const n = c.instrument.toLowerCase();
-          if (n.includes('duet')) pick(2).forEach(v => solos.add(v));
+          if (n.includes('quartet')) soloCount = Math.max(soloCount, 4);
+          else if (n.includes('duet')) soloCount = Math.max(soloCount, 2);
           else if (n.includes('chamber')) choir = 'Chamber';
           else if (n.includes('gospel') || n.includes('gregorian') || n.includes('chant')) choir = 'Church';
           else if (n.includes('male choir') && !n.includes('female')) choir = 'Military';
           else if (n.includes('child') && n.includes('choir')) choir = 'Children';
-          else if (n.includes('boy') || n.includes('girl')) pick(1).forEach(v => solos.add(v));
           else if (n.includes('choir') || n.includes('cappella') || n.includes('ensemble')) choir = 'Mixed';
-          else if (n.includes('female') || n.includes('soprano')) solos.add(Math.random() < 0.5 ? 'Soprano' : 'Alto');
-          else if (n.includes('male') || n.includes('tenor') || n.includes('rapper') || n.includes('mc ')) solos.add(Math.random() < 0.5 ? 'Tenor' : 'Baritone');
-          else pick(1).forEach(v => solos.add(v));
+          else {
+              soloCount = Math.max(soloCount, 1);
+              if (n.includes('female') || n.includes('soprano') || n.includes('girl')) hints.push('Soprano', 'Alto');
+              else if (n.includes('male') || n.includes('tenor') || n.includes('rapper') || n.includes('mc ')) hints.push('Tenor', 'Baritone');
+          }
       });
-      if (solos.size === 0 && choir === 'None') return false;
-      vocalDialog.djConfigure([...solos], choir);
+      if (soloCount === 0 && choir === 'None') return null;
+      if (choir !== 'None' && soloCount % 2 === 1) soloCount++;
+      const solos = current.solos.slice(0, soloCount);
+      [...hints, ...[...VOICE_NAMES].sort(() => Math.random() - 0.5)].forEach(v => { if (solos.length < soloCount && !solos.includes(v)) solos.push(v); });
+      return { solos, choir };
+  };
+
+  // Channel changed: mirror it in the Voice dialog (only when something actually differs)
+  const syncVoiceDialog = () => {
+      if (syncingFromDialog) return;
+      const current = vocalDialog.getVoices();
+      const target = voicesFromChannels(current);
+      if (target && (target.choir !== current.choir || target.solos.length !== current.solos.length)) {
+          vocalDialog.setVoices(target.solos, target.choir);
+          refreshPromptPanel();
+      }
+  };
+
+  // The DJ picked voice channels: set the Voice dialog to match and send the vocal direction
+  const djConfigureVoices = () => {
+      const target = voicesFromChannels(vocalDialog.getVoices());
+      if (!target) return false;
+      vocalDialog.djConfigure(target.solos, target.choir);
+      refreshPromptPanel();
       return true;
   };
+
+  // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
+  (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
+      const { solos, choir } = e.detail;
+      const pick: Partial<Record<keyof InstrumentSet, string[]>> = {};
+      if (choir !== 'None') pick.harmonic = CHOIR_CANDIDATES[choir] || [];
+      if (solos.length === 1) pick.alto = ['Solo Voice'];
+      else if (solos.length === 2) pick.alto = ['Duet Voices'];
+      else if (solos.length >= 3) pick.alto = ['Quartet Voices'];
+      if (!pick.alto && !pick.harmonic) return;
+      syncingFromDialog = true;
+      try { rightSidebar.setVoiceInstruments(pick); } finally { syncingFromDialog = false; }
+      refreshPromptPanel();
+  });
 
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
@@ -431,6 +517,7 @@ function main() {
                   pdjMidi.setMessage("DJ WRITING LYRICS...", "info");
                   const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood);
                   vocalDialog.vocalText = text;
+                  refreshPromptPanel();
                   pdjMidi.setMessage(vowels ? "DJ LYRICS: VOCALISE (VOWELS)" : `DJ LYRICS READY: ${language.toUpperCase()}`, "info");
               }
 
@@ -702,6 +789,7 @@ function main() {
       cancelAutoLoop();
       const detail = (e as CustomEvent<InstrumentSet>).detail;
       liveMusicHelper.setInstruments(detail);
+      syncVoiceDialog();
       
       const vocalInManifest = (Object.values(detail) as ChannelState[]).some(ch => {
           if (ch.visible === false) return false;

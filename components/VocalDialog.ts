@@ -8,8 +8,10 @@ export class VocalDialog extends LitElement {
   
   /** Lyrics the DJ (or you) wrote for this song: real words in the genre's language, or open vowels. */
   @property({ type: String }) vocalText = '';
-  @state() private soloVolume = 80;
-  @state() private choirVolume = 80;
+  @property({ type: Boolean }) generating = false;
+  @state() private tab: 'voices' | 'lyrics' = 'voices';
+  @state() private lyricsLang = 'Auto';
+  private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Romanian', 'Swahili', 'Irish Gaelic', 'Hawaiian'];
   @state() private activeSoloVoices = {
     'Soprano': false,
     'Alto': false,
@@ -91,6 +93,19 @@ export class VocalDialog extends LitElement {
       font-weight: bold;
     }
     
+    .tabs { display: flex; gap: 6px; }
+    .tab-btn {
+      flex: 1; padding: 6px; border: 1px solid var(--border-color); border-radius: 6px;
+      background: var(--bg-color); color: var(--text-muted); font-size: 12px; letter-spacing: 1px;
+    }
+    .tab-btn.active { border-color: var(--accent-color); color: var(--accent-color); }
+    .lyrics-tools { display: flex; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+    .lyrics-tools select {
+      flex: 1; min-width: 0; padding: 6px; border-radius: 6px; background: var(--bg-color);
+      color: var(--text-color); border: 1px solid var(--border-color); font-size: 12px;
+    }
+    .generate-btn { flex: 1; padding: 6px 10px; background: var(--accent-color); color: #000; }
+    .generate-btn[disabled] { cursor: not-allowed; }
     .slider-container { margin: 0 0 12px 0; }
     input[type=range] { 
       width: 100%; 
@@ -147,38 +162,12 @@ export class VocalDialog extends LitElement {
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
             <h3>Voice Configuration</h3>
             
-            <span class="label">SOLO</span>
-            <div class="voice-grid">
-                ${Object.keys(this.activeSoloVoices).map(voice => html`
-                    <div class="checkbox-item ${this.activeSoloVoices[voice as keyof typeof this.activeSoloVoices] ? 'active' : ''}" 
-                         @click=${() => this.toggleSolo(voice as keyof typeof this.activeSoloVoices)}>
-                        <input type="checkbox" .checked=${this.activeSoloVoices[voice as keyof typeof this.activeSoloVoices]} style="pointer-events:none">
-                        ${voice}
-                    </div>
-                `)}
+            <div class="tabs">
+                <button class="tab-btn ${this.tab === 'voices' ? 'active' : ''}" @click=${() => this.tab = 'voices'}>CHOIR</button>
+                <button class="tab-btn ${this.tab === 'lyrics' ? 'active' : ''}" @click=${() => this.tab = 'lyrics'}>LYRICS</button>
             </div>
-            <div class="slider-container">
-              <span class="label">Solo Volume: ${this.soloVolume}%</span>
-              <input type="range" min="0" max="100" .value=${this.soloVolume} @input=${(e: any) => this.soloVolume = parseInt(e.target.value)}>
-            </div>
-            
-            <span class="label">CHOIR</span>
-            <div class="voice-grid">
-                ${this.choirOptions.map(option => html`
-                    <div class="radio-item ${this.selectedChoir === option ? 'active' : ''}" 
-                         @click=${() => this.selectedChoir = option}>
-                        ${option}
-                    </div>
-                `)}
-            </div>
-            <div class="slider-container">
-              <span class="label">Choir Volume: ${this.choirVolume}%</span>
-              <input type="range" min="0" max="100" .value=${this.choirVolume} @input=${(e: any) => this.choirVolume = parseInt(e.target.value)}>
-            </div>
-            
-            <span class="label">LYRICS</span>
-            <textarea rows="5" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
-                      .value=${this.vocalText} @input=${(e: any) => this.vocalText = e.target.value}></textarea>
+
+            ${this.tab === 'voices' ? this.renderVoices() : this.renderLyrics()}
 
             <div class="dialog-buttons">
                 <button class="cancel-btn" @click=${() => this.cancelSelection()}>Cancel</button>
@@ -189,16 +178,65 @@ export class VocalDialog extends LitElement {
     `;
   }
 
+  private renderVoices() {
+    return html`
+      <span class="label">SOLO</span>
+      <div class="voice-grid">
+          ${Object.keys(this.activeSoloVoices).map(voice => html`
+              <div class="checkbox-item ${this.activeSoloVoices[voice as keyof typeof this.activeSoloVoices] ? 'active' : ''}"
+                   @click=${() => this.toggleSolo(voice as keyof typeof this.activeSoloVoices)}>
+                  <input type="checkbox" .checked=${this.activeSoloVoices[voice as keyof typeof this.activeSoloVoices]} style="pointer-events:none">
+                  ${voice}
+              </div>
+          `)}
+      </div>
+      <span class="label">CHOIR</span>
+      <div class="voice-grid">
+          ${this.choirOptions.map(option => html`
+              <div class="radio-item ${this.selectedChoir === option ? 'active' : ''}" @click=${() => this.selectedChoir = option}>${option}</div>
+          `)}
+      </div>`;
+  }
+
+  private renderLyrics() {
+    return html`
+      <div class="lyrics-tools">
+          <select .value=${this.lyricsLang} @change=${(e: any) => this.lyricsLang = e.target.value} title="Language of the lyrics">
+              ${this.languages.map(l => html`<option value=${l} ?selected=${l === this.lyricsLang}>${l === 'Auto' ? 'Auto (by genre)' : l}</option>`)}
+          </select>
+          <button class="generate-btn" ?disabled=${this.generating} @click=${() => this.requestGeneration()}>${this.generating ? 'Writing...' : 'Generate Lyrics'}</button>
+      </div>
+      <textarea rows="7" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
+                placeholder="Write your own lyrics or generate them. Lyria treats them as a hint for the language and mood of the vocals."
+                .value=${this.vocalText} @input=${(e: any) => this.vocalText = e.target.value}></textarea>`;
+  }
+
+  private requestGeneration() {
+      if (this.generating) return;
+      this.dispatchEvent(new CustomEvent('request-lyrics-generation', {
+          detail: { genre: this.genre, lang: this.lyricsLang, verseCount: 2, lineCount: 4 }, bubbles: true, composed: true
+      }));
+  }
+
   private toggleSolo(voice: keyof typeof this.activeSoloVoices) {
       this.activeSoloVoices = { ...this.activeSoloVoices, [voice]: !this.activeSoloVoices[voice] };
   }
 
-  /** The DJ sets the voice options itself when it picks a voice channel. */
-  public djConfigure(solos: string[], choir: string) {
+  public getVoices(): { solos: string[]; choir: string } {
+      return { solos: Object.entries(this.activeSoloVoices).filter(([, on]) => on).map(([v]) => v), choir: this.selectedChoir };
+  }
+
+  /** Set the options without sending anything (used to mirror the channels). */
+  public setVoices(solos: string[], choir: string) {
       this.activeSoloVoices = { Soprano: false, Alto: false, Tenor: false, Baritone: false };
       solos.forEach(v => { if (v in this.activeSoloVoices) this.activeSoloVoices[v as keyof typeof this.activeSoloVoices] = true; });
       this.selectedChoir = this.choirOptions.includes(choir) ? choir : 'None';
-      this.applySelection();
+  }
+
+  /** The DJ sets the voice options itself when it picks a voice channel. */
+  public djConfigure(solos: string[], choir: string) {
+      this.setVoices(solos, choir);
+      this.applySelection(true);
   }
 
   private cancelSelection() {
@@ -214,7 +252,7 @@ export class VocalDialog extends LitElement {
       this.show = false;
   }
 
-  private applySelection() {
+  private applySelection(fromDj = false) {
       const solos = Object.entries(this.activeSoloVoices)
           .filter(([_, active]) => active)
           .map(([voice]) => voice);
@@ -230,6 +268,8 @@ export class VocalDialog extends LitElement {
       // Lyria has no routing or per-voice volume: it only understands a short description of the voices
       const directive = active ? `VOCAL CONFIG: ${config.join(', ')}` : 'VOCAL CONFIG: None';
       
+      // Your own choice re-tunes the voice channels (the DJ's choice already came from the channels)
+      if (!fromDj) this.dispatchEvent(new CustomEvent('voices-applied', { detail: this.getVoices() }));
       this.dispatchEvent(new CustomEvent('send-vocal-command', { detail: directive }));
       this.dispatchEvent(new CustomEvent('lyrics-set', { detail: this.vocalText, bubbles: true, composed: true }));
       window.dispatchEvent(new CustomEvent('vocal-state-changed', { 

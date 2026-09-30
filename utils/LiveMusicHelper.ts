@@ -29,6 +29,12 @@ interface PerformancePlanStage {
 const DJ_KNOBS_MODERN = 6;
 const DJ_KNOBS_TRADITIONAL = 4;
 const DJ_KNOBS_REGIONAL = 2;
+// Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
+// The channel Guide sliders cover 1..5; only the DJ may go above 5, up to the API maximum.
+const USER_GUIDANCE_MAX = 5;
+const LYRIA_GUIDANCE_MAX = 6;
+const DEFAULT_CHANNEL_GUIDANCE = 0.75; // = Lyria guidance 4.0
+const guidanceFromSlider = (g: number) => 1 + (USER_GUIDANCE_MAX - 1) * g;
 // When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
 const USER_KNOB_HOLD_MS = 30000;
 // Knobs are seasoning, not the main course: the DJ never pushes a knob past this value.
@@ -79,7 +85,7 @@ interface RecordingSegment {
 export const VOCAL_STRINGS = [
   'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Soloist',
   'Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble',
-  'Male Rapper', 'Female Rapper', 'MC Vocals', 'Duet Voices',
+  'Male Rapper', 'Female Rapper', 'MC Vocals', 'Duet Voices', 'Quartet Voices',
   'Soprano Voice', 'Coral Voices', 'Coral Bass', 'Solo Voice', 'Vocal Chops', 
   'Male Monastic Choir', 'Powerhouse Soloist', 'Bright Female Vocals', 
   'Processed Vocals', 'Children\'s Choir', 'Gospel Vocals', 'Distant Female Voice', 
@@ -192,6 +198,7 @@ export function scaleForKey(key: string): string | null {
 export function describeVoice(instrument: string): string {
     const n = instrument.toLowerCase();
     if (n.includes('rapper') || n.includes('mc ')) return 'rap vocals, rhythmic spoken flow';
+    if (n.includes('quartet')) return 'four human voices singing in harmony';
     if (n.includes('duet')) return 'two human voices singing in harmony';
     if (n.includes('solo') || n.includes('soprano') || n.includes('tenor') || n.includes('soloist')) return 'solo human singing voice';
     if (n.includes('chamber')) return 'chamber choir vocals, ooh and aah harmonies';
@@ -262,6 +269,51 @@ export class LiveMusicHelper extends EventTarget {
   private djPersonality: DjPersonality | null = null;
   private lyricBlocks: { label: string; lines: string }[] = [];
   private lyricsPrompt = '';
+  /** The lyrics as written (by the DJ or the user), so the Voice dialog can show them. */
+  public lyricsText = '';
+  /** How strongly the voices sing (0 soft .. 1 powerful). The DJ moves it from section to section. */
+  public voiceIntensity = 0.7;
+  private djGuidance = 4.0;
+  private static readonly STAGE_GUIDANCE: Record<string, number> = {
+      intro: 3.5, outro: 3.5, breakdown: 4.0, build: 4.5, verse: 4.5, main: 4.5, groove: 4.5, percussion: 4.5,
+      chorus: 5.0, climax: 5.0, solo: 5.6, duet: 5.6, trio: 5.3, acapella: 6.0
+  };
+  /** Where the DJ wants guidance for the current section: tight formations (solo, duet, a cappella) need the model to obey strictly. */
+  private djGuidanceTarget(): number {
+      const stage = this.currentPlan?.[this.currentPlanIdx];
+      let g = LiveMusicHelper.STAGE_GUIDANCE[stage?.type || 'main'] ?? 4.5;
+      if (stage && (stage.formation === 'solo' || stage.formation === 'duet')) g = Math.max(g, 5.6);
+      if (this.currentVocalSignal) g += 0.4;
+      return Math.min(LYRIA_GUIDANCE_MAX, g);
+  }
+  /** Guidance actually sent to Lyria: the strongest channel Guide slider, raised by the DJ while it conducts. */
+  private effectiveGuidance(): number {
+      const guides = (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const)
+          .filter(k => { const c = this.instruments[k]; return c.active && c.visible !== false && c.weight > 0.05; })
+          .map(k => this.instruments[k].guidance ?? DEFAULT_CHANNEL_GUIDANCE);
+      const user = guidanceFromSlider(guides.length ? Math.max(...guides) : DEFAULT_CHANNEL_GUIDANCE);
+      const g = this.conductorMode ? Math.max(user, this.djGuidance) : user;
+      return Math.round(Math.min(LYRIA_GUIDANCE_MAX, g) * 10) / 10;
+  }
+  public setVoiceIntensity(value: number) {
+      this.voiceIntensity = Math.max(0, Math.min(1, value));
+      this.dispatchEvent(new CustomEvent('voice-intensity-changed', { detail: this.voiceIntensity }));
+      this.scheduleRefresh();
+  }
+  private static readonly STAGE_VOICE_INTENSITY: Record<string, number> = {
+      intro: 0.3, outro: 0.3, breakdown: 0.4, build: 0.6, verse: 0.6, main: 0.65, groove: 0.5, percussion: 0.5,
+      solo: 0.75, duet: 0.7, trio: 0.75, chorus: 0.95, climax: 1.0, acapella: 0.9
+  };
+  private djVoiceIntensityFor(type: string | undefined) {
+      const base = LiveMusicHelper.STAGE_VOICE_INTENSITY[type || 'main'] ?? 0.65;
+      this.setVoiceIntensity(base + (Math.random() * 0.1 - 0.05));
+  }
+  private voiceIntensityPhrase(): string {
+      const v = this.voiceIntensity;
+      return v < 0.35 ? 'soft, intimate, hushed' : v < 0.65 ? 'warm, moderate volume' : v < 0.85 ? 'strong, expressive' : 'powerful, soaring, full-voiced';
+  }
+  /** The compact vocal prompt (language + opening line, or vowels) sent to Lyria. */
+  public get vocalPrompt() { return this.lyricsPrompt; }
   public lyricsLanguage = 'English';
   public lyricsVowelsOnly = false;
   private mediaRecorder: MediaRecorder | null = null;
@@ -472,6 +524,7 @@ export class LiveMusicHelper extends EventTarget {
   
   /** Store the lyrics the DJ will cue section by section (real words only, or open vowels). */
   public setLyrics(text: string, language?: string, vowelsOnly = false) {
+      this.lyricsText = text;
       if (language) this.lyricsLanguage = language;
       this.lyricsVowelsOnly = vowelsOnly;
       this.lyricBlocks = [];
@@ -537,6 +590,20 @@ export class LiveMusicHelper extends EventTarget {
     }, durationMs);
   }
 
+  private currentSeed: number | null = null;
+  private seedLocked = false;
+  /** Lock the seed so the next recordings repeat the same take (same prompts + same seed = a similar performance). */
+  public setSeedLock(locked: boolean) {
+      this.seedLocked = locked;
+      if (locked && this.currentSeed === null) this.currentSeed = Math.floor(Math.random() * 2147483647);
+      this.dispatchEvent(new CustomEvent('seed-changed', { detail: { seed: this.currentSeed, locked: this.seedLocked } }));
+      this.lastConfig = null; this.scheduleRefresh();
+  }
+  private prepareSeed() {
+      if (!this.seedLocked || this.currentSeed === null) this.currentSeed = Math.floor(Math.random() * 2147483647);
+      this.dispatchEvent(new CustomEvent('seed-changed', { detail: { seed: this.currentSeed, locked: this.seedLocked } }));
+  }
+
   private contextResetTimer: number | null = null;
   private scheduleContextReset() {
       if (this.contextResetTimer) clearTimeout(this.contextResetTimer);
@@ -548,6 +615,32 @@ export class LiveMusicHelper extends EventTarget {
       }, 800);
   }
 
+  // Prompt weights are cross-faded: new prompts fade in, replaced prompts fade out, so a section change
+  // is a smooth transition instead of a jump (Lyria's docs recommend sending intermediate weights).
+  private smoothedPrompts = new Map<string, number>();
+  private crossfadeTimer: number | null = null;
+  private crossfade(target: { text: string; weight: number }[]): { text: string; weight: number }[] {
+      const goals = new Map<string, number>();
+      target.forEach(p => goals.set(p.text, (goals.get(p.text) ?? 0) + p.weight));
+      // First payload of a session: no fade
+      if (this.smoothedPrompts.size === 0) { goals.forEach((w, t) => this.smoothedPrompts.set(t, w)); return target; }
+      const out: { text: string; weight: number }[] = [];
+      let moving = false;
+      new Set([...goals.keys(), ...this.smoothedPrompts.keys()]).forEach(text => {
+          const goal = goals.get(text) ?? 0;
+          const cur = this.smoothedPrompts.get(text) ?? 0;
+          let next = cur + (goal - cur) * 0.4;
+          if (Math.abs(goal - next) < 0.06) next = goal;
+          if (next !== goal) moving = true;
+          if (next < 0.05 && goal === 0) { this.smoothedPrompts.delete(text); return; }
+          this.smoothedPrompts.set(text, next);
+          out.push({ text, weight: Math.round(next * 100) / 100 });
+      });
+      if (this.crossfadeTimer) clearTimeout(this.crossfadeTimer);
+      this.crossfadeTimer = moving ? window.setTimeout(() => { this.crossfadeTimer = null; this.refreshSessionPrompts(); }, 350) : null;
+      return out;
+  }
+
   private lastConfig: any = null;
   private lastPrompts: any = null;
 
@@ -557,10 +650,28 @@ export class LiveMusicHelper extends EventTarget {
     // 1. Set Native API Config
     const config: any = {
         musicGenerationMode: this.generationMode,
-        bpm: this.bpm,
-        guidance: 4.0, // API range is 0-6
-        temperature: 0.9,
+        bpm: Math.max(60, Math.min(200, Math.round(this.bpm))), // API range 60-200
+        guidance: this.effectiveGuidance(),
+        temperature: 1.1, // Lyria's default
     };
+    // The Density and Brightness knobs drive the real Lyria parameters (0..1, live, no context reset)
+    const knobValue = (name: string): number | undefined => {
+        for (const p of this.prompts.values()) if (p.text.trim().toLowerCase() === name && p.weight > 0.01) return Math.round(Math.min(1, p.weight / 2) * 100) / 100;
+        return undefined;
+    };
+    const density = knobValue('density'); if (density !== undefined) config.density = density;
+    const brightness = knobValue('brightness'); if (brightness !== undefined) config.brightness = brightness;
+    // A repeatable take: the same seed with the same prompts gives a similar performance
+    if (this.currentSeed !== null) config.seed = this.currentSeed;
+    // Lyria renders one stereo mix (no separate stems), but it can drop the bass and the drums on request:
+    // a bass or drum channel that is switched off is really muted, not just left out of the prompt.
+    const isOn = (k: ChannelKey) => { const c = this.instruments[k]; return c.active && c.visible !== false && c.weight > 0.05; };
+    config.muteBass = !isOn('bass') && /bass|tuba/i.test(this.instruments.bass.instrument);
+    const playingNow = (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).filter(isOn);
+    // Rhythm-only sections (bass and/or drums, nothing else) use Lyria's dedicated mode
+    config.onlyBassAndDrums = playingNow.length > 0 && playingNow.every(k => k === 'bass' || k === 'rhythm')
+        && playingNow.every(k => k === 'bass' ? /bass|tuba/i.test(this.instruments.bass.instrument) : /drum|percussion|kit|tabla|djembe|conga|bongo|timbale|taiko|shaker|tambourine|snare|cajon/i.test(this.instruments.rhythm.instrument));
+    config.muteDrums = !isOn('rhythm') && /drum|percussion|kit|tabla|djembe|conga|bongo|timbale|taiko|shaker|tambourine|snare|cajon/i.test(this.instruments.rhythm.instrument);
     
     const scale = scaleForKey(this.key);
     if (scale) config.scale = scale;
@@ -628,6 +739,8 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     const finalPayload = [ { text: narrative, weight: 2.0 } ];
+    // Every channel gets its own prompt below and the voices theirs; this one asks for a clean, well separated mix
+    finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix, each instrument clear and distinct', weight: 0.8 });
     if (ensembleDirective) {
         finalPayload.push({ text: ensembleDirective, weight: ENSEMBLE_PROMPT_WEIGHT });
     }
@@ -636,7 +749,8 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
-    const weightedPrompts = Array.from(this.prompts.values()).map((p) => {
+    // (Density and Brightness are sent as real config values above, not as text)
+    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness'].includes(p.text.trim().toLowerCase())).map((p) => {
         return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
     }).filter(p => p.weight > 0.05);
     
@@ -646,8 +760,9 @@ export class LiveMusicHelper extends EventTarget {
         const ch = this.instruments[k];
         const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
         finalPayload.push({
-            text: isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`),
-            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
+            text: isVocalInstrument(ch.instrument) ? `${describeVoice(ch.instrument)}, ${this.voiceIntensityPhrase()}` : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`),
+            // The channel's Guide slider makes Lyria follow this channel more (or less) strictly
+            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k] * (0.55 + 0.6 * (ch.guidance ?? DEFAULT_CHANNEL_GUIDANCE))
         });
     });
 
@@ -657,8 +772,9 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: this.lyricsPrompt, weight: 1.2 });
     }
 
-    if (JSON.stringify(finalPayload) !== JSON.stringify(this.lastPrompts)) {
-        try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); this.lastPrompts = finalPayload; } catch (e) { console.error("setWeightedPrompts failed:", e); }
+    const fadedPayload = this.crossfade(finalPayload);
+    if (JSON.stringify(fadedPayload) !== JSON.stringify(this.lastPrompts)) {
+        try { await this.session.setWeightedPrompts({ weightedPrompts: fadedPayload }); this.lastPrompts = fadedPayload; this.dispatchEvent(new CustomEvent('prompts-sent', { detail: { prompts: fadedPayload, guidance: config.guidance } })); } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
   }
   private knobPhrase(knobText: string): string {
@@ -1488,6 +1604,7 @@ export class LiveMusicHelper extends EventTarget {
           this.synchronizeInstrumentsWithStage();
 
           this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false, type: currentStage.type, index: this.currentPlanIdx } }));
+          if (this.isVocalInstrumentActive()) this.djVoiceIntensityFor(currentStage.type);
           this.interpolateParameters();
           this.scheduleRefresh();
 
@@ -1548,6 +1665,14 @@ export class LiveMusicHelper extends EventTarget {
       const currentTimeMs = Date.now();
       const currentStage = this.currentPlan?.[this.currentPlanIdx];
       if (!currentStage) return;
+
+      // Guidance follows the section: eased in small steps because a jump makes the music change abruptly
+      if (this.conductorMode) {
+          const target = this.djGuidanceTarget();
+          const before = Math.round(this.djGuidance * 10);
+          this.djGuidance += Math.sign(target - this.djGuidance) * Math.min(Math.abs(target - this.djGuidance), 0.12);
+          if (Math.round(this.djGuidance * 10) !== before) this.scheduleRefresh();
+      }
 
       const interactionCooldownMs = 10000 - (this.evolutionValue * 500);
       // Dynamic base step based on evolution. Higher evolution = faster cuts.
@@ -1617,7 +1742,9 @@ export class LiveMusicHelper extends EventTarget {
                   return;
               }
 
-              const targetWeight = currentStage.channelWeights?.[ch] ?? 1.0;
+              let targetWeight = currentStage.channelWeights?.[ch] ?? 1.0;
+              // The DJ's voice intensity scales how loud the voice channels are
+              if (targetWeight > 0 && isVocalInstrument(this.instruments[ch].instrument)) targetWeight *= 0.35 + 0.65 * this.voiceIntensity;
               const currentWeight = this.instruments[ch].weight;
               const weightDiff = targetWeight - currentWeight;
               
@@ -1754,6 +1881,7 @@ export class LiveMusicHelper extends EventTarget {
 
   public async record() {
     await this.stop(false, true); 
+    this.prepareSeed();
     this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0;
     this.automationLog = [];
     this.dispatchEvent(new CustomEvent('recording-cleared'));
@@ -1811,7 +1939,7 @@ export class LiveMusicHelper extends EventTarget {
     
     this.sessionCounter++; const currentSessionId = this.sessionCounter;
     // A new session knows nothing yet: make sure config and prompts are sent again
-    this.lastConfig = null; this.lastPrompts = null;
+    this.lastConfig = null; this.lastPrompts = null; this.smoothedPrompts.clear();
 
     // Create a timeout promise to prevent hanging indefinitely
     const timeout = new Promise((_, reject) => 
@@ -1822,6 +1950,7 @@ export class LiveMusicHelper extends EventTarget {
       model: this.model, 
       callbacks: { 
         onmessage: async (e) => { 
+          if (e.filteredPrompt) this.dispatchEvent(new CustomEvent('prompt-filtered', { detail: e.filteredPrompt }));
           if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); 
         }, 
         onerror: (err: any) => { 

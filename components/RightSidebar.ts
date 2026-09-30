@@ -11,7 +11,7 @@ import './MasterVolumePanel';
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
-import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
+import { FALLBACK_POOLS, getLyriaPool, VOICE_CHANNEL_POOLS } from '../constants/instruments';
 import { isVocalInstrument, isTraditionalGenre } from '../utils/LiveMusicHelper';
 
 
@@ -25,6 +25,14 @@ export class RightSidebar extends LitElement {
   // The dropdowns only ever offer recommended instruments: the orchestra/voice/choir pool of the genre on the
   // Lyria tab, and the generous genre pool on the Band tab.
   private getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
+      const base = this.getBaseRecommended(channel);
+      if (this.currentTab === 'Lyria') return base;
+      // Band also offers the voice instruments (solo / duet / quartet, choirs) on the alto and harmonic channels
+      const voices = (VOICE_CHANNEL_POOLS[channel] || []).filter(v => !base.includes(v));
+      return [...base, ...voices];
+  }
+
+  private getBaseRecommended(channel: keyof InstrumentSet): string[] {
       if (this.currentTab === 'Lyria') return getLyriaPool(this.genre, channel);
 
       const genreDef = MUSIC_DATA[this.genre];
@@ -247,10 +255,6 @@ export class RightSidebar extends LitElement {
       display: flex; align-items: center; line-height: 20px;
     }
     
-    select:disabled {
-      cursor: default;
-      opacity: 0.8;
-    }
 
     option, optgroup { 
       font-size: 15.18px; 
@@ -277,6 +281,8 @@ export class RightSidebar extends LitElement {
     }
     
     .weight-slider { width: 100%; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .guide-label { font-size: 8.8px; font-weight: 800; letter-spacing: 0.5px; color: var(--text-muted); width: 28px; flex-shrink: 0; }
+    .guide-val { font-size: 9.5px; font-family: monospace; color: var(--text-muted); width: 22px; text-align: right; flex-shrink: 0; }
     
     input[type=range] {
       -webkit-appearance: none; width: 100%; background: transparent; height: 4px;
@@ -286,7 +292,8 @@ export class RightSidebar extends LitElement {
       -webkit-appearance: none; height: 12px; width: 8px; border-radius: 1px;
       background: silver; margin-top: -4px; border: 1px solid #666;
     }
-    input[type=range]:disabled { cursor: default; }
+    .blocked { cursor: not-allowed; }
+    .blocked > * { pointer-events: none; }
 
     .lock-btn {
       background: rgba(0,0,0,0.3);
@@ -339,13 +346,8 @@ export class RightSidebar extends LitElement {
     }
     
     /* Disabled: the switch body goes gray, but a lit LED stays lit (brighter) so the state is still readable */
-    .switch-unit.disabled { cursor: not-allowed; pointer-events: none; }
-    .switch-unit.disabled .switch-label,
-    .switch-unit.disabled .switch-recess { opacity: 0.4; filter: grayscale(1); }
-    .switch-unit.disabled .switch-integrated-box { border-color: #222; }
-    .switch-unit.disabled.on .led-dot {
-      background-color: #ff5a5a; box-shadow: 0 0 10px #ff4444, 0 0 3px #ffb0b0;
-    }
+    /* Unresponsive but never dimmed: same look, forbidden cursor */
+    .switch-unit.disabled { cursor: not-allowed; }
 
     .switch-label {
       font-size: 8.8px; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin-top: 4px;
@@ -388,6 +390,8 @@ export class RightSidebar extends LitElement {
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
   @property({ type: Boolean }) conductorActive = false;
+  @property({ type: Number }) seed = 0;
+  @property({ type: Boolean }) seedLocked = false;
   @property({ type: Boolean }) genreLocked = false;
   
   @state() private channelsLocked = false;
@@ -542,6 +546,29 @@ export class RightSidebar extends LitElement {
     this.auditAndCommit(newSettings);
   }
 
+  /**
+   * The Voice dialog picked solo voices or a choir: switch the matching channels to a random appropriate voice
+   * instrument (chosen among the candidates, else any recommended voice for that channel).
+   */
+  public setVoiceInstruments(pick: Partial<Record<keyof InstrumentSet, string[]>>) {
+    const newSettings = { ...this.settings };
+    (Object.keys(pick) as Array<keyof InstrumentSet>).forEach(ch => {
+        const recommended = this.getRecommendedInstruments(ch);
+        const candidates = (pick[ch] || []).filter(i => recommended.includes(i));
+        const pool = candidates.length > 0 ? candidates : recommended.filter(i => isVocalInstrument(i));
+        if (pool.length === 0) return;
+        const old = newSettings[ch];
+        newSettings[ch] = {
+            ...old,
+            instrument: pool[Math.floor(Math.random() * pool.length)],
+            active: true,
+            visible: this.manifestLocked ? old.visible : true,
+            weight: old.weight > 0 ? old.weight : 1.0
+        };
+    });
+    this.auditAndCommit(newSettings);
+  }
+
   /** Dice roll: bring every channel (with an instrument) back into the manifest and switch it on. */
   public enableAllChannels() {
     if (this.manifestLocked) return;
@@ -629,6 +656,8 @@ export class RightSidebar extends LitElement {
 
   private renderChannel(label: string, key: keyof InstrumentSet) {
     const ch = this.settings[key];
+    // A channel switched off in the manifest disappears from the panel
+    if (ch.visible === false) return html``;
     const isInteractionDisabled = this.playbackState === 'playing';
     
     // Recommended are those in the current pool (style specific)
@@ -641,13 +670,24 @@ export class RightSidebar extends LitElement {
       <div class="channel-group ${!ch.active ? 'deactivated' : ''}" style="--channel-color: var(--ch-${key})">
         <div class="label-row"><div class="channel-label" style="color: var(--ch-${key})">${label}</div></div>
         <div class="channel-control">
-          <div class="row">
-            <input type="checkbox" class="channel-toggle" .checked=${ch.active} ?disabled=${!ch.instrument || isInteractionDisabled} @change=${(e: Event) => this.onActiveChange(key, e)}>
-            <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} ?disabled=${isInteractionDisabled}>
+          <div class="row ${isInteractionDisabled ? 'blocked' : ''}">
+            <input type="checkbox" class="channel-toggle" .checked=${ch.active} ?disabled=${!ch.instrument} @change=${(e: Event) => this.onActiveChange(key, e)}>
+            <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} tabindex=${isInteractionDisabled ? '-1' : '0'}>
               ${options.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}
             </select>
           </div>
-          <div class="weight-slider"><input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} ?disabled=${isInteractionDisabled} @input=${(e: any) => { 
+          <div class="weight-slider guide-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Guidance: how strictly Lyria follows this channel. The DJ can push it above 5, up to 6, for solos, duets and a cappella.">
+              <span class="guide-label">GUIDE</span>
+              <input type="range" min="0" max="1" step="0.05" .value=${ch.guidance ?? 0.75} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => {
+                  if (isInteractionDisabled) return;
+                  this.settings[key].guidance = parseFloat(e.target.value);
+                  uiSounds.playTick();
+                  this.dispatchChannelsChanged();
+                  this.requestUpdate();
+              }}/>
+              <span class="guide-val">${(1 + 4 * (ch.guidance ?? 0.75)).toFixed(1)}</span>
+          </div>
+          <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}"><input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => { 
               if (!isInteractionDisabled) { 
                   const val = parseFloat(e.target.value);
                   this.settings[key].weight = val; 
@@ -736,6 +776,9 @@ export class RightSidebar extends LitElement {
             .audioLevelR=${this.audioLevelR} 
             .isStereo=${this.isStereo}
             .isLocked=${isEvolutionLocked}
+            .seed=${this.seed}
+            .seedLocked=${this.seedLocked}
+            @seed-lock-changed=${(e: any) => this.dispatch('seed-lock-changed', e.detail)}
             @volume-changed=${(e: any) => { this.volume = e.detail; this.dispatch('volume-changed', this.volume); }}
             @duration-changed=${(e: any) => { this.durationIndex = FIBONACCI_SERIES.indexOf(e.detail); this.dispatch('duration-changed', e.detail); }}
             @evolution-changed=${(e: any) => { this.evolution = e.detail; this.dispatch('evolution-changed', e.detail); }}

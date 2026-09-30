@@ -39,7 +39,8 @@ The right sidebar has two tabs with five channels each:
 
 - The dropdowns only list **recommended** instruments for the genre. Band lists are generous, so combinations like a sax in a rock band are possible. Lyria lists are orchestral and choral.
 - **Solo (Lyria)** is a voice only: Solo Voice, Duet Voices, Choir Voices or Chamber Choir. The exact voices come from the Voice dialog.
-- Each channel has an on/off checkbox and a weight slider. Changing an instrument locks the channels so the Dice and DJ won't overwrite your choice. Use the lock icon to release them.
+- Each channel has an on/off checkbox, a weight slider and a **Guide** slider. Guide tells Lyria how strictly to follow that channel (Lyria guidance 1 to 5; the strongest active channel sets the overall value). While the DJ conducts, it raises guidance above 5, up to Lyria's maximum of 6, for tight arrangements such as solos, duets and a cappella sections, so Lyria obeys them more closely. Higher guidance can make changes sound more abrupt.
+-  Changing an instrument locks the channels so the Dice and DJ won't overwrite your choice. Use the lock icon to release them.
 - **Manifest** switches decide which channels are part of the piece at all. A switch that is on keeps its light lit, even when it is greyed out during recording.
 
 ## 5. Recording and playback
@@ -55,7 +56,7 @@ The dice button (only while stopped) picks genre, style, mood, key, tempo and me
 
 ## 7. The knobs
 
-Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
+Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. The **Density** and **Brightness** knobs control Lyria's real density and brightness settings. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
 
 ## 8. The DJ
 
@@ -91,6 +92,8 @@ The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft
 
 ## 11. Tips
 
+- **Repeat a take:** the SEED chip (next to VOLUME) shows AUTO. Click it to lock the current seed: the next recordings reuse it, so with the same settings you get a similar performance. Click again to go back to a fresh seed each time.
+
 - Lock the things you like, then Dice the rest.
 - For rap, choose Hip Hop, use a Band channel with a rapper, then start the DJ before recording so it can write lyrics and plan a cappella sections.
 - If nothing plays, check the API key and that audio was allowed by clicking the page.
@@ -98,5 +101,6 @@ The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft
 
 ## 12. Other documents
 
+- [`LYRIA_REFERENCE.md`](LYRIA_REFERENCE.md): what Lyria RealTime supports (config, prompts, limits) and the rules to follow when changing the engine.
 - [`refactor-prompt.md`](refactor-prompt.md): the original engine refactoring task list.
 - [`engine-architecture-specification.md`](engine-architecture-specification.md): engine and interface architecture notes.
