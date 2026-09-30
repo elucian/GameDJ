@@ -369,10 +369,10 @@ export class RightSidebar extends LitElement {
     .switch-unit:not(.on) .toggle-handle { top: 12px; }
 
     .led-dot {
-      width: 5px; height: 5px; flex-shrink: 0; aspect-ratio: 1; border-radius: 50%; background-color: #222; transition: background-color 0.2s, box-shadow 0.2s;
+      width: 5px; height: 5px; flex-shrink: 0; aspect-ratio: 1; border-radius: 50%; background-color: #5a2a1a; box-shadow: inset 0 0 2px rgba(0,0,0,0.5); transition: background-color 0.2s, box-shadow 0.2s;
     }
-    .switch-unit.on .led-dot { 
-      background-color: #ff4444; box-shadow: 0 0 6px #ff4444; 
+    .switch-unit.on .led-dot {
+      background-color: #ff2a2a; box-shadow: 0 0 8px 2px #ff3a3a, 0 0 3px #ff8080;
     }
 
     master-volume-panel {

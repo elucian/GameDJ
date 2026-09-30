@@ -1010,10 +1010,10 @@ export class TopToolbar extends LitElement {
     .control-group.fixed { flex: 0 0 auto; }
     .control-group.group-genre { flex: 1.15; min-width: 85px; }
     .control-group.group-style { flex: 1.15; min-width: 85px; }
-    /* Increased MOOD and KEY width by 15% */
-    .control-group.group-mood { flex: 0 1 131px; min-width: 108px; max-width: 159px; }
-    .control-group.group-key { flex: 0 1 127px; min-width: 108px; max-width: 152px; }
-    .control-group.group-tempo { flex: 1.5; min-width: 150px; }
+    /* MOOD and KEY widened a further 10%, taken from TEMPO */
+    .control-group.group-mood { flex: 0 1 144px; min-width: 119px; max-width: 175px; }
+    .control-group.group-key { flex: 0 1 140px; min-width: 119px; max-width: 167px; }
+    .control-group.group-tempo { flex: 1.5; min-width: 118px; }
 
     .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; width: 100%; }
     .label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }

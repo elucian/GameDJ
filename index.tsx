@@ -403,6 +403,13 @@ function main() {
       if (locked) pdjMidi.setMessage(`SEED LOCKED: ${seed}`, 'info');
   }));
   (rightSidebar as any).addEventListener('seed-lock-changed', ((e: Event) => liveMusicHelper.setSeedLock((e as CustomEvent<boolean>).detail)));
+  // A rejected prompt was rewritten (or dropped) on the fly
+  liveMusicHelper.addEventListener('prompt-improved', ((e: Event) => {
+      const { from, to, how } = (e as CustomEvent<{ from: string; to: string | null; how: string }>).detail;
+      const short = (t: string) => (t.length > 40 ? t.slice(0, 37) + '...' : t);
+      pdjMidi.setMessage(to ? `PROMPT REWRITTEN (${how}): ${short(from)} → ${short(to)}` : `PROMPT DROPPED: ${short(from)}`, 'info');
+      if ((import.meta as any).env?.DEV) console.info('[Lyria] prompt improved:', { from, to, how });
+  }));
   liveMusicHelper.addEventListener('prompt-filtered', ((e: Event) => {
       const { text, filteredReason, payload, config } = (e as CustomEvent<{ text?: string; filteredReason?: string; payload?: unknown; config?: unknown }>).detail;
       // Dev mode: keep a log of every rejected prompt with the full payload it was part of (window.__lyriaFiltered)

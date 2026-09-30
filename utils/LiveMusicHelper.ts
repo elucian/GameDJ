@@ -7,6 +7,7 @@ import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, Playbac
 import { AudioChunk, GoogleGenAI, LiveMusicSession } from '@google/genai';
 import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
+import { PromptGuard } from './PromptGuard';
 import { uiSounds } from './UISounds';
 
 type ChannelKey = keyof InstrumentSet;
@@ -34,10 +35,10 @@ const DJ_KNOBS_REGIONAL = 2;
 // While the DJ conducts it turns that knob itself (up to 6 for solos, duets and a cappella), so the knob always shows the real value.
 const LYRIA_GUIDANCE_MAX = 6;
 const isGuidanceKnob = (p: { text: string }) => p.text.trim().toLowerCase() === 'guidance';
+// Solo and a cappella sections are the exception to the genre knob maximums: the DJ may go past them when it calls for it.
+const isGenreOverrideStage = (type?: string, formation?: string) => type === 'solo' || type === 'acapella' || formation === 'solo';
 // When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
 const USER_KNOB_HOLD_MS = 30000;
-// Knobs are seasoning, not the main course: the DJ never pushes a knob past this value.
-const DJ_KNOB_CEILING = 1.2;
 // Knob pairs that pull the music in opposite directions — the DJ never engages both at once.
 const CONFLICTING_KNOBS: [string, string][] = [
     ['Density', 'Space'], ['Attack', 'Glide'], ['Staccato', 'Glide'],
@@ -55,25 +56,29 @@ const ENSEMBLE_PROMPT_WEIGHT = 3.5;
 // qualities only, never instruments, so a knob cannot pull extra instruments into a solo or duet.
 // {genre} and {style} are filled in at send time. Knobs renamed by the user are sent as typed.
 const KNOB_PHRASES: Record<string, string> = {
+    // Guidance, Density, Brightness and Variation are real Lyria config values (guidance, density, brightness, topK), not prompts.
     'guidance':      'closely following the described {genre} style and instrumentation',
-    'density':       'busy, note-dense playing with active melodic lines',
-    'dynamics':      'wide dynamic contrast between soft and loud passages',
-    'groove':        'strong rhythmic groove with a steady, locked-in pulse',
-    'attack':        'sharp, percussive note attacks',
-    'staccato':      'short, detached staccato articulation',
-    'brightness':    'bright, clear, sparkling tone',
-    'complexity':    'sophisticated harmony and intricate melodic lines',
-    'ornamentation': 'expressive melodic ornaments, trills and grace notes',
-    'variation':     'evolving variations on the main theme',
-    'glide':         'smooth legato phrasing with slides and portamento',
-    'presence':      'upfront, intimate, close-miked sound',
-    'space':         'spacious sound with natural reverb and room to breathe',
-    'organic':       'organic, human performance feel with natural timing',
-    'texture':       'rich timbral texture and tonal colour',
-    'width':         'wide, immersive stereo image',
-    'atmosphere':    'atmospheric, evocative mood',
-    'authenticity':  'authentic {style} performance true to {genre} tradition'
+    'density':       'busy, note-dense playing',
+    'dynamics':      'wide dynamic range, soft to loud',
+    'groove':        'tight groove, steady pulse',
+    'attack':        'sharp percussive attacks',
+    'staccato':      'short staccato articulation',
+    'brightness':    'bright, sparkling tone',
+    'complexity':    'intricate melodies, rich harmony',
+    'ornamentation': 'ornamented melodies, trills',
+    'variation':     'evolving variations',
+    'glide':         'smooth legato, slides',
+    'presence':      'intimate, close-miked sound',
+    'space':         'spacious, natural reverb',
+    'organic':       'organic, human feel',
+    'texture':       'rich textures',
+    'width':         'wide stereo image',
+    'atmosphere':    'atmospheric, ethereal',
+    'authenticity':  'authentic {style}, traditional {genre}'
 };
+// Lyria topK (1..1000, default 40) is driven by the Variation knob: 0 = Lyria default, full knob (2) = 250.
+const LYRIA_TOPK_DEFAULT = 40;
+const LYRIA_TOPK_KNOB_MAX = 250;
 
 interface RecordingSegment {
     startTime: number;
@@ -303,7 +308,14 @@ export class LiveMusicHelper extends EventTarget {
       let g = LiveMusicHelper.STAGE_GUIDANCE[stage?.type || 'main'] ?? 4.5;
       if (stage && (stage.formation === 'solo' || stage.formation === 'duet')) g = Math.max(g, 5.6);
       if (this.currentVocalSignal) g += 0.4;
+      // The genre profile has the last word: guidance (knob x 3) stays inside the genre's Guidance range,
+      // except in solo and a cappella sections where the DJ may override the genre maximum
+      const range = this.genreProfile()['Guidance'];
+      if (range) g = Math.max(range[0] * 3, isGenreOverrideStage(stage?.type, stage?.formation) ? g : Math.min(range[1] * 3, g));
       return Math.min(LYRIA_GUIDANCE_MAX, g);
+  }
+  private genreProfile(): Record<string, [number, number, number]> {
+      return LiveMusicHelper.GENRE_KNOB_PROFILES[this.genre] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
   }
   /** The guidance the app wants right now (the applied one is reported by 'config-applied'). */
   public get intendedGuidance(): number { return this.effectiveGuidance(); }
@@ -503,7 +515,15 @@ export class LiveMusicHelper extends EventTarget {
   public setGlobalSettings(settings: any) {
     if (settings.bpm !== undefined) this.bpm = settings.bpm;
     if (settings.key !== undefined) this.key = settings.key;
-    if (settings.genre !== undefined) this.genre = settings.genre;
+    if (settings.genre !== undefined) {
+        const changed = settings.genre !== this.genre;
+        this.genre = settings.genre;
+        // Stage knob targets were baked for the old genre: rebuild them so the DJ steers the knobs by the new genre's limits
+        if (changed && this.currentPlan?.length) {
+            this.currentPlan.forEach(s => { if (s.type) s.targets = this.getKnobTargetsForStage(s.type); });
+            if (this.conductorMode) this.updateConductor();
+        }
+    }
     if (settings.style !== undefined) this.style = settings.style;
     if (settings.meter !== undefined) this.meter = settings.meter;
     this.scheduleRefresh();
@@ -636,8 +656,29 @@ export class LiveMusicHelper extends EventTarget {
   // Prompt weights are cross-faded: new prompts fade in, replaced prompts fade out, so a section change
   // is a smooth transition instead of a jump (Lyria's docs recommend sending intermediate weights).
   private smoothedPrompts = new Map<string, number>();
-  /** Prompt texts Lyria's safety filter rejected: they are not sent again (each rejection is logged in dev mode). */
-  private rejectedPrompts = new Set<string>();
+  /** Remembers prompts the safety filter rejected (also across sessions) and improves them on the fly. */
+  private guard = new PromptGuard(
+      (text) => this.aiRewritePrompt(text),
+      (event) => { this.dispatchEvent(new CustomEvent('prompt-improved', { detail: event })); this.lastPrompts = null; this.scheduleRefresh(); }
+  );
+  /** Asks a Gemini text model for a version of a rejected prompt that the safety filter should accept. */
+  private async aiRewritePrompt(text: string): Promise<string | null> {
+      if (!this.ai) return null;
+      try {
+          const request = (this.ai as any).models.generateContent({
+              model: 'gemini-3.1-flash-lite',
+              contents: `Rewrite this text prompt for a music generation model so that its safety filter accepts it. Remove every artist, band, producer, song and brand name and anything that could be seen as copyrighted, sensitive or violent. Keep the musical meaning and use short descriptive tags (instruments, genre, era, mood, tempo). Maximum 25 words. Return only the rewritten prompt, nothing else.
+
+Prompt: ${text}`
+          });
+          const result = await Promise.race([request, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))]) as any;
+          const better = String(result?.text || '').trim().replace(/^["']|["']$/g, '');
+          return better && better.length < 300 ? better : null;
+      } catch (e) {
+          console.warn('Prompt rewrite failed:', e);
+          return null;
+      }
+  }
   private crossfadeTimer: number | null = null;
   private crossfade(target: { text: string; weight: number }[]): { text: string; weight: number }[] {
       const goals = new Map<string, number>();
@@ -681,6 +722,9 @@ export class LiveMusicHelper extends EventTarget {
     };
     const density = knobValue('density'); if (density !== undefined) config.density = density;
     const brightness = knobValue('brightness'); if (brightness !== undefined) config.brightness = brightness;
+    // Variation widens the token sampling pool (topK 1..1000): more varied playing without touching the prompts
+    const variation = knobValue('variation');
+    if (variation !== undefined) config.topK = Math.round(LYRIA_TOPK_DEFAULT + variation * (LYRIA_TOPK_KNOB_MAX - LYRIA_TOPK_DEFAULT));
     // A repeatable take: the same seed with the same prompts gives a similar performance
     if (this.currentSeed !== null) config.seed = this.currentSeed;
     // Lyria renders one stereo mix (no separate stems), but it can drop the bass and the drums on request:
@@ -776,8 +820,8 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
-    // (Density, Brightness and Guidance are sent as real config values, not as text)
-    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness', 'guidance'].includes(p.text.trim().toLowerCase())).map((p) => {
+    // (Density, Brightness, Variation and Guidance are sent as real config values, not as text)
+    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase())).map((p) => {
         return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
     }).filter(p => p.weight > 0.05);
     
@@ -798,7 +842,7 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: this.lyricsPrompt, weight: 1.2 });
     }
 
-    const fadedPayload = this.crossfade(finalPayload.filter(p => !this.rejectedPrompts.has(p.text)));
+    const fadedPayload = this.crossfade(this.guard.apply(finalPayload));
     if (JSON.stringify(fadedPayload) !== JSON.stringify(this.lastPrompts)) {
         try { await this.session.setWeightedPrompts({ weightedPrompts: fadedPayload }); this.lastPrompts = fadedPayload; this.dispatchEvent(new CustomEvent('prompts-sent', { detail: { prompts: fadedPayload, guidance: config.guidance } })); } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
@@ -1448,14 +1492,15 @@ export class LiveMusicHelper extends EventTarget {
   // DJ stays in genre) plus stage "flavor" knobs, never more than the genre's knob limit and never a contradictory pair.
   // Every knob not returned here is driven to 0 while the DJ is in control.
   private getKnobTargetsForStage(type: string): { parameterName: string; targetValue: number }[] {
-      const profile = LiveMusicHelper.GENRE_KNOB_PROFILES[this.genre] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
+      const profile = this.genreProfile();
       const stageMod = LiveMusicHelper.STAGE_MODIFIERS[type] || {};
 
-      // Genre default + stage modifier, clamped to the genre range and the DJ ceiling
+      // Genre default + stage modifier, always inside the genre's own min/max (the genre range is the ceiling);
+      // solo and a cappella sections may override the genre maximum (up to the knob's full scale)
+      const override = isGenreOverrideStage(type);
       const valueOf = (knob: string) => {
           const [min, max, defaultVal] = profile[knob];
-          const value = Math.max(min, Math.min(max, defaultVal + (stageMod[knob] || 0)));
-          return Math.min(DJ_KNOB_CEILING, value);
+          return Math.max(min, Math.min(override ? 2 : max, defaultVal + (stageMod[knob] || 0)));
       };
       const conflicts = (a: string, b: string) =>
           CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
@@ -1983,7 +2028,7 @@ export class LiveMusicHelper extends EventTarget {
       model: this.model, 
       callbacks: { 
         onmessage: async (e) => { 
-          if (e.filteredPrompt?.text) { this.rejectedPrompts.add(e.filteredPrompt.text); this.scheduleRefresh(); }
+          if (e.filteredPrompt?.text) this.guard.reportRejected(e.filteredPrompt.text);
           if (e.filteredPrompt) this.dispatchEvent(new CustomEvent('prompt-filtered', { detail: { ...e.filteredPrompt, payload: this.lastPrompts, config: this.lastConfig } }));
           if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); 
         }, 

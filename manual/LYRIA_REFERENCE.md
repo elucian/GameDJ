@@ -76,7 +76,10 @@ Descriptor vocabulary listed in the guide (use these words, they are known to wo
 | `resetContext()` | scheduled 0.8 s after a bpm, scale or mode change (`scheduleContextReset`). |
 | Vocals | `VOCALIZATION` mode + voice descriptions (`describeVoice`). Lyrics are sent once as a short prompt (language plus the opening line, or vowels). |
 | Server messages | `filteredPrompt` is shown in the message log as `PROMPT FILTERED: reason`. |
-| Not used yet | `topK`. |
+| `topK` | Driven by the Variation knob (not a prompt): knob 0 = Lyria default (40), knob 2 = 250, range allowed 1 to 1000. |
+| Knob prompts | The other knobs are sent as short tag phrases (`KNOB_PHRASES`), 2 to 5 words each, no instruments, no names. |
+
+Genre limits: `GENRE_KNOB_PROFILES` gives every knob a `[min, max, default]` per genre (all 21 genres). The DJ's knob targets (default plus stage modifier) and its Guidance target (knob x 3) are always clamped into that range; there is no global ceiling above it. Exception: in solo and a cappella sections (`isGenreOverrideStage`) the DJ may go past the genre maximum (knobs up to 2, guidance up to 6); the genre minimum still applies. A genre change rebuilds the targets of the whole plan and the conductor applies them straight away.
 
 The right-hand panel above the knobs shows the prompt list and the guidance value Lyria confirmed (with `→ target` while the DJ eases toward a boost).
 
@@ -113,4 +116,5 @@ What GameDJ does about it:
 - **Several short prompts instead of one narrative:** core (genre, style, key, bpm, meter, mood), arrangement, special instruction, vocal direction and evolution are separate prompts, so if one is dropped the rest still play.
 - **Rejected prompts are remembered** for the session and not sent again.
 - **Dev mode logging:** in `npm run dev` every rejection is logged to the browser console (`[Lyria] prompt filtered`) and appended to `window.__lyriaFiltered` with the whole payload and config it belonged to. Production builds only show `PROMPT FILTERED` in the message log.
+- **Runtime memory and on-the-fly improvement** (`utils/PromptGuard.ts`): when the server rejects a prompt, GameDJ remembers it (also in `localStorage`, key `gamedj.promptGuard`) and never sends that text again. It first rewrites it with rules (drops "Name style/vibe/..." references and quoted lyrics, swaps words rejected before such as "boys choir" to "youth choir", shortens it). If the rewrite is rejected too, a Gemini text model rewrites it into safe descriptive tags. A prompt that keeps failing is dropped for good. Phrases that had to be removed are stripped from all later prompts before they are sent. The message log shows `PROMPT REWRITTEN (rules|ai)` or `PROMPT DROPPED`.
 - Rule of thumb for new wording: describe the sound (instruments, era, mood, tempo), never a person or a specific song.
