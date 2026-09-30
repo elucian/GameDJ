@@ -84,7 +84,10 @@ function main() {
   (djPresetDialog as any).addEventListener('send-dj-config', (e: CustomEvent) => {
       const { directive, name, config } = e.detail;
       liveMusicHelper.setSpecialInstruction(directive);
-      if (config) liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels });
+      if (config) {
+          liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels });
+          liveMusicHelper.setTemperature(config.temperature ?? 1.1);
+      }
       pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
   });
 
@@ -381,12 +384,16 @@ function main() {
   
   // Right-hand panel: voices, lyrics / vocal prompt, and the prompt last sent to Lyria
   let lastPromptText = '';
+  let appliedGuidance: number | null = null;
   const refreshPromptPanel = () => {
       const { solos, choir } = vocalDialog.getVoices();
       const voices = [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', ')
           + ` · INTENSITY ${Math.round(liveMusicHelper.voiceIntensity * 100)}%`;
       const lyrics = liveMusicHelper.vocalPrompt || liveMusicHelper.lyricsText.replace(/\s*\n\s*/g, ' / ').slice(0, 200);
-      pdjMidi.setPromptInfo({ voices, lyrics, prompt: lastPromptText });
+      // Guidance: what Lyria really has, and where the DJ is heading while it eases there
+      const intended = liveMusicHelper.intendedGuidance;
+      const guidance = appliedGuidance === null ? '[GUIDANCE waiting] ' : `[GUIDANCE ${appliedGuidance.toFixed(1)}${Math.abs(intended - appliedGuidance) >= 0.1 ? ` → ${intended.toFixed(1)}` : ''}] `;
+      pdjMidi.setPromptInfo({ voices, lyrics, prompt: guidance + lastPromptText });
   };
   // Repeatable takes: show the seed, lock it from the mixer panel
   liveMusicHelper.addEventListener('seed-changed', ((e: Event) => {
@@ -400,17 +407,24 @@ function main() {
       const { text, filteredReason } = (e as CustomEvent<{ text?: string; filteredReason?: string }>).detail;
       pdjMidi.setMessage(`PROMPT FILTERED: ${filteredReason || text || 'unknown reason'}`, 'error');
   }));
+  liveMusicHelper.addEventListener('config-applied', ((e: Event) => {
+      appliedGuidance = (e as CustomEvent<{ guidance: number }>).detail.guidance;
+      refreshPromptPanel();
+  }));
+  liveMusicHelper.addEventListener('config-failed', ((e: Event) => {
+      pdjMidi.setMessage(`LYRIA CONFIG REJECTED: ${(e as CustomEvent<string>).detail}`, 'error');
+  }));
   liveMusicHelper.addEventListener('voice-intensity-changed', () => refreshPromptPanel());
   liveMusicHelper.addEventListener('prompts-sent', ((e: Event) => {
-      const { prompts, guidance } = (e as CustomEvent<{ prompts: { text: string; weight: number }[]; guidance: number }>).detail;
-      lastPromptText = `[GUIDANCE ${guidance.toFixed(1)}] ` + [...prompts].sort((a, b) => b.weight - a.weight).map(p => `${p.text} (${p.weight.toFixed(1)})`).join(' • ');
+      const { prompts } = (e as CustomEvent<{ prompts: { text: string; weight: number }[] }>).detail;
+      lastPromptText = [...prompts].sort((a, b) => b.weight - a.weight).map(p => `${p.text} (${p.weight.toFixed(1)})`).join(' • ');
       refreshPromptPanel();
   }));
 
   // === Voice dialog <-> voice channels ===
   const VOICE_NAMES = ['Soprano', 'Alto', 'Tenor', 'Baritone'];
   const CHOIR_CANDIDATES: Record<string, string[]> = {
-      Church: ['Gregorian Chant', 'Gospel Choir', 'Mixed Choir'], Chamber: ['Chamber Choir'], Military: ['Male Choir'],
+      Church: ['Gregorian Chant', 'Mixed Choir'], Gospel: ['Gospel Choir'], Chamber: ['Chamber Choir'], Military: ['Male Choir'],
       Youth: ['Female Choir', 'Mixed Choir'], Children: ['Childrens Choir'], Mixed: ['Mixed Choir', 'Epic Choir', 'A Cappella Group']
   };
   let syncingFromDialog = false;
@@ -428,7 +442,8 @@ function main() {
           if (n.includes('quartet')) soloCount = Math.max(soloCount, 4);
           else if (n.includes('duet')) soloCount = Math.max(soloCount, 2);
           else if (n.includes('chamber')) choir = 'Chamber';
-          else if (n.includes('gospel') || n.includes('gregorian') || n.includes('chant')) choir = 'Church';
+          else if (n.includes('gospel')) choir = 'Gospel';
+          else if (n.includes('gregorian') || n.includes('chant')) choir = 'Church';
           else if (n.includes('male choir') && !n.includes('female')) choir = 'Military';
           else if (n.includes('child') && n.includes('choir')) choir = 'Children';
           else if (n.includes('choir') || n.includes('cappella') || n.includes('ensemble')) choir = 'Mixed';

@@ -281,9 +281,6 @@ export class RightSidebar extends LitElement {
     }
     
     .weight-slider { width: 100%; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-    .guide-label { font-size: 8.8px; font-weight: 800; letter-spacing: 0.5px; color: var(--text-muted); width: 28px; flex-shrink: 0; }
-    .guide-val { font-size: 9.5px; font-family: monospace; color: var(--text-muted); width: 22px; text-align: right; flex-shrink: 0; }
-    
     input[type=range] {
       -webkit-appearance: none; width: 100%; background: transparent; height: 4px;
       border-radius: 2px; background: var(--border-color); outline: none; border: none;
@@ -675,17 +672,6 @@ export class RightSidebar extends LitElement {
             <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} tabindex=${isInteractionDisabled ? '-1' : '0'}>
               ${options.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}
             </select>
-          </div>
-          <div class="weight-slider guide-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Guidance: how strictly Lyria follows this channel. The DJ can push it above 5, up to 6, for solos, duets and a cappella.">
-              <span class="guide-label">GUIDE</span>
-              <input type="range" min="0" max="1" step="0.05" .value=${ch.guidance ?? 0.75} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => {
-                  if (isInteractionDisabled) return;
-                  this.settings[key].guidance = parseFloat(e.target.value);
-                  uiSounds.playTick();
-                  this.dispatchChannelsChanged();
-                  this.requestUpdate();
-              }}/>
-              <span class="guide-val">${(1 + 4 * (ch.guidance ?? 0.75)).toFixed(1)}</span>
           </div>
           <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}"><input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => { 
               if (!isInteractionDisabled) { 

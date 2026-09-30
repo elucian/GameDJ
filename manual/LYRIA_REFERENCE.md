@@ -71,14 +71,14 @@ Descriptor vocabulary listed in the guide (use these words, they are known to wo
 
 | Lyria feature | GameDJ |
 |---|---|
-| Prompts | `refreshSessionPrompts()` builds one narrative prompt (weight 2.0), a quality prompt (0.8), an ensemble/formation prompt, one prompt per active channel (weight = channel weight x per-channel factor x Guide slider), one per active knob, a compact vocal/lyrics prompt (1.2) when a voice is on stage. Weights are **cross-faded** (`crossfade`): new prompts fade in and replaced ones fade out over a few 350 ms steps. Sent only when the payload changed. |
-| Config | `musicGenerationMode`, `bpm` (clamped 60 to 200), `scale` (from the key, all 12 pairs), `guidance` (channel Guide sliders, 1 to 5; raised by the DJ up to 6), `temperature` 1.1 (Lyria's default), `density` and `brightness` (driven by the Density and Brightness knobs, 0 to 1), `muteBass` and `muteDrums` (a switched-off bass or drum channel is really muted), `onlyBassAndDrums` (rhythm-only sections), `seed` (new per recording, lockable from the SEED chip in the mixer panel). Whole config resent whenever it changes. |
+| Prompts | `refreshSessionPrompts()` builds one narrative prompt (weight 2.0), a quality prompt (0.8), an ensemble/formation prompt, one prompt per active channel (weight = channel weight x per-channel factor), one per active knob, a compact vocal/lyrics prompt (1.2) when a voice is on stage. Weights are **cross-faded** (`crossfade`): new prompts fade in and replaced ones fade out over a few 350 ms steps. Sent only when the payload changed. |
+| Config | `musicGenerationMode`, `bpm` (clamped 60 to 200), `scale` (from the key, all 12 pairs), `guidance` (the Guidance knob: weight x 3, default 4 while the knob is 0, capped at 5; the DJ adds a boost on top, up to 6), `temperature` (default 1.1, set per DJ preset with the Lyria Temp slider, 0.0 to 3.0), `density` and `brightness` (driven by the Density and Brightness knobs, 0 to 1), `muteBass` and `muteDrums` (a switched-off bass or drum channel is really muted), `onlyBassAndDrums` (rhythm-only sections), `seed` (new per recording, lockable from the SEED chip in the mixer panel). Whole config resent whenever it changes. |
 | `resetContext()` | scheduled 0.8 s after a bpm, scale or mode change (`scheduleContextReset`). |
 | Vocals | `VOCALIZATION` mode + voice descriptions (`describeVoice`). Lyrics are sent once as a short prompt (language plus the opening line, or vowels). |
 | Server messages | `filteredPrompt` is shown in the message log as `PROMPT FILTERED: reason`. |
 | Not used yet | `topK`. |
 
-The right-hand panel above the knobs shows the prompt list and the guidance value last sent.
+The right-hand panel above the knobs shows the prompt list and the guidance value Lyria confirmed (with `→ target` while the DJ eases toward a boost).
 
 ## 7. Rules for future changes
 
@@ -90,7 +90,7 @@ The right-hand panel above the knobs shows the prompt list and the guidance valu
 6. **Never send a prompt with weight 0.** Filter tiny weights out (the code drops channel and knob prompts under 0.05).
 7. **Change prompts gradually.** For big style changes ramp weights over a few updates instead of swapping text.
 8. **Stay in range:** guidance 0 to 6, temperature 0 to 3, bpm 60 to 200 (the tempo slider must respect this), density and brightness 0 to 1.
-9. **Guidance is global** (one value for the whole session). Per-channel emphasis has to be done with prompt weights.
+9. **Guidance is global** (one value for the whole session), driven by the Guidance knob; the DJ never moves that knob. Per-channel emphasis has to be done with prompt weights.
 10. **New session, new state.** `connect()` clears the remembered config and prompts so they are sent again.
 11. The model is experimental: names, ranges and behaviour can change. Re-check the two source pages above before large changes.
 12. Done from the earlier idea list: Density and Brightness knobs drive the real config, `onlyBassAndDrums` for rhythm-only sections, a lockable `seed`, prompt cross-fading, and filtered prompts in the log. Still open: `topK` control, and ramping `density` and `brightness` themselves in small steps.

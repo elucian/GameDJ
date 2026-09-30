@@ -27,8 +27,6 @@ export interface ChannelState {
   active: boolean;
   weight: number; 
   visible?: boolean; 
-  /** How strictly Lyria should follow this channel, 0..1 (maps to Lyria guidance 1..5; the DJ may push it up to 6). */
-  guidance?: number;
 }
 
 export interface InstrumentSet {

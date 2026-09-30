@@ -33,9 +33,21 @@ export class PromptDjMidi extends LitElement {
       padding: 4px 12px;
       box-sizing: border-box;
       flex-shrink: 0;
+    }
+    /* A raised bezel around the two displays, like the front panel of a real device */
+    .bezel {
       display: flex;
       gap: 8px;
       align-items: stretch;
+      padding: 8px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #3a3d40 0%, #23262a 55%, #17191c 100%);
+      border: 2px solid;
+      border-color: #5b5f64 #101214 #0a0b0c #4a4e53;
+      box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.6),
+        0 1px 0 rgba(255, 255, 255, 0.12) inset,
+        0 -1px 0 rgba(0, 0, 0, 0.5) inset;
     }
     .display-box { flex: 1 1 0; min-width: 0; }
 
@@ -55,12 +67,6 @@ export class PromptDjMidi extends LitElement {
     .prompt-box .p-row { overflow-wrap: anywhere; }
     .prompt-box .p-empty { opacity: 0.4; }
 
-    /* Commands fly in from the left, and the oldest one flies away toward the prompt panel */
-    @keyframes fly-in { from { transform: translateX(-24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    @keyframes fly-away { from { transform: translateX(0); opacity: 0.4; } to { transform: translateX(60px); opacity: 0; } }
-    .log-line.latest { animation: fly-in 0.35s ease-out; }
-    .log-line.leaving { animation: fly-away 0.6s ease-in forwards; }
-    
     .display-box {
       font-family: 'Courier New', Courier, monospace;
       font-weight: 700;
@@ -68,6 +74,7 @@ export class PromptDjMidi extends LitElement {
       letter-spacing: 1px;
       /* Removed text-transform: uppercase to support mixed case messages */
       width: 100%;
+      position: relative;
       /* Permanent 4-line message log: newest line at the bottom, older lines fade, long lines are cut with an ellipsis */
       line-height: 1.5em;
       height: calc(4 * 1.5em + 12px);
@@ -129,6 +136,16 @@ export class PromptDjMidi extends LitElement {
       grid-template-rows: repeat(3, 1fr);
       gap: 3px;
       box-sizing: border-box;
+      /* Same raised bezel as the message displays, around all the knobs */
+      padding: 8px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #3a3d40 0%, #23262a 55%, #17191c 100%);
+      border: 2px solid;
+      border-color: #5b5f64 #101214 #0a0b0c #4a4e53;
+      box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.6),
+        0 1px 0 rgba(255, 255, 255, 0.12) inset,
+        0 -1px 0 rgba(0, 0, 0, 0.5) inset;
     }
 
     prompt-controller {
@@ -149,19 +166,20 @@ export class PromptDjMidi extends LitElement {
       }
       .display-panel { 
         padding: 2px 8px; 
-        flex-direction: column;
       }
+      .bezel { flex-direction: column; padding: 6px; }
       .display-box, .prompt-box { 
         font-size: 10.5px; 
         padding: 4px 10px;
         height: calc(4 * 1.5em + 8px);
       }
       .grid-container { 
-        padding: 12px 6px; 
+        padding: 2px 8px; 
       }
       #grid { 
         aspect-ratio: 1.5 / 1; 
         gap: 1.5px;
+        padding: 6px;
       }
     }
   `;
@@ -171,7 +189,7 @@ export class PromptDjMidi extends LitElement {
   @property({ type: String }) public playbackState: PlaybackState = 'stopped';
   @state() public audioLevel = 0;
   @state() private messageType: 'info' | 'error' = 'info';
-  @state() private log: { text: string; type: 'info' | 'error'; leaving?: boolean }[] = [{ text: 'SYSTEM READY', type: 'info' }];
+  @state() private log: { text: string; type: 'info' | 'error' }[] = [{ text: 'SYSTEM READY', type: 'info' }];
   @state() private voicesInfo = '';
   @state() private lyricsInfo = '';
   @state() private promptInfo = '';
@@ -194,16 +212,14 @@ export class PromptDjMidi extends LitElement {
 
   public setMessage(text: string, type: 'info' | 'error' = 'info') {
     this.messageType = type;
-    if (this.log[this.log.length - 1]?.text !== text) {
-      // Keep a fifth, outgoing line just long enough to fly away
-      const next = [...this.log.filter(l => !l.leaving), { text, type }];
-      if (next.length > 4) {
-        const out = next.shift()!;
-        this.log = [{ ...out, leaving: true }, ...next];
-        window.setTimeout(() => { this.log = this.log.filter(l => !l.leaving); }, 600);
-      } else {
-        this.log = next;
-      }
+    const last = this.log[this.log.length - 1];
+    // Countdowns and other repeating messages ("... IN 5S", "... IN 4S") update their line in place instead of
+    // pushing a new one, so the log does not scroll and flicker.
+    const shape = (t: string) => t.replace(/[0-9]+(.[0-9]+)?/g, '#');
+    if (last && last.text !== text && shape(last.text) === shape(text)) {
+      this.log = [...this.log.slice(0, -1), { text, type }];
+    } else if (last?.text !== text) {
+      this.log = [...this.log, { text, type }].slice(-4);
     }
   }
 
@@ -265,14 +281,16 @@ export class PromptDjMidi extends LitElement {
   render() {
     return html`
       <div class="display-panel">
+       <div class="bezel">
         <div class="display-box ${this.messageType}">
-          ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${l.leaving ? 'leaving' : i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
+          ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
         </div>
         <div class="prompt-box">
           <div class="p-row"><span class="p-head">VOICES</span>${this.voicesInfo || html`<span class="p-empty">none</span>`}</div>
           <div class="p-row"><span class="p-head">LYRICS</span>${this.lyricsInfo || html`<span class="p-empty">none</span>`}</div>
           <div class="p-row"><span class="p-head">PROMPT</span>${this.promptInfo || html`<span class="p-empty">waiting for the first prompt</span>`}</div>
         </div>
+       </div>
       </div>
       <div class="grid-container">
         <div id="grid">${this.renderPrompts()}</div>

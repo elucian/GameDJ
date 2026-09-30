@@ -39,7 +39,7 @@ The right sidebar has two tabs with five channels each:
 
 - The dropdowns only list **recommended** instruments for the genre. Band lists are generous, so combinations like a sax in a rock band are possible. Lyria lists are orchestral and choral.
 - **Solo (Lyria)** is a voice only: Solo Voice, Duet Voices, Choir Voices or Chamber Choir. The exact voices come from the Voice dialog.
-- Each channel has an on/off checkbox, a weight slider and a **Guide** slider. Guide tells Lyria how strictly to follow that channel (Lyria guidance 1 to 5; the strongest active channel sets the overall value). While the DJ conducts, it raises guidance above 5, up to Lyria's maximum of 6, for tight arrangements such as solos, duets and a cappella sections, so Lyria obeys them more closely. Higher guidance can make changes sound more abrupt.
+- Each channel has an on/off checkbox and a weight slider.
 -  Changing an instrument locks the channels so the Dice and DJ won't overwrite your choice. Use the lock icon to release them.
 - **Manifest** switches decide which channels are part of the piece at all. A switch that is on keeps its light lit, even when it is greyed out during recording.
 
@@ -56,7 +56,7 @@ The dice button (only while stopped) picks genre, style, mood, key, tempo and me
 
 ## 7. The knobs
 
-Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. The **Density** and **Brightness** knobs control Lyria's real density and brightness settings. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
+Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. The **Density** and **Brightness** knobs control Lyria's real density and brightness settings. The **Guidance** knob sets Lyria's overall guidance (how strictly it follows the prompts): at 0 Lyria's default of 4 is used, and your setting is capped at 5. While the DJ conducts, it adds a boost on top of your setting, up to Lyria's maximum of 6, for tight arrangements such as solos, duets and a cappella sections. The DJ never moves the Guidance knob itself. Higher guidance can make changes sound more abrupt. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
 
 ## 8. The DJ
 
@@ -80,7 +80,7 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 9. Voices, lyrics and a cappella
 
-- The **Voice** button opens the Voice dialog: choose solo voices (Soprano, Alto, Tenor, Baritone) and a choir kind (Church, Chamber, Military, Youth, Children, Mixed), set their volumes, and edit the **lyrics**.
+- The **Voice** button opens the Voice dialog: the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
 - When the DJ activates a voice channel it configures this dialog itself and writes lyrics in a language that suits the genre: the native language for regional music (for example Hindi, Swahili, Romanian, Hawaiian), Latin, Italian or German for traditional, and popular languages (mostly English) for modern. Lyrics are always real words, or open vowels (Ah, Oh, Ooh), never made-up syllables.
 - During play the DJ cues the next lines at each section, and turns the voice on or off where it fits the arrangement.
 - In some genres (Hip Hop most of all) the DJ occasionally drops the band for an **a cappella** section with only the voices.
@@ -88,7 +88,7 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 10. DJ Presets (personalities)
 
-The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft**. Each has its own settings: bass, reverb, filter, BPM offset, active channels, warm-up, eagerness, diversity and pause. The channel switches and eagerness change how the DJ works (benched channels are not used, higher eagerness moves knobs faster). Presets are saved in your browser and restored on restart, together with the last applied personality.
+The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft**. Each has its own settings: bass, reverb, filter, BPM offset, active channels, warm-up, eagerness, diversity, pause and **Lyria Temp** (Lyria's temperature, 0.0 to 3.0, default 1.1: lower is more predictable, higher is more varied). The channel switches and eagerness change how the DJ works (benched channels are not used, higher eagerness moves knobs faster). Presets are saved in your browser and restored on restart, together with the last applied personality.
 
 ## 11. Tips
 

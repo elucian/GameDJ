@@ -30,11 +30,11 @@ const DJ_KNOBS_MODERN = 6;
 const DJ_KNOBS_TRADITIONAL = 4;
 const DJ_KNOBS_REGIONAL = 2;
 // Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
-// The channel Guide sliders cover 1..5; only the DJ may go above 5, up to the API maximum.
+// The Guidance knob (0..2 = 0..6) is the overall control and is capped at 5; only the DJ may go above 5, up to the API maximum.
 const USER_GUIDANCE_MAX = 5;
 const LYRIA_GUIDANCE_MAX = 6;
-const DEFAULT_CHANNEL_GUIDANCE = 0.75; // = Lyria guidance 4.0
-const guidanceFromSlider = (g: number) => 1 + (USER_GUIDANCE_MAX - 1) * g;
+const DEFAULT_GUIDANCE = 4.0; // Lyria's default, used while the Guidance knob is at zero
+const isGuidanceKnob = (p: { text: string }) => p.text.trim().toLowerCase() === 'guidance';
 // When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
 const USER_KNOB_HOLD_MS = 30000;
 // Knobs are seasoning, not the main course: the DJ never pushes a knob past this value.
@@ -274,6 +274,9 @@ export class LiveMusicHelper extends EventTarget {
   /** How strongly the voices sing (0 soft .. 1 powerful). The DJ moves it from section to section. */
   public voiceIntensity = 0.7;
   private djGuidance = 4.0;
+  /** Lyria temperature: 0.0 to 3.0, default 1.1. Set from the DJ dialog. */
+  private temperature = 1.1;
+  public setTemperature(value: number) { this.temperature = Math.round(Math.max(0, Math.min(3, value)) * 10) / 10; this.scheduleRefresh(); }
   private static readonly STAGE_GUIDANCE: Record<string, number> = {
       intro: 3.5, outro: 3.5, breakdown: 4.0, build: 4.5, verse: 4.5, main: 4.5, groove: 4.5, percussion: 4.5,
       chorus: 5.0, climax: 5.0, solo: 5.6, duet: 5.6, trio: 5.3, acapella: 6.0
@@ -286,14 +289,14 @@ export class LiveMusicHelper extends EventTarget {
       if (this.currentVocalSignal) g += 0.4;
       return Math.min(LYRIA_GUIDANCE_MAX, g);
   }
-  /** Guidance actually sent to Lyria: the strongest channel Guide slider, raised by the DJ while it conducts. */
+  /** The guidance the app wants right now (the applied one is reported by 'config-applied'). */
+  public get intendedGuidance(): number { return this.effectiveGuidance(); }
+  /** Guidance sent to Lyria: your Guidance knob (default 4), plus a boost from the DJ for tight formations, up to 6. */
   private effectiveGuidance(): number {
-      const guides = (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const)
-          .filter(k => { const c = this.instruments[k]; return c.active && c.visible !== false && c.weight > 0.05; })
-          .map(k => this.instruments[k].guidance ?? DEFAULT_CHANNEL_GUIDANCE);
-      const user = guidanceFromSlider(guides.length ? Math.max(...guides) : DEFAULT_CHANNEL_GUIDANCE);
-      const g = this.conductorMode ? Math.max(user, this.djGuidance) : user;
-      return Math.round(Math.min(LYRIA_GUIDANCE_MAX, g) * 10) / 10;
+      let user = DEFAULT_GUIDANCE;
+      for (const p of this.prompts.values()) if (isGuidanceKnob(p) && p.weight > 0.01) user = Math.min(USER_GUIDANCE_MAX, p.weight * 3);
+      const boost = this.conductorMode ? Math.max(0, this.djGuidance - DEFAULT_GUIDANCE) : 0;
+      return Math.round(Math.min(LYRIA_GUIDANCE_MAX, user + boost) * 10) / 10;
   }
   public setVoiceIntensity(value: number) {
       this.voiceIntensity = Math.max(0, Math.min(1, value));
@@ -652,7 +655,7 @@ export class LiveMusicHelper extends EventTarget {
         musicGenerationMode: this.generationMode,
         bpm: Math.max(60, Math.min(200, Math.round(this.bpm))), // API range 60-200
         guidance: this.effectiveGuidance(),
-        temperature: 1.1, // Lyria's default
+        temperature: this.temperature,
     };
     // The Density and Brightness knobs drive the real Lyria parameters (0..1, live, no context reset)
     const knobValue = (name: string): number | undefined => {
@@ -681,12 +684,17 @@ export class LiveMusicHelper extends EventTarget {
         try {
             await this.session.setMusicGenerationConfig({ musicGenerationConfig: config });
             this.lastConfig = config;
+            // Tell the UI what Lyria really has now (not just what we intended)
+            this.dispatchEvent(new CustomEvent('config-applied', { detail: config }));
             // Lyria only picks up a new BPM or scale after a context reset; the generation mode is not documented
             // as switchable mid-stream, so it gets the same treatment.
             if (prev && (prev.bpm !== config.bpm || prev.scale !== config.scale || prev.musicGenerationMode !== config.musicGenerationMode)) {
                 this.scheduleContextReset();
             }
-        } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
+        } catch (e) {
+            console.error("setMusicGenerationConfig failed:", e);
+            this.dispatchEvent(new CustomEvent('config-failed', { detail: e instanceof Error ? e.message : String(e) }));
+        }
     }
 
     // 2. Build Rich, Descriptive Narrative Prompt
@@ -749,8 +757,8 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
-    // (Density and Brightness are sent as real config values above, not as text)
-    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness'].includes(p.text.trim().toLowerCase())).map((p) => {
+    // (Density, Brightness and Guidance are sent as real config values, not as text)
+    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness', 'guidance'].includes(p.text.trim().toLowerCase())).map((p) => {
         return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
     }).filter(p => p.weight > 0.05);
     
@@ -761,8 +769,7 @@ export class LiveMusicHelper extends EventTarget {
         const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
         finalPayload.push({
             text: isVocalInstrument(ch.instrument) ? `${describeVoice(ch.instrument)}, ${this.voiceIntensityPhrase()}` : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`),
-            // The channel's Guide slider makes Lyria follow this channel more (or less) strictly
-            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k] * (0.55 + 0.6 * (ch.guidance ?? DEFAULT_CHANNEL_GUIDANCE))
+            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
         });
     });
 
@@ -1691,13 +1698,14 @@ export class LiveMusicHelper extends EventTarget {
           const targetOf = (p: Prompt) => targets[p.text] ?? 0;
 
           const isEngaged = (p: Prompt) => p.weight > 0.01;
+          // The Guidance knob belongs to you: the DJ only adds a temporary boost on top of it
           const isUserHeld = (p: Prompt) => currentTimeMs - (this.userInteractionCooldowns.get(p.promptId) || 0) < USER_KNOB_HOLD_MS;
           let engagedCount = 0;
-          this.prompts.forEach(p => { if (isEngaged(p) && !isUserHeld(p)) engagedCount++; });
+          this.prompts.forEach(p => { if (isEngaged(p) && !isUserHeld(p) && !isGuidanceKnob(p)) engagedCount++; });
 
           const retiring: Prompt[] = [], adjusting: Prompt[] = [], entering: Prompt[] = [];
           this.prompts.forEach(p => {
-              if (isUserHeld(p)) return;
+              if (isUserHeld(p) || isGuidanceKnob(p)) return;
               const target = targetOf(p);
               if (Math.abs(target - p.weight) <= 0.01) return;
               if (target === 0) retiring.push(p);

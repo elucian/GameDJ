@@ -19,7 +19,7 @@ export class VocalDialog extends LitElement {
     'Baritone': false
   };
   @state() private selectedChoir = 'None';
-  private choirOptions = ['None', 'Church', 'Chamber', 'Military', 'Youth', 'Children', 'Mixed'];
+  private choirOptions = ['None', 'Church', 'Chamber', 'Gospel', 'Military', 'Youth', 'Children', 'Mixed'];
 
   static styles = css`
     :host { pointer-events: none; display: block; }
@@ -162,12 +162,14 @@ export class VocalDialog extends LitElement {
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
             <h3>Voice Configuration</h3>
             
+            ${this.renderSolo()}
+
             <div class="tabs">
                 <button class="tab-btn ${this.tab === 'voices' ? 'active' : ''}" @click=${() => this.tab = 'voices'}>CHOIR</button>
                 <button class="tab-btn ${this.tab === 'lyrics' ? 'active' : ''}" @click=${() => this.tab = 'lyrics'}>LYRICS</button>
             </div>
 
-            ${this.tab === 'voices' ? this.renderVoices() : this.renderLyrics()}
+            ${this.tab === 'voices' ? this.renderChoir() : this.renderLyrics()}
 
             <div class="dialog-buttons">
                 <button class="cancel-btn" @click=${() => this.cancelSelection()}>Cancel</button>
@@ -178,7 +180,7 @@ export class VocalDialog extends LitElement {
     `;
   }
 
-  private renderVoices() {
+  private renderSolo() {
     return html`
       <span class="label">SOLO</span>
       <div class="voice-grid">
@@ -189,8 +191,12 @@ export class VocalDialog extends LitElement {
                   ${voice}
               </div>
           `)}
-      </div>
-      <span class="label">CHOIR</span>
+      </div>`;
+  }
+
+  // The CHOIR label is replaced by the CHOIR / LYRICS tab buttons above
+  private renderChoir() {
+    return html`
       <div class="voice-grid">
           ${this.choirOptions.map(option => html`
               <div class="radio-item ${this.selectedChoir === option ? 'active' : ''}" @click=${() => this.selectedChoir = option}>${option}</div>
