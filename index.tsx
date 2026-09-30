@@ -433,13 +433,16 @@ function main() {
   }));
   liveMusicHelper.addEventListener('prompt-filtered', ((e: Event) => {
       const { text, filteredReason, payload, config } = (e as CustomEvent<{ text?: string; filteredReason?: string; payload?: unknown; config?: unknown }>).detail;
-      // Dev mode: keep a log of every rejected prompt with the full payload it was part of (window.__lyriaFiltered)
+      // Dev mode: keep a log of every rejected prompt with the full payload it was part of (window.__lyriaFiltered).
+      // Lyria's reason is always the same boilerplate ("...check the documentation..."), so that advice is cut and only
+      // the rejected prompt and any specific reason remain.
       if ((import.meta as any).env?.DEV) {
+          const reason = (filteredReason || '').split(/(?<=[.!?])\s+/).filter(s => !/documentation|guidelines|learn more|try again/i.test(s)).join(' ').trim();
           const w = window as any;
-          (w.__lyriaFiltered ||= []).push({ at: new Date().toISOString(), text, reason: filteredReason, payload, config });
-          console.warn('[Lyria] prompt filtered:', text, '| reason:', filteredReason, '| payload:', payload, '| config:', config);
+          (w.__lyriaFiltered ||= []).push({ at: new Date().toISOString(), text, reason, payload, config });
+          console.warn(`[Lyria] prompt failed: "${text}"${reason ? ' | ' + reason : ''}`, '| payload:', payload, '| config:', config);
       }
-      pdjMidi.setMessage(`PROMPT FILTERED: ${filteredReason || text || 'unknown reason'}`, 'error');
+      pdjMidi.setMessage('PROMPT FAILED, CORRECTING...', 'error');
   }));
   liveMusicHelper.addEventListener('config-applied', ((e: Event) => {
       appliedGuidance = (e as CustomEvent<{ guidance: number }>).detail.guidance;
