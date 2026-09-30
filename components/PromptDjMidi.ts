@@ -222,6 +222,12 @@ export class PromptDjMidi extends LitElement {
     super();
   }
 
+  /** Empties both top text panels (dice, reset): the message log restarts and the prompt info goes blank. */
+  public clearPanels() {
+    this.log = [];
+    this.voicesInfo = ''; this.lyricsInfo = ''; this.promptInfo = '';
+  }
+
   public setMessage(text: string, type: 'info' | 'error' = 'info') {
     this.messageType = type;
     const last = this.log[this.log.length - 1];

@@ -393,8 +393,29 @@ function main() {
       // Guidance: what Lyria really has, and where the DJ is heading while it eases there
       const intended = liveMusicHelper.intendedGuidance;
       const guidance = appliedGuidance === null ? '[GUIDANCE waiting] ' : `[GUIDANCE ${appliedGuidance.toFixed(1)}${Math.abs(intended - appliedGuidance) >= 0.1 ? ` → ${intended.toFixed(1)}` : ''}] `;
+      if (panelsCleared) { pdjMidi.setPromptInfo({ voices: '', lyrics: '', prompt: '' }); return; }
       pdjMidi.setPromptInfo({ voices, lyrics, prompt: guidance + lastPromptText });
   };
+  // Dice and reset empty both top text panels; the right one fills again with the next prompt sent to Lyria
+  let panelsCleared = false;
+  const clearTopPanels = () => {
+      panelsCleared = true; lastPromptText = ''; appliedGuidance = null;
+      pdjMidi.clearPanels();
+      refreshPromptPanel();
+      updatePlayerStatus();
+  };
+  // Left panel: what the player is doing right now, refreshed every 5 seconds. Stopped = READY.
+  const updatePlayerStatus = () => {
+      const state = liveMusicHelper.playbackState;
+      const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+      if (state === 'playing' || state === 'paused') {
+          const label = state === 'paused' ? 'PAUSED' : liveMusicHelper.isLooping ? 'LOOPING' : 'PLAYING';
+          pdjMidi.setMessage(`${label} ${mmss(liveMusicHelper.elapsedSeconds)} / ${mmss(liveMusicHelper.recordedDuration)}`, 'info');
+      } else if (state === 'stopped') {
+          pdjMidi.setMessage('READY', 'info');
+      }
+  };
+  setInterval(() => { refreshPromptPanel(); updatePlayerStatus(); }, 5000);
   // Repeatable takes: show the seed, lock it from the mixer panel
   liveMusicHelper.addEventListener('seed-changed', ((e: Event) => {
       const { seed, locked } = (e as CustomEvent<{ seed: number | null; locked: boolean }>).detail;
@@ -430,6 +451,7 @@ function main() {
   liveMusicHelper.addEventListener('voice-intensity-changed', () => refreshPromptPanel());
   liveMusicHelper.addEventListener('prompts-sent', ((e: Event) => {
       const { prompts } = (e as CustomEvent<{ prompts: { text: string; weight: number }[] }>).detail;
+      panelsCleared = false;
       lastPromptText = [...prompts].sort((a, b) => b.weight - a.weight).map(p => `${p.text} (${p.weight.toFixed(1)})`).join(' • ');
       refreshPromptPanel();
   }));
@@ -699,7 +721,8 @@ function main() {
       leftSidebar.hasRecording = false;
       timeline.resetHistory(true);
       leftSidebar.isShuffling = true;
-      
+      clearTopPanels();
+
       // 1. Ordered Dice Roll for Parameters (GENRE -> STYLE -> MOOD -> KEY -> TEMPO -> METER)
       // Suppress events to prevent premature UI updates
       const currentMood = topToolbar.currentMood;
@@ -809,7 +832,7 @@ function main() {
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
       
-      pdjMidi.setMessage('ENGINE RESET', 'info');
+      clearTopPanels();
       setTimeout(() => { leftSidebar.isResetting = false; }, 800);
   });
 
@@ -876,6 +899,7 @@ function main() {
         rightSidebar.audioLevelR = 0;
         if (playbackState === 'stopped') {
             djEngagingCountdown = false;
+            updatePlayerStatus();
         }
     }
   }));
