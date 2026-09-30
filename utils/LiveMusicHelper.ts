@@ -135,11 +135,17 @@ export function isTraditionalGenre(genre: string): boolean {
 export const REGIONAL_GENRES = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
 const TRADITIONAL_KNOB_GENRES = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual', 'Blues', 'Traditional'];
 
-/** How many knobs the DJ may hold at once: 6 for modern genres, 4 for traditional, 2 for regional. */
-export function getDjKnobLimit(genre: string): number {
-    if (REGIONAL_GENRES.includes(genre)) return DJ_KNOBS_REGIONAL;
-    if (TRADITIONAL_KNOB_GENRES.includes(genre)) return DJ_KNOBS_TRADITIONAL;
-    return DJ_KNOBS_MODERN;
+/**
+ * How many knobs the DJ may hold at once. `maxKnobs` is the DJ preset's setting for modern genres (default 6).
+ * Up to 6 the other families keep their own limits (4 traditional, 2 regional); at 7 to 10 they get 1 to 3 more.
+ * Below 6, modern genres lose knobs first (limit = maxKnobs) and the others follow once it drops under their limit, down to 0.
+ */
+export function getDjKnobLimit(genre: string, maxKnobs = DJ_KNOBS_MODERN): number {
+    const max = Math.max(0, Math.min(10, Math.round(maxKnobs)));
+    const extra = Math.min(3, Math.max(0, max - DJ_KNOBS_MODERN));
+    if (REGIONAL_GENRES.includes(genre)) return Math.min(DJ_KNOBS_REGIONAL, max) + extra;
+    if (TRADITIONAL_KNOB_GENRES.includes(genre)) return Math.min(DJ_KNOBS_TRADITIONAL, max) + extra;
+    return max;
 }
 
 /**
@@ -210,6 +216,7 @@ export function describeVoice(instrument: string): string {
 export interface DjPersonality {
     name: string;
     eagerness: number;
+    maxKnobs?: number;
     channels: Record<ChannelKey, boolean>;
 }
 
@@ -1441,7 +1448,7 @@ export class LiveMusicHelper extends EventTarget {
       const conflicts = (a: string, b: string) =>
           CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
-      const knobLimit = getDjKnobLimit(this.genre);
+      const knobLimit = getDjKnobLimit(this.genre, this.djPersonality?.maxKnobs);
       const chosen: string[] = [];
       const tryAdd = (knob: string) => {
           if (chosen.length >= knobLimit || chosen.includes(knob) || !profile[knob]) return;
@@ -1688,7 +1695,7 @@ export class LiveMusicHelper extends EventTarget {
       // Knobs leaving the mix are pulled out faster so new ones can enter without breaking the knob cap
       const retireStep = Math.max(step, 0.15);
 
-      const knobLimit = getDjKnobLimit(this.genre);
+      const knobLimit = getDjKnobLimit(this.genre, this.djPersonality?.maxKnobs);
       const eagerness = this.djPersonality ? 0.5 + this.djPersonality.eagerness / 100 : 1;
       if (currentStage.targets) {
           // Knobs outside the stage's selection target 0, so at most knobLimit stay engaged

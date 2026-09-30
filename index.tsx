@@ -85,7 +85,7 @@ function main() {
       const { directive, name, config } = e.detail;
       liveMusicHelper.setSpecialInstruction(directive);
       if (config) {
-          liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels });
+          liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6 });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
       }
       pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");

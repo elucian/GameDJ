@@ -88,7 +88,7 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 10. DJ Presets (personalities)
 
-The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft**. Each has its own settings: bass, reverb, filter, BPM offset, active channels, warm-up, eagerness, diversity, pause and **Lyria Temp** (Lyria's temperature, 0.0 to 3.0, default 1.1: lower is more predictable, higher is more varied). The channel switches and eagerness change how the DJ works (benched channels are not used, higher eagerness moves knobs faster). Presets are saved in your browser and restored on restart, together with the last applied personality.
+The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft**. Each has its own settings: bass, reverb, filter, BPM offset, active channels, warm-up, eagerness, diversity, pause, **Max Knobs** (0 to 10, default 6: the most knobs the DJ may hold in modern styles; above 6 traditional and regional styles get 1 to 3 more, below 6 modern styles lose knobs first, then the others, down to 0) and **Lyria Temp** (Lyria's temperature, 0.0 to 3.0, default 1.1: lower is more predictable, higher is more varied). The channel switches and eagerness change how the DJ works (benched channels are not used, higher eagerness moves knobs faster). Presets are saved in your browser and restored on restart, together with the last applied personality.
 
 ## 11. Tips
 

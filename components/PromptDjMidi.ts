@@ -62,6 +62,7 @@ export class PromptDjMidi extends LitElement {
       overflow-y: auto;
       color: #9fb8ad;
       scrollbar-width: thin;
+      scrollbar-color: #555 #000;
     }
     .prompt-box .p-head { color: var(--accent-color); font-weight: 700; letter-spacing: 1px; margin-right: 6px; }
     .prompt-box .p-row { overflow-wrap: anywhere; }
@@ -75,13 +76,14 @@ export class PromptDjMidi extends LitElement {
       /* Removed text-transform: uppercase to support mixed case messages */
       width: 100%;
       position: relative;
-      /* Permanent 4-line message log: newest line at the bottom, older lines fade, long lines are cut with an ellipsis */
+      /* Message log: a fixed 4-line window with a scroll bar; the newest line is at the bottom and older ones fade */
       line-height: 1.5em;
       height: calc(4 * 1.5em + 12px);
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
-      overflow: hidden;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #555 #000;
       padding: 6px 16px;
       border-radius: 4px;
       background: #000;
@@ -102,7 +104,9 @@ export class PromptDjMidi extends LitElement {
       box-sizing: border-box;
     }
 
-    .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 1.5em; flex-shrink: 0; opacity: 0.4; }
+    /* Long messages wrap; a short log sits at the bottom of the window */
+    .log-line { white-space: normal; overflow-wrap: anywhere; min-height: 1.5em; flex-shrink: 0; opacity: 0.4; }
+    .log-line:first-child { margin-top: auto; }
     .log-line.latest { opacity: 1; }
     .log-line.error { color: #FF3B30; }
 
@@ -195,6 +199,14 @@ export class PromptDjMidi extends LitElement {
   @state() private promptInfo = '';
 
   /** Right panel content: the voices, the lyrics (or vocal prompt) and the prompt currently sent to Lyria. */
+  protected updated(changed: Map<string, unknown>) {
+    // Keep the newest message in view
+    if (changed.has('log')) {
+      const box = this.shadowRoot?.querySelector('.display-box') as HTMLElement | null;
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+  }
+
   public setPromptInfo(info: { voices?: string; lyrics?: string; prompt?: string }) {
     if (info.voices !== undefined) this.voicesInfo = info.voices;
     if (info.lyrics !== undefined) this.lyricsInfo = info.lyrics;
@@ -219,7 +231,7 @@ export class PromptDjMidi extends LitElement {
     if (last && last.text !== text && shape(last.text) === shape(text)) {
       this.log = [...this.log.slice(0, -1), { text, type }];
     } else if (last?.text !== text) {
-      this.log = [...this.log, { text, type }].slice(-4);
+      this.log = [...this.log, { text, type }].slice(-60);
     }
   }
 

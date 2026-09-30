@@ -11,6 +11,8 @@ interface DjConfig {
   warmup: number; eagerness: number; diversity: number; pause: number; duration: number;
   /** Lyria temperature (0.0 to 3.0, Lyria's default is 1.1): higher = more varied, lower = more predictable. */
   temperature: number;
+  /** Most knobs the DJ may hold at once in modern styles (default 6). Above 6 traditional and regional styles get 1 to 3 more; below 6 modern styles lose knobs first, then the others. */
+  maxKnobs: number;
 }
 
 @customElement('dj-preset-dialog')
@@ -18,10 +20,10 @@ export class DjPresetDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) show = false;
   @state() private selectedIndex = 0;
   @state() private presets: DjConfig[] = [
-    { name: 'Shadow', bass: 85, reverb: 40, filter: 70, bpm: 0, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 5, eagerness: 60, diversity: 40, pause: 10, duration: 30, temperature: 1.1 },
-    { name: 'Tiësto', bass: 70, reverb: 80, filter: 90, bpm: 4, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 2, eagerness: 90, diversity: 60, pause: 5, duration: 60, temperature: 1.1 },
-    { name: 'Krush', bass: 60, reverb: 90, filter: 50, bpm: -5, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 10, eagerness: 30, diversity: 80, pause: 15, duration: 45, temperature: 1.1 },
-    { name: 'Daft', bass: 80, reverb: 30, filter: 85, bpm: 2, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 3, eagerness: 70, diversity: 50, pause: 8, duration: 40, temperature: 1.1 }
+    { name: 'Shadow', bass: 85, reverb: 40, filter: 70, bpm: 0, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 5, eagerness: 60, diversity: 40, pause: 10, duration: 30, temperature: 1.1, maxKnobs: 6 },
+    { name: 'Tiësto', bass: 70, reverb: 80, filter: 90, bpm: 4, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 2, eagerness: 90, diversity: 60, pause: 5, duration: 60, temperature: 1.1, maxKnobs: 6 },
+    { name: 'Krush', bass: 60, reverb: 90, filter: 50, bpm: -5, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 10, eagerness: 30, diversity: 80, pause: 15, duration: 45, temperature: 1.1, maxKnobs: 6 },
+    { name: 'Daft', bass: 80, reverb: 30, filter: 85, bpm: 2, channels: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true }, warmup: 3, eagerness: 70, diversity: 50, pause: 8, duration: 40, temperature: 1.1, maxKnobs: 6 }
   ];
 
   static styles = css`
@@ -210,7 +212,7 @@ export class DjPresetDialog extends LitElement {
             ${this.renderSlider('Filter', 'filter', 0, 100)} ${this.renderSlider('BPM Off', 'bpm', -20, 20)}
             ${this.renderSlider('Warmup', 'warmup', 0, 20)} ${this.renderSlider('Eager', 'eagerness', 0, 100)}
             ${this.renderSlider('Diversity', 'diversity', 0, 100)} ${this.renderSlider('Pause', 'pause', 0, 30)}
-            ${this.renderSlider('Lyria Temp', 'temperature', 0, 3, 0.1)}
+            ${this.renderSlider('Lyria Temp', 'temperature', 0, 3, 0.1)} ${this.renderSlider('Max Knobs', 'maxKnobs', 0, 10)}
           </div>
           <div class='dialog-buttons'>
             <button class='cancel-btn' @click=${this.cancelSelection}>Cancel</button>
@@ -222,7 +224,7 @@ export class DjPresetDialog extends LitElement {
   }
 
   private renderSlider(label: string, key: keyof DjConfig, min: number, max: number, step = 1) {
-    const val = (this.presets[this.selectedIndex] as any)[key] ?? (key === 'temperature' ? 1.1 : 0);
+    const val = (this.presets[this.selectedIndex] as any)[key] ?? (key === 'temperature' ? 1.1 : key === 'maxKnobs' ? 6 : 0);
     return html`<div class='control'><span class='label'>${label}<span>${step < 1 ? Number(val).toFixed(1) : val}</span></span><input type='range' .min=${min.toString()} .max=${max.toString()} .step=${step.toString()} .value=${val.toString()} @input=${(e: any) => this.updateValue(key, step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value))}></div>`;
   }
 
