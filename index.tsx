@@ -124,10 +124,9 @@ function main() {
     liveMusicHelper.setSpecialInstruction(`VOCAL DIRECTIVE: ${e.detail}`);
     pdjMidi.setMessage(`VOCAL DIRECTIVE SENT`, "info");
     
-    // Switch to VOCALIZATION mode if voices are active
-    if (e.detail !== 'VOCAL CONFIG: None') {
-        liveMusicHelper.setGenerationMode('VOCALIZATION');
-        leftSidebar.primaryMode = 'VOCALIZATION'; // Sync UI
+    // The voice master mode (VOC) is the user's switch: with it off the directive is kept but not sent to Lyria
+    if (e.detail !== 'VOCAL CONFIG: None' && liveMusicHelper.generationMode !== 'VOCALIZATION') {
+        pdjMidi.setMessage('VOICE MODE OFF: VOICES NOT SENT', 'info');
     }
     
     // If we were waiting for the conductor or preparing, try to start

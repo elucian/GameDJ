@@ -474,8 +474,10 @@ export class LiveMusicHelper extends EventTarget {
   public setGenerationMode(mode: MusicGenerationMode) { 
       let effectiveMode = mode;
       // Removed restriction: Allowing VOCALIZATION mode regardless of current instrument state
-      this.generationMode = effectiveMode; 
+      this.generationMode = effectiveMode;
       this.dispatchEvent(new CustomEvent('mode-changed-internal', { detail: effectiveMode }));
+      // Rebuild the instrument instruction: voices are named in it only while the voice master mode is on
+      this.setInstruments(this.instruments);
       this.scheduleRefresh(); 
   }
   
@@ -535,9 +537,9 @@ export class LiveMusicHelper extends EventTarget {
       
       // Update model instructions with the new active instrument set
       const activeInstruments = Object.entries(channels)
-          .filter(([_, ch]) => ch.active && ch.visible !== false)
+          .filter(([_, ch]) => ch.active && ch.visible !== false && (this.voiceMode || !isVocalInstrument(ch.instrument)))
           .map(([_, ch]) => ch.instrument);
-      
+
       const hasVocals = activeInstruments.some(inst => isVocalInstrument(inst));
       
       let instruction: string;
@@ -607,14 +609,12 @@ export class LiveMusicHelper extends EventTarget {
 
   private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 1000);
 
-  public sendVocalSignal(signal: string, durationMs: number = 5000) {
-    // Vocal signal can now be sent freely regardless of mode or instrument state
+  /** The voice master mode: only in VOCALIZATION mode are voices, lyrics and vocal directions sent to Lyria. */
+  private get voiceMode() { return this.generationMode === 'VOCALIZATION'; }
 
-    // Ensure VOCALIZATION mode is active if a voice channel is active
-    if (this.generationMode !== 'VOCALIZATION' && this.isVocalInstrumentActive()) {
-        this.generationMode = 'VOCALIZATION';
-        this.dispatchEvent(new CustomEvent('mode-changed-internal', { detail: 'VOCALIZATION' }));
-    }
+  public sendVocalSignal(signal: string, durationMs: number = 5000) {
+    // Voice master mode (VOCALIZATION) off: no voice instruction goes to Lyria, whatever the voice dialog says
+    if (!this.voiceMode) return;
 
     this.currentVocalSignal = signal;
     this.dispatchEvent(new CustomEvent('vocal-signal-received', { detail: this.currentVocalSignal }));
@@ -771,6 +771,7 @@ Prompt: ${text}`
         if (ch.active && ch.visible !== false && ch.weight > 0.05) {
             const inst = ch.instrument.toLowerCase();
             const isChoir = inst.includes('choir');
+            if (!this.voiceMode && isVocalInstrument(ch.instrument)) return; // voice master mode off: no voices in the prompt
             if (isChoir && this.choirMuted) return;
             if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
 
@@ -799,7 +800,7 @@ Prompt: ${text}`
         evolutionText = 'stable, minimal and steady music';
     }
 
-    if (this.specialInstruction) {
+    if (this.specialInstruction && (this.voiceMode || !/^VOCAL/i.test(this.specialInstruction))) {
         special = this.specialInstruction;
     }
 
