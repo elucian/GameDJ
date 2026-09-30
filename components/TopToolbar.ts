@@ -5,9 +5,9 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { PlaybackState, InstrumentSet, MusicGenerationMode } from '../types';
+import type { PlaybackState, InstrumentSet } from '../types';
 import { isVocalInstrument } from '../utils/LiveMusicHelper';
-import { FALLBACK_POOLS } from '../constants/instruments';
+import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
 
 
 import { uiSounds } from '../utils/UISounds';
@@ -21,8 +21,6 @@ export const MOODS = [
     'Soulful', 'Spiritual', 'Tense', 'Triumphal', 'Uplifting', 'Whimsical'
 ];
 
-
-const VOCAL_MARKERS = ['choir', 'vocal', 'soprano', 'vocals', 'voice', 'tenor', 'baritone', 'female', 'male', 'boy', 'girl', 'bou', 'chant', 'soloist'];
 
 interface StyleSignature {
     bpm: number;
@@ -86,6 +84,61 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
         bpm: 122, bpmRange: [110, 140], meters: ['4/4'], keys: ['E Major', 'A Major', 'G Major', 'D Major', 'B Major', 'C Major'], mode: 'Natural', mood: 'Uplifting',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
         instrumentPools: { lead: ['Electric Guitar', 'Acoustic Guitar'], alto: ['Electric Guitar', 'Piano'], harmonic: ['Piano', 'Electric Guitar'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
+      }
+    }
+  },
+  'Hip Hop': {
+    genre: 'Hip Hop',
+    styles: {
+      'Freestyle Rap': {
+        bpm: 90, bpmRange: [80, 100], meters: ['4/4'], keys: ['C Minor', 'F Minor', 'A Minor', 'G Minor', 'D Minor'], mode: 'Minor', mood: 'Energetic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'Female Rapper', 'MC Vocals'], alto: ['Vocal Chops', 'Piano', 'Saxophone'], harmonic: ['Electric Piano', 'Pads', 'Piano'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
+      },
+      'Boom Bap': {
+        bpm: 92, bpmRange: [85, 98], meters: ['4/4'], keys: ['A Minor', 'D Minor', 'E Minor', 'C Minor', 'G Minor'], mode: 'Minor', mood: 'Groovy',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'MC Vocals', 'Saxophone'], alto: ['Piano', 'Trumpet', 'Vibraphone'], harmonic: ['Electric Piano', 'Piano', 'Organ'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Snare Drum', 'Bass Drum'] }
+      },
+      'Trap': {
+        bpm: 140, bpmRange: [130, 150], meters: ['4/4'], keys: ['F# Minor', 'C Minor', 'G Minor', 'D Minor', 'A Minor'], mode: 'Minor', mood: 'Dark',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'Female Rapper', 'Bell Synth'], alto: ['Vocal Chops', 'Synthesizer', 'Bell Synth'], harmonic: ['Pads', 'Synthesizer', 'Stab Chords'], bass: ['Synth Bass'], rhythm: ['Electronic Drums', 'Cowbell'] }
+      },
+      'Old School': {
+        bpm: 100, bpmRange: [92, 112], meters: ['4/4'], keys: ['C Major', 'G Major', 'E Minor', 'A Minor', 'F Major'], mode: 'Natural', mood: 'Party',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'MC Vocals', 'Synthesizer'], alto: ['Synthesizer', 'Electric Guitar', 'Trumpet'], harmonic: ['Electric Piano', 'Stab Chords', 'Organ'], bass: ['Electric Bass', 'Synth Bass'], rhythm: ['Drum Kit', 'Electronic Drums', 'Congas'] }
+      },
+      'Lo-Fi Hip Hop': {
+        bpm: 78, bpmRange: [65, 90], meters: ['4/4'], keys: ['D Minor', 'A Minor', 'F Major', 'C Major', 'E Minor'], mode: 'Natural', mood: 'Peaceful',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Electric Piano', 'Piano', 'Acoustic Guitar', 'Vibraphone'], alto: ['Saxophone', 'Flute', 'Vibraphone'], harmonic: ['Electric Piano', 'Pads', 'Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Shakers'] }
+      },
+      'G-Funk': {
+        bpm: 94, bpmRange: [86, 102], meters: ['4/4'], keys: ['G Minor', 'D Minor', 'A Minor', 'F Minor'], mode: 'Minor', mood: 'Groovy',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'Synthesizer'], alto: ['Synthesizer', 'Electric Guitar', 'Vocal Chops'], harmonic: ['Electric Piano', 'Organ', 'Pads'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Electronic Drums'] }
+      },
+      'Drill': {
+        bpm: 142, bpmRange: [136, 146], meters: ['4/4'], keys: ['F Minor', 'C# Minor', 'G Minor', 'A Minor'], mode: 'Minor', mood: 'Ominous',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'MC Vocals'], alto: ['Bell Synth', 'Strings', 'Pads'], harmonic: ['Pads', 'Strings', 'Synthesizer'], bass: ['Synth Bass'], rhythm: ['Electronic Drums', 'Industrial Percussion'] }
+      },
+      'Jazz Rap': {
+        bpm: 88, bpmRange: [80, 98], meters: ['4/4'], keys: ['D Minor', 'G Minor', 'Bb Major', 'F Major', 'C Minor'], mode: 'Natural', mood: 'Soulful',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'MC Vocals', 'Trumpet'], alto: ['Saxophone', 'Trumpet', 'Vibraphone', 'Flute'], harmonic: ['Piano', 'Electric Piano'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Drum Kit', 'Snare Drum'] }
+      },
+      'Conscious Rap': {
+        bpm: 86, bpmRange: [78, 96], meters: ['4/4'], keys: ['A Minor', 'E Minor', 'C Minor', 'D Minor', 'F Major'], mode: 'Minor', mood: 'Sentimental',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'Female Rapper', 'MC Vocals'], alto: ['Piano', 'Strings', 'Cello'], harmonic: ['Piano', 'Strings', 'Electric Piano'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Drum Kit', 'Percussion'] }
+      },
+      'Cloud Rap': {
+        bpm: 130, bpmRange: [120, 140], meters: ['4/4'], keys: ['E Minor', 'A Minor', 'F# Minor', 'D Major'], mode: 'Minor', mood: 'Dreamy',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Male Rapper', 'Female Rapper', 'Vocal Chops'], alto: ['Bell Synth', 'Pads', 'Vocal Chops'], harmonic: ['Pads', 'Synthesizer', 'Electric Piano'], bass: ['Synth Bass'], rhythm: ['Electronic Drums'] }
       }
     }
   },
@@ -883,7 +936,19 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
   }
 };
 
-const GENRE_MAP_MODERN = ['Jazz', 'Pop', 'Blues', 'Electronic', 'Rock', 'Ambient', 'Gaming'];
+/**
+ * Generous Band pool for a genre: every instrument used by any of its styles. Modern genres also share their
+ * pools with each other (a sax in a rock band, a piano in trap...), traditional and regional genres stay authentic.
+ */
+export function getBandPool(genre: string, channel: keyof InstrumentSet): string[] {
+  const genres = GENRE_MAP_MODERN.includes(genre) && !NON_MIXING_MODERN.includes(genre) ? GENRE_MAP_MODERN.filter(g => !NON_MIXING_MODERN.includes(g)) : [genre];
+  const all = new Set<string>();
+  genres.forEach(g => Object.values(MUSIC_DATA[g]?.styles || {}).forEach(st => (st.instrumentPools[channel] || []).forEach(i => { if (g === genre || !isVocalInstrument(i)) all.add(i); })));
+  return Array.from(all);
+}
+
+const NON_MIXING_MODERN = ['Ambient', 'Gaming'];
+const GENRE_MAP_MODERN = ['Hip Hop', 'Jazz', 'Pop', 'Blues', 'Electronic', 'Rock', 'Ambient', 'Gaming'];
 const GENRE_MAP_TRADITIONAL = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual'];
 const GENRE_MAP_REGIONAL = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
 
@@ -1095,43 +1160,48 @@ export class TopToolbar extends LitElement {
     return this.genre;
   }
 
-  public initializeSession(forceDefault: boolean = false): boolean {
-    if (forceDefault) {
-      this.reset();
-      return false;
+  /** DJ picks the master mood before the baton is raised (respects the mood lock). */
+  public djPickMood(): string {
+    if (this.locked.mood) return this.currentMood;
+    const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];
+    this.currentMood = (sig?.mood && Math.random() < 0.6) ? sig.mood : MOODS[Math.floor(Math.random() * MOODS.length)];
+    this.dispatch('mood-changed', this.currentMood);
+    return this.currentMood;
+  }
+
+  /**
+   * DJ variation during play: nudges tempo, key or rhythm (meter) within what the style allows.
+   * Returns a short description of what changed, or null when everything is locked.
+   */
+  public djVary(): string | null {
+    const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];
+    if (!sig) return null;
+    const options: Array<'tempo' | 'key' | 'rhythm'> = [];
+    if (!this.locked.tempo) { options.push('tempo'); if (sig.meters.length > 1) options.push('rhythm'); }
+    if (!this.locked.key && sig.keys.length > 1) options.push('key');
+    if (options.length === 0) return null;
+
+    const pick = options[Math.floor(Math.random() * options.length)];
+    if (pick === 'tempo') {
+        const [lo, hi] = sig.bpmRange;
+        const delta = Math.round((Math.random() * 2 - 1) * Math.max(4, this.bpm * 0.08));
+        const next = Math.max(lo, Math.min(hi, this.bpm + delta));
+        if (next === this.bpm) return null;
+        this.bpm = next;
+        this.dispatch('bpm-changed', this.bpm);
+        return `TEMPO ${this.bpm} BPM`;
     }
-    const cached = getCachedGenreAndStyle();
-    if (cached && !this.locked.genre && !this.locked.style) {
-      this.genre = cached.genre;
-      this.musicStyle = cached.style;
-      const genreData = MUSIC_DATA[this.genre];
-      const sig = genreData?.styles[this.musicStyle];
-      if (sig) {
-        if (!this.locked.tempo) {
-          this.bpm = sig.bpm;
-          this.meter = sig.meters[0];
-          this.bpmRange = sig.bpmRange;
-          this.dispatch('bpm-changed', this.bpm);
-          this.dispatch('meter-changed', this.meter);
-        }
-        if (!this.locked.key) {
-          this.key = sig.keys[0];
-          this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
-          this.dispatch('key-changed', { key: this.key, mode: this.mode });
-        }
-        if (!this.locked.mood && sig.mood) {
-          this.currentMood = sig.mood;
-          this.dispatch('mood-changed', this.currentMood);
-        }
-      }
-      this.dispatch('genre-changed', this.genre);
-      this.dispatch('style-changed', this.musicStyle);
-      (this as any).requestUpdate();
-      return true;
-    } else {
-      this.reset();
-      return false;
+    if (pick === 'rhythm') {
+        const others = sig.meters.filter((m: string) => m !== this.meter);
+        this.meter = others[Math.floor(Math.random() * others.length)];
+        this.dispatch('meter-changed', this.meter);
+        return `RHYTHM ${this.meter}`;
     }
+    const others = sig.keys.filter((k: string) => k !== this.key);
+    this.key = others[Math.floor(Math.random() * others.length)];
+    this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
+    this.dispatch('key-changed', { key: this.key, mode: this.mode });
+    return `KEY ${this.key}`;
   }
 
   public reset() {
@@ -1169,7 +1239,7 @@ export class TopToolbar extends LitElement {
      this.randomizeInstruments();
   }
 
-  public async randomizeInstruments(locks?: { manifest: boolean; channels: boolean }, currentInstruments?: InstrumentSet, mode: MusicGenerationMode = 'QUALITY', isLiraMode: boolean = false) {
+  public async randomizeInstruments(locks?: { manifest: boolean; channels: boolean }, currentInstruments?: InstrumentSet, isLiraMode: boolean = false) {
       const genreDef = MUSIC_DATA[this.genre];
       const sig = genreDef.styles[this.musicStyle];
       if (!sig) return;
@@ -1178,11 +1248,19 @@ export class TopToolbar extends LitElement {
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
       const usedInstruments = new Set<string>();
 
+      // Lyria: orchestra/voice/choir pools for the genre. Band: the style pool, sometimes widened with the
+      // genre-wide pool so the DJ / dice roll can land on interesting combinations.
+      const poolFor = (ch: typeof channels[number], widen: boolean): string[] => {
+          if (isLiraMode) return getLyriaPool(this.genre, ch);
+          const stylePool = sig.instrumentPools[ch] || [];
+          const pool = widen ? Array.from(new Set([...stylePool, ...getBandPool(this.genre, ch)])) : stylePool;
+          return pool.length > 0 ? pool : (FALLBACK_POOLS[ch] || []);
+      };
+
       // First pass: handle locked channels to reserve their instruments
       if (locks?.channels && currentInstruments) {
           channels.forEach(ch => {
-              let pool = sig.instrumentPools[ch] || [];
-              if (pool.length === 0) pool = FALLBACK_POOLS[ch] || [];
+              const pool = poolFor(ch, true);
               const cur = currentInstruments[ch].instrument;
               if (cur && pool.includes(cur)) {
                   chosenInstruments[ch] = cur;
@@ -1195,10 +1273,7 @@ export class TopToolbar extends LitElement {
       channels.forEach(ch => {
           if (chosenInstruments[ch] !== undefined) return;
 
-          let pool = sig.instrumentPools[ch] || [];
-          if (pool.length === 0) {
-              pool = FALLBACK_POOLS[ch] || [];
-          }
+          const pool = poolFor(ch, Math.random() < 0.35);
 
           // Filter out already used instruments to ensure uniqueness across channels
           let availablePool = pool.filter((item: string) => !usedInstruments.has(item));
@@ -1224,55 +1299,6 @@ export class TopToolbar extends LitElement {
           pools: sig.instrumentPools,
           locks: locks
       });
-  }
-
-  public async performWarmup() {
-      const genreDef = MUSIC_DATA[this.genre];
-      if (!genreDef) return;
-
-      const availableStyles = Object.keys(genreDef.styles);
-      let effectiveStyle = this.musicStyle;
-      
-      if (!availableStyles.includes(effectiveStyle)) {
-          effectiveStyle = availableStyles[0];
-          this.musicStyle = effectiveStyle;
-          this.locked.style = false; 
-      }
-
-      this.dispatch('genre-changed', this.genre);
-      this.dispatch('style-changed', effectiveStyle);
-      this.dispatch('mood-changed', this.currentMood);
-      
-      await new Promise(r => setTimeout(r, 100));
-
-      const sig = genreDef.styles[effectiveStyle];
-      if (!sig) return;
-
-      if (!this.locked.key) {
-          this.key = sig.keys[0];
-          this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
-          this.dispatch('key-changed', { key: this.key, mode: this.mode });
-      }
-
-      if (!this.locked.tempo) {
-          this.meter = sig.meters[0];
-          this.dispatch('meter-changed', this.meter);
-      }
-  }
-
-  public applySessionConfig(config: any) {
-      if (!this.locked.genre) this.genre = config.genre;
-      
-      const genreData = MUSIC_DATA[this.genre];
-      const availableStyles = genreData ? Object.keys(genreData.styles) : [];
-      if (!this.locked.style || !availableStyles.includes(this.musicStyle)) {
-          this.musicStyle = availableStyles.includes(config.style) ? config.style : (availableStyles[0] || 'Acid Jazz');
-      }
-
-      if (!this.locked.tempo) { this.bpm = config.bpm; this.meter = config.meter; this.dispatch('bpm-changed', this.bpm); this.dispatch('meter-changed', this.meter); }
-      if (!this.locked.key) { this.key = config.key; this.mode = config.mode; }
-      saveCachedGenreAndStyle(this.genre, this.musicStyle);
-      (this as any).requestUpdate();
   }
 
   private onBpmChange(e: Event) { const input = e.target as HTMLInputElement; this.bpm = parseInt(input.value, 10); uiSounds.playTick(); this.dispatch('bpm-changed', this.bpm); }

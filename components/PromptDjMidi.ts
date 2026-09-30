@@ -146,15 +146,6 @@ export class PromptDjMidi extends LitElement {
     (this as any).requestUpdate();
   }
 
-  public updatePromptWeight(text: string, weight: number) {
-      const prompt = Array.from(this.prompts.values()).find(p => p.text === text);
-      if (prompt) {
-          prompt.weight = weight;
-          prompt.volume = weight / 2;
-          (this as any).requestUpdate();
-      }
-  }
-
   public reset() {
     for (const prompt of this.prompts.values()) {
         prompt.weight = 0;
@@ -203,10 +194,6 @@ export class PromptDjMidi extends LitElement {
     (this as unknown as HTMLElement).dispatchEvent(
       new CustomEvent('prompts-changed', { detail: this.prompts }),
     );
-  }
-
-  public addFilteredPrompt(prompt: string) {
-    this.filteredPrompts = new Set([...this.filteredPrompts, prompt]);
   }
 
   render() {

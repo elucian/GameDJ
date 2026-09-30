@@ -8,17 +8,12 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
 import './MasterVolumePanel';
-import { MUSIC_DATA } from './TopToolbar';
+import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
-import { FALLBACK_POOLS } from '../constants/instruments';
-import { isVocalInstrument } from '../utils/LiveMusicHelper';
+import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
+import { isVocalInstrument, isTraditionalGenre } from '../utils/LiveMusicHelper';
 
-const LIRA_ORCHESTRA = ['String Orchestra', 'Chamber Strings', 'Symphony Strings', 'Violin Section', 'Cello Ensemble'].sort();
-const LIRA_SOLO = ['Solo Male', 'Solo Female', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Solo Cello', 'Solo Violin', 'Solo Piano', 'Solo Flute', 'Solo Trumpet', 'Solo Saxophone', 'Solo Guitar', 'Soloist'].sort();
-const LIRA_CHOIR = ['Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble'].sort();
-const LIRA_BRASS = ['Military Fanfare', 'Park Orchestra', 'Jazz Formation', 'Brass Section', 'Low Brass', 'Tuba', 'Trombones', 'French Horns', 'Cinematic Brass', 'Bass Saxophone', 'Brass Quintet'].sort();
-const LIRA_DRUMS = ['Timpani & Drums', 'Orchestral Percussion', 'Cinematic Drums', 'Taiko Drums', 'Snare Ensemble'].sort();
 
 const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34];
 
@@ -27,16 +22,15 @@ export class RightSidebar extends LitElement {
   @property({ type: String }) genre: string = 'Pop';
   @property({ type: String }) musicStyle: string = 'Synth-Pop';
 
+  // The dropdowns only ever offer recommended instruments: the orchestra/voice/choir pool of the genre on the
+  // Lyria tab, and the generous genre pool on the Band tab.
   private getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
+      if (this.currentTab === 'Lyria') return getLyriaPool(this.genre, channel);
+
       const genreDef = MUSIC_DATA[this.genre];
       if (!genreDef) return FALLBACK_POOLS[channel] || [];
-      
-      const allInstruments = new Set<string>();
-      Object.values(genreDef.styles).forEach(style => {
-          (style.instrumentPools[channel] || []).forEach(inst => allInstruments.add(inst));
-      });
-      
-      const pool = Array.from(allInstruments);
+
+      const pool = getBandPool(this.genre, channel);
       if (pool.length > 0) return pool;
 
       // Restrict fallback for traditional genres
@@ -344,8 +338,13 @@ export class RightSidebar extends LitElement {
       display: flex; flex-direction: column; align-items: center; gap: 0; cursor: pointer; pointer-events: auto;
     }
     
-    .switch-unit.disabled { 
-      cursor: not-allowed; pointer-events: none; opacity: 0.4;
+    /* Disabled: the switch body goes gray, but a lit LED stays lit (brighter) so the state is still readable */
+    .switch-unit.disabled { cursor: not-allowed; pointer-events: none; }
+    .switch-unit.disabled .switch-label,
+    .switch-unit.disabled .switch-recess { opacity: 0.4; filter: grayscale(1); }
+    .switch-unit.disabled .switch-integrated-box { border-color: #222; }
+    .switch-unit.disabled.on .led-dot {
+      background-color: #ff5a5a; box-shadow: 0 0 10px #ff4444, 0 0 3px #ffb0b0;
     }
 
     .switch-label {
@@ -391,20 +390,12 @@ export class RightSidebar extends LitElement {
   @property({ type: Boolean }) conductorActive = false;
   @property({ type: Boolean }) genreLocked = false;
   
-  @state() private currentPools: any = {};
-  @state() private currentStyleManifest: any = { lead: true, alto: true, harmonic: true, bass: true, rhythm: true };
   @state() private channelsLocked = false;
   @state() private manifestLocked = false;
   @state() private durationIndex = 2; 
   @property({ type: Number }) evolution = 0; 
   
   @property({ type: String }) currentTab: 'Band' | 'Lyria' = 'Band';
-
-  @state() private dynamicLead = [...FALLBACK_POOLS.lead, 'Solo Male', 'Solo Female'];
-  @state() private dynamicAlto = [...FALLBACK_POOLS.alto];
-  @state() private dynamicHarmonic = [...FALLBACK_POOLS.harmonic];
-  @state() private dynamicBass = [...FALLBACK_POOLS.bass];
-  @state() private dynamicRhythm = [...FALLBACK_POOLS.rhythm];
 
   @state() private savedWeights: Record<string, number> = { lead: 1, alto: 1, harmonic: 1, bass: 1, rhythm: 1 };
 
@@ -430,7 +421,7 @@ export class RightSidebar extends LitElement {
                   st.active = false;
                   st.instrument = "";
               } else {
-                  st.instrument = this.getAllForChannel(channelToValidate)[0];
+                  st.instrument = this.getRecommendedInstruments(channelToValidate)[0];
                   st.active = true;
                   st.visible = true;
               }
@@ -451,7 +442,7 @@ export class RightSidebar extends LitElement {
                       st.active = false;
                       st.instrument = "";
                   } else {
-                      st.instrument = this.getAllForChannel(ch)[0];
+                      st.instrument = this.getRecommendedInstruments(ch)[0];
                       st.active = true;
                       st.visible = true;
                   }
@@ -472,71 +463,20 @@ export class RightSidebar extends LitElement {
       this.dispatchChannelsChanged();
   }
 
-  private ensureInstrumentExists(channel: keyof InstrumentSet, instrument: string) {
-      if (!instrument) return;
-      const list = this.getDynamicList(channel);
-      if (!list.includes(instrument)) {
-          const newList = [...list, instrument].sort();
-          this.setDynamicList(channel, newList);
-      }
-  }
-
   private validateCurrentInstrument(channel: keyof InstrumentSet, st: any) {
       if (!st.instrument) return;
       const recommended = this.getRecommendedInstruments(channel);
       
       // If it's in recommended (style pool or fallback), it's valid — keep it
       if (recommended.includes(st.instrument)) return;
-      
-      // Otherwise check against the full dynamic list
-      const list = this.getDynamicList(channel);
-      if (list.length > 0 && !list.includes(st.instrument)) {
-          // Prefer recommended pool over dynamic list
-          st.instrument = recommended.length > 0 
-              ? recommended[Math.floor(Math.random() * recommended.length)]
-              : list[Math.floor(Math.random() * list.length)];
-      }
-  }
 
-  private getDynamicList(channel: keyof InstrumentSet): string[] {
-    if (this.currentTab === 'Lyria') {
-        switch(channel) {
-            case 'lead': return LIRA_ORCHESTRA;
-            case 'alto': return LIRA_SOLO;
-            case 'harmonic': return LIRA_CHOIR;
-            case 'bass': return LIRA_BRASS;
-            case 'rhythm': return LIRA_DRUMS;
-        }
-    }
-    switch(channel) {
-        case 'lead': return this.dynamicLead;
-        case 'alto': return this.dynamicAlto;
-        case 'harmonic': return this.dynamicHarmonic;
-        case 'bass': return this.dynamicBass;
-        case 'rhythm': return this.dynamicRhythm;
-    }
-  }
-
-  private setDynamicList(channel: keyof InstrumentSet, list: string[]) {
-    switch(channel) {
-        case 'lead': this.dynamicLead = list; break;
-        case 'alto': this.dynamicAlto = list; break;
-        case 'harmonic': this.dynamicHarmonic = list; break;
-        case 'bass': this.dynamicBass = list; break;
-        case 'rhythm': this.dynamicRhythm = list; break;
-    }
+      // Anything else is replaced by a recommended instrument
+      if (recommended.length > 0) st.instrument = recommended[Math.floor(Math.random() * recommended.length)];
   }
 
   public applyMatrixUpdate(detail: { manifest: any, instruments: any, weights?: any, style: string, pools: any }) {
-      this.currentPools = detail.pools || {};
-      this.currentStyleManifest = detail.manifest;
       
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-      channels.forEach(ch => {
-          const pool = this.currentPools[ch] || [];
-          pool.forEach((inst: string) => this.ensureInstrumentExists(ch, inst));
-      });
-
       const newSettings = { ...this.settings };
       channels.forEach(ch => {
           if (!this.channelsLocked) {
@@ -551,20 +491,6 @@ export class RightSidebar extends LitElement {
           }
       });
       this.auditAndCommit(newSettings);
-  }
-
-  public applySessionConfig(config: any) {
-      const newSettings = { ...this.settings };
-      const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-      channels.forEach(ch => {
-          if (!this.manifestLocked) newSettings[ch].visible = config.manifest[ch] === true;
-          if (!this.channelsLocked) newSettings[ch].instrument = config.instruments[ch] || "";
-      });
-      this.auditAndCommit(newSettings);
-      if (config.durationIndex !== undefined && !this.manifestLocked) {
-          this.durationIndex = config.durationIndex;
-          (this as any).requestUpdate();
-      }
   }
 
   public setDuration(mins: number) {
@@ -592,10 +518,6 @@ export class RightSidebar extends LitElement {
     this.dispatch('locks-changed', this.locks);
   }
 
-  private getAllForChannel(channel: keyof InstrumentSet): string[] {
-    return this.getDynamicList(channel);
-  }
-
   public reset() {
     this.evolution = 0;
     this.dispatch('evolution-changed', 0);
@@ -617,6 +539,28 @@ export class RightSidebar extends LitElement {
     const newSettings = { ...this.settings };
     const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
     channels.forEach(ch => { if (!this.channelsLocked) newSettings[ch].weight = 0; });
+    this.auditAndCommit(newSettings);
+  }
+
+  /** Dice roll: bring every channel (with an instrument) back into the manifest and switch it on. */
+  public enableAllChannels() {
+    if (this.manifestLocked) return;
+    const newSettings = { ...this.settings };
+    (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
+        if (newSettings[ch].instrument) { newSettings[ch].visible = true; newSettings[ch].active = true; }
+    });
+    this.auditAndCommit(newSettings);
+  }
+
+  /** DJ manifesto: only the `keep` channels stay in the manifest, the rest are disabled completely. */
+  public applyDjManifest(keep: Array<keyof InstrumentSet>) {
+    if (this.manifestLocked) return;
+    const newSettings = { ...this.settings };
+    (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
+        const on = keep.includes(ch) && !!newSettings[ch].instrument;
+        newSettings[ch].visible = on;
+        newSettings[ch].active = on;
+    });
     this.auditAndCommit(newSettings);
   }
 
@@ -683,15 +627,15 @@ export class RightSidebar extends LitElement {
     `;
   }
 
-  private renderChannel(label: string, key: keyof InstrumentSet, fallbackOptions: string[]) {
+  private renderChannel(label: string, key: keyof InstrumentSet) {
     const ch = this.settings[key];
     const isInteractionDisabled = this.playbackState === 'playing';
     
     // Recommended are those in the current pool (style specific)
     const recommended = this.getRecommendedInstruments(key);
     
-    // Ensure the current instrument is always available in the dropdown to avoid empty state
-    const allUnique = FALLBACK_POOLS[key];
+    // Keep the current instrument selectable so the dropdown is never blank
+    const options = ch.instrument && !recommended.includes(ch.instrument) ? [ch.instrument, ...recommended] : recommended;
     
     return html`
       <div class="channel-group ${!ch.active ? 'deactivated' : ''}" style="--channel-color: var(--ch-${key})">
@@ -700,8 +644,7 @@ export class RightSidebar extends LitElement {
           <div class="row">
             <input type="checkbox" class="channel-toggle" .checked=${ch.active} ?disabled=${!ch.instrument || isInteractionDisabled} @change=${(e: Event) => this.onActiveChange(key, e)}>
             <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} ?disabled=${isInteractionDisabled}>
-              ${recommended.length > 0 ? html`<optgroup label="RECOMMENDED">${recommended.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}</optgroup>` : ''}
-              <optgroup label="ALL INSTRUMENTS">${allUnique.map(inst => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}</optgroup>
+              ${options.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}
             </select>
           </div>
           <div class="weight-slider"><input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} ?disabled=${isInteractionDisabled} @input=${(e: any) => { 
@@ -725,19 +668,10 @@ export class RightSidebar extends LitElement {
       uiSounds.playTick();
       this.currentTab = tab;
       const newSettings = { ...this.settings };
-      if (tab === 'Lyria') {
-         newSettings.lead.instrument = LIRA_ORCHESTRA[Math.floor(Math.random() * LIRA_ORCHESTRA.length)];
-         newSettings.alto.instrument = LIRA_SOLO[Math.floor(Math.random() * LIRA_SOLO.length)];
-         newSettings.harmonic.instrument = LIRA_CHOIR[Math.floor(Math.random() * LIRA_CHOIR.length)];
-         newSettings.bass.instrument = LIRA_BRASS[Math.floor(Math.random() * LIRA_BRASS.length)];
-         newSettings.rhythm.instrument = LIRA_DRUMS[Math.floor(Math.random() * LIRA_DRUMS.length)];
-      } else {
-         newSettings.lead.instrument = FALLBACK_POOLS.lead[0];
-         newSettings.alto.instrument = FALLBACK_POOLS.alto[0];
-         newSettings.harmonic.instrument = FALLBACK_POOLS.harmonic[0];
-         newSettings.bass.instrument = FALLBACK_POOLS.bass[0];
-         newSettings.rhythm.instrument = FALLBACK_POOLS.rhythm[0];
-      }
+      const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)] || '';
+      (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
+          newSettings[ch].instrument = pick(this.getRecommendedInstruments(ch));
+      });
       this.auditAndCommit(newSettings);
       this.dispatchChannelsChanged();
   }
@@ -759,17 +693,17 @@ export class RightSidebar extends LitElement {
       
       <div class="content">
         ${this.currentTab === 'Band' ? html`
-            ${this.renderChannel('LEAD', 'lead', this.dynamicLead)}
-            ${this.renderChannel('ALTO', 'alto', this.dynamicAlto)}
-            ${this.renderChannel('HARMONIC', 'harmonic', this.dynamicHarmonic)}
-            ${this.renderChannel('BASS', 'bass', this.dynamicBass)}
-            ${this.renderChannel('RHYTHM', 'rhythm', this.dynamicRhythm)}
+            ${this.renderChannel('LEAD', 'lead')}
+            ${this.renderChannel('ALTO', 'alto')}
+            ${this.renderChannel('HARMONIC', 'harmonic')}
+            ${this.renderChannel('BASS', 'bass')}
+            ${this.renderChannel('RHYTHM', 'rhythm')}
         ` : html`
-            ${this.renderChannel('ORCHESTRA', 'lead', LIRA_ORCHESTRA)}
-            ${this.renderChannel('SOLO', 'alto', LIRA_SOLO)}
-            ${this.renderChannel('CHOIR', 'harmonic', LIRA_CHOIR)}
-            ${this.renderChannel('BRASS', 'bass', LIRA_BRASS)}
-            ${this.renderChannel('DRUMS', 'rhythm', LIRA_DRUMS)}
+            ${this.renderChannel('ORCHESTRA', 'lead')}
+            ${this.renderChannel('SOLO', 'alto')}
+            ${this.renderChannel('CHOIR', 'harmonic')}
+            ${this.renderChannel('BRASS', 'bass')}
+            ${this.renderChannel('DRUMS', 'rhythm')}
         `}
       </div>
 

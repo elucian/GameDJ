@@ -6,6 +6,8 @@ export class VocalDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) show = false;
   @property({ type: String }) genre = 'Pop';
   
+  /** Lyrics the DJ (or you) wrote for this song: real words in the genre's language, or open vowels. */
+  @property({ type: String }) vocalText = '';
   @state() private soloVolume = 80;
   @state() private choirVolume = 80;
   @state() private activeSoloVoices = {
@@ -15,7 +17,7 @@ export class VocalDialog extends LitElement {
     'Baritone': false
   };
   @state() private selectedChoir = 'None';
-  private choirOptions = ['None', 'Church', 'Military', 'Youth', 'Children', 'Mixed'];
+  private choirOptions = ['None', 'Church', 'Chamber', 'Military', 'Youth', 'Children', 'Mixed'];
 
   static styles = css`
     :host { pointer-events: none; display: block; }
@@ -174,6 +176,10 @@ export class VocalDialog extends LitElement {
               <input type="range" min="0" max="100" .value=${this.choirVolume} @input=${(e: any) => this.choirVolume = parseInt(e.target.value)}>
             </div>
             
+            <span class="label">LYRICS</span>
+            <textarea rows="5" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
+                      .value=${this.vocalText} @input=${(e: any) => this.vocalText = e.target.value}></textarea>
+
             <div class="dialog-buttons">
                 <button class="cancel-btn" @click=${() => this.cancelSelection()}>Cancel</button>
                 <button class="apply-btn" @click=${() => this.applySelection()}>Apply</button>
@@ -185,6 +191,14 @@ export class VocalDialog extends LitElement {
 
   private toggleSolo(voice: keyof typeof this.activeSoloVoices) {
       this.activeSoloVoices = { ...this.activeSoloVoices, [voice]: !this.activeSoloVoices[voice] };
+  }
+
+  /** The DJ sets the voice options itself when it picks a voice channel. */
+  public djConfigure(solos: string[], choir: string) {
+      this.activeSoloVoices = { Soprano: false, Alto: false, Tenor: false, Baritone: false };
+      solos.forEach(v => { if (v in this.activeSoloVoices) this.activeSoloVoices[v as keyof typeof this.activeSoloVoices] = true; });
+      this.selectedChoir = this.choirOptions.includes(choir) ? choir : 'None';
+      this.applySelection();
   }
 
   private cancelSelection() {
@@ -218,6 +232,7 @@ export class VocalDialog extends LitElement {
         : 'VOCAL CONFIG: None';
       
       this.dispatchEvent(new CustomEvent('send-vocal-command', { detail: directive }));
+      this.dispatchEvent(new CustomEvent('lyrics-set', { detail: this.vocalText, bubbles: true, composed: true }));
       window.dispatchEvent(new CustomEvent('vocal-state-changed', { 
           detail: { active: active }
       }));

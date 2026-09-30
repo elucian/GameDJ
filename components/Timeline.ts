@@ -588,7 +588,6 @@ export class Timeline extends LitElement {
     const isRecording = this.playbackState === 'recording';
     const isPlaying = this.playbackState === 'playing';
     const isPaused = this.playbackState === 'paused';
-    const isLive = isRecording || this.playbackState === 'warmup' || this.playbackState === 'preparing';
 
     // RED cursor = buffer write head (ahead) — where Lyria is generating music
     const writeHeadPct = (this.elapsedSeconds / duration) * 100;

@@ -20,11 +20,17 @@ interface PerformancePlanStage {
     channelWeights: { lead: number; alto: number; harmonic: number; bass: number; rhythm: number };
     formation: Formation;
     featured: ChannelKey | null;
+    type?: string;
 }
 
 // === DJ RULES ===
-// The DJ may hold at most this many knobs above zero at any moment. Every other knob is driven to 0.
-const MAX_DJ_KNOBS = 4;
+// The DJ may hold only a limited number of knobs above zero at any moment; every other knob is driven to 0.
+// The limit depends on the genre family: modern = 6, traditional = 4, regional = 2.
+const DJ_KNOBS_MODERN = 6;
+const DJ_KNOBS_TRADITIONAL = 4;
+const DJ_KNOBS_REGIONAL = 2;
+// When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
+const USER_KNOB_HOLD_MS = 30000;
 // Knobs are seasoning, not the main course: the DJ never pushes a knob past this value.
 const DJ_KNOB_CEILING = 1.2;
 // Knob pairs that pull the music in opposite directions — the DJ never engages both at once.
@@ -73,6 +79,7 @@ interface RecordingSegment {
 export const VOCAL_STRINGS = [
   'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Soloist',
   'Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble',
+  'Male Rapper', 'Female Rapper', 'MC Vocals', 'Duet Voices',
   'Soprano Voice', 'Coral Voices', 'Coral Bass', 'Solo Voice', 'Vocal Chops', 
   'Male Monastic Choir', 'Powerhouse Soloist', 'Bright Female Vocals', 
   'Processed Vocals', 'Children\'s Choir', 'Gospel Vocals', 'Distant Female Voice', 
@@ -95,17 +102,8 @@ export function isVocalInstrument(instrumentName: string | undefined | null): bo
     return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase()));
 }
 
-const VOWELS = ['A', 'E', 'I', 'O', 'U'];
-
-// A curated list of possible instruments the AI might mention to aid parsing
-const KNOWN_INSTRUMENTS = [
-  'Synthesizer', 'Electric Guitar', 'Acoustic Guitar', 'Saxophone', 'Trumpet', 'Clarinet', 'Flute', 'Violin', 'Cello', 'Harmonica', 
-  'Piano', 'Electric Piano', 'Organ', 'Strings', 'Pads', 'Brass Section', 'Choir', 'Bass Guitar', 'Double Bass', 'Synth Bass', 'Tuba',
-  'Drum Kit', 'Electronic Drums', 'Percussion', 'Tabla', 'Djembe', 'Taiko Drums', 'Recorder', 'Mandocello', 'Banjo', 'Sitar', 'Koto', 
-  'Accordion', 'Oboe', 'Bassoon', 'Timpani', 'Kalimba', 'Didgeridoo', 'Whistle', 'Bell Synth', 'Electric Violin', 'Pan Flute', 'Pipe Flute', 'Ocarina'
-];
-
 export const SONG_REFERENCES: Record<string, string[]> = {
+  'Hip Hop': ['Lose Yourself', 'Juicy', 'N.Y. State of Mind', 'Nuthin But a G Thang', 'Sicko Mode', 'Alright', 'Freestyle cypher energy', 'Kendrick Lamar style', 'Nas boom bap aesthetic', 'J Dilla lo-fi groove', 'Wu-Tang Clan grit'],
   'Pop': ['Blinding Lights', 'Flowers', 'As It Was', 'Levitating', 'Anti-Hero', 'Shape of You', 'Bad Guy', 'Cruel Summer', 'Vampire', 'Taylor Swift style', 'The Weeknd vibe', 'Max Martin production style', 'Jack Antonoff aesthetic'],
   'R&B': ['Kill Bill', 'Snooze', 'Adorn', 'Cuff It', 'No Guidance', 'Blame It', 'Ordinary People', 'Creepin', 'Earned It', 'SZA influence', 'Frank Ocean aesthetic', 'Prince-style arrangement', 'Stevie Wonder harmony'],
   'Jazz': ['Take Five', 'So What', 'Autumn Leaves', 'My Funny Valentine', 'Fly Me To The Moon', 'Blue In Green', 'Cantaloupe Island', 'Miles Davis style', 'Coltrane changes', 'Duke Ellington orchestration', 'Bill Evans voicings'],
@@ -128,6 +126,81 @@ export function isTraditionalGenre(genre: string): boolean {
     return TRADITIONAL_GENRES.includes(genre);
 }
 
+export const REGIONAL_GENRES = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
+const TRADITIONAL_KNOB_GENRES = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual', 'Blues', 'Traditional'];
+
+/** How many knobs the DJ may hold at once: 6 for modern genres, 4 for traditional, 2 for regional. */
+export function getDjKnobLimit(genre: string): number {
+    if (REGIONAL_GENRES.includes(genre)) return DJ_KNOBS_REGIONAL;
+    if (TRADITIONAL_KNOB_GENRES.includes(genre)) return DJ_KNOBS_TRADITIONAL;
+    return DJ_KNOBS_MODERN;
+}
+
+/**
+ * DJ pick between Lyria (orchestra) and Band. Lyria-native genres split evenly; modern genres
+ * mostly go to the Band so the DJ doesn't default to Lyria.
+ */
+export function chooseDjTab(genre: string): 'Lyria' | 'Band' {
+    return Math.random() < (LYRIA_GENRES.includes(genre) ? 0.5 : 0.2) ? 'Lyria' : 'Band';
+}
+
+// Language the DJ writes lyrics in: the native language for regional genres, classical/liturgical languages for
+// traditional ones, and the popular languages of the charts for modern music.
+const GENRE_LANGUAGES: Record<string, string[]> = {
+    'African': ['Swahili', 'Zulu'], 'Indian': ['Hindi'], 'Irish': ['Irish Gaelic', 'English'], 'Spanish': ['Spanish'],
+    'Oriental': ['Mandarin Chinese', 'Japanese'], 'Romanian': ['Romanian'], 'Western': ['English'], 'Hawaiian': ['Hawaiian'],
+    'Classic': ['Italian', 'German', 'Latin'], 'Opera': ['Italian', 'German', 'French'], 'Renascentist': ['Latin', 'Italian'],
+    'Victorian': ['English'], 'Spiritual': ['Latin', 'English'], 'Marching': ['English', 'German'], 'Blues': ['English']
+};
+const POPULAR_LANGUAGES: Array<[string, number]> = [['English', 60], ['Spanish', 12], ['French', 8], ['Portuguese', 8], ['Korean', 6], ['Italian', 6]];
+// Genres where singing open vowels (Ah, Oh, Ooh) instead of words is a natural choice, with the odds of doing so.
+const VOWEL_ODDS: Record<string, number> = { 'Ambient': 0.7, 'Classic': 0.25, 'Spiritual': 0.25, 'Renascentist': 0.2 };
+// Genres where the DJ sometimes drops the band for an a cappella section, with the odds per performance.
+const ACAPPELLA_ODDS: Record<string, number> = { 'Hip Hop': 0.6, 'Spiritual': 0.4, 'African': 0.35, 'Irish': 0.3, 'Blues': 0.3, 'Opera': 0.25, 'Classic': 0.2 };
+
+export function chooseDjLanguage(genre: string, choirOnly = false): { language: string; vowels: boolean } {
+    const fixed = GENRE_LANGUAGES[genre];
+    let language: string;
+    if (fixed) language = fixed[Math.floor(Math.random() * fixed.length)];
+    else {
+        let roll = Math.random() * 100;
+        language = 'English';
+        for (const [lang, w] of POPULAR_LANGUAGES) { if ((roll -= w) < 0) { language = lang; break; } }
+    }
+    const odds = (VOWEL_ODDS[genre] ?? 0) + (choirOnly ? 0.25 : 0);
+    return { language, vowels: Math.random() < odds };
+}
+
+export const VOWEL_LYRICS = '[Vocalise]\nAh... ah... oh...\nOoh... ah... oh...\nAh-ah... oh-oh... ooh...';
+
+export interface DjPersonality {
+    name: string;
+    eagerness: number;
+    channels: Record<ChannelKey, boolean>;
+}
+
+/**
+ * DJ "manifesto": decides which channels stay in the manifest. The DJ may switch channels off completely
+ * to work with a smaller ensemble (3-5 channels). Always keeps one melodic voice.
+ */
+export function chooseDjManifest(genre: string, allowed?: Partial<Record<ChannelKey, boolean>>): ChannelKey[] {
+    const all: ChannelKey[] = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'];
+    const pool = all.filter(k => allowed?.[k] !== false);
+    if (pool.length <= 3) return pool;
+    const roll = Math.random();
+    const size = Math.min(pool.length, roll < 0.35 ? 5 : roll < 0.7 ? 4 : 3);
+    const shuffle = <T>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
+    const melodic = shuffle(pool.filter(k => k === 'lead' || k === 'alto'));
+    const chosen: ChannelKey[] = melodic.length ? [melodic[0]] : [];
+    // Groove genres lean on bass + drums; traditional/regional ones on harmony
+    const groove = !isTraditionalGenre(genre) && !TRADITIONAL_KNOB_GENRES.includes(genre);
+    const priority: ChannelKey[] = groove ? ['bass', 'rhythm', 'harmonic'] : ['harmonic', 'bass', 'rhythm'];
+    [...shuffle(priority.slice(0, 2)), ...priority.slice(2), ...shuffle(pool)].forEach(k => {
+        if (pool.includes(k) && !chosen.includes(k) && chosen.length < size) chosen.push(k);
+    });
+    return chosen;
+}
+
 export class LiveMusicHelper extends EventTarget {
   private ai: GoogleGenAI; private model: string;
   private session: LiveMusicSession | null = null;
@@ -141,7 +214,7 @@ export class LiveMusicHelper extends EventTarget {
   private recordingDestination: MediaStreamAudioDestinationNode;
   public playbackState: PlaybackState = 'stopped';
   private prompts: Map<string, Prompt>;
-  private bpm = 120; private key = 'C Major'; private mode: 'Natural' | 'Minor' = 'Natural';
+  private bpm = 120; private key = 'C Major';
   public genre = 'Jazz'; public style = 'Acid Jazz'; private meter = '4/4';
   private mood = 'None';
   public generationMode: MusicGenerationMode = 'QUALITY';
@@ -152,13 +225,18 @@ export class LiveMusicHelper extends EventTarget {
     bass: { instrument: 'Bass Guitar', active: true, weight: 1.0, visible: true },
     rhythm: { instrument: 'Drum Kit', active: true, weight: 1.0, visible: true }
   };
-  private guidance = 3; public conductorMode = false; private isStereo = true; 
+  public conductorMode = false;
   private soloMuted = false; private choirMuted = false;
   private evolutionValue = 0; 
   private conductorTimer: number | null = null;
   private currentPlan: PerformancePlanStage[] = [];
   private currentPlanIdx = 0;
   private userInteractionCooldowns = new Map<string, number>();
+  private djPersonality: DjPersonality | null = null;
+  private lyricBlocks: { label: string; lines: string }[] = [];
+  private lyricCursor = 0;
+  public lyricsLanguage = 'English';
+  public lyricsVowelsOnly = false;
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
   
@@ -171,7 +249,6 @@ export class LiveMusicHelper extends EventTarget {
   
   public elapsedSeconds = 0;
   private playbackStartTime = 0;
-  private currentRecordingStartTime = 0;
   private timeTrackingFrame: number | null = null;
   private loopWaitTimer: number | null = null;
 
@@ -183,14 +260,12 @@ export class LiveMusicHelper extends EventTarget {
   public fadeOut = 10.0;
   private userVolume = 0.8;
 
-  private activeHands: string[] = []; 
   private currentVocalSignal: string | null = null;
   private vocalSignalTimer: number | null = null;
   private lastDjVocalMessageTime = 0;
   private conductorActivationTime = 0;
 
   private specialInstruction: string | null = null;
-  private channelsLocked = false;
   public isLiraMode = false;
   public toolbarLocks = {
       genre: false,
@@ -268,7 +343,6 @@ export class LiveMusicHelper extends EventTarget {
       this.masterGain.gain.setTargetAtTime(this.userVolume * fadeFactor, this.audioContext.currentTime, 0.02);
   }
 
-  public setStereo(stereo: boolean) { this.isStereo = stereo; this.scheduleRefresh(); }
   public setMaxDuration(minutes: number) { 
       this.maxDurationMinutes = minutes; 
       if (this.playbackState === 'recording' || this.playbackState === 'playing') {
@@ -276,8 +350,6 @@ export class LiveMusicHelper extends EventTarget {
           this.updateRecordingSchedule();
       }
   }
-  public setSeed(_seed?: number) { /* Seed removed to ensure prompt authenticity */ }
-  public setChannelsLocked(locked: boolean) { this.channelsLocked = locked; }
   
   public setLoop(loop: boolean) { 
     this.isLooping = loop; 
@@ -288,7 +360,6 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   public setFades(fadeIn: number, fadeOut: number) { this.fadeIn = fadeIn; this.fadeOut = fadeOut; }
-  public setGuidance(value: number) { this.guidance = value; this.scheduleRefresh(); }
   public setMood(mood: string) { this.mood = mood; this.scheduleRefresh(); }
   public setEvolution(val: number) { this.evolutionValue = val; this.scheduleRefresh(); }
   public setGenerationMode(mode: MusicGenerationMode) { 
@@ -335,7 +406,6 @@ export class LiveMusicHelper extends EventTarget {
   public setGlobalSettings(settings: any) {
     if (settings.bpm !== undefined) this.bpm = settings.bpm;
     if (settings.key !== undefined) this.key = settings.key;
-    if (settings.mode !== undefined) this.mode = settings.mode;
     if (settings.genre !== undefined) this.genre = settings.genre;
     if (settings.style !== undefined) this.style = settings.style;
     if (settings.meter !== undefined) this.meter = settings.meter;
@@ -373,7 +443,55 @@ export class LiveMusicHelper extends EventTarget {
       this.setSpecialInstruction(instruction);
   }
   
-  public notifyUserInteraction(id: string) { 
+  /** Store the lyrics the DJ will cue section by section (real words only, or open vowels). */
+  public setLyrics(text: string, language?: string, vowelsOnly = false) {
+      if (language) this.lyricsLanguage = language;
+      this.lyricsVowelsOnly = vowelsOnly;
+      this.lyricCursor = 0;
+      this.lyricBlocks = [];
+      let label = 'verse'; let lines: string[] = [];
+      const flush = () => { if (lines.length) this.lyricBlocks.push({ label, lines: lines.join(' / ') }); lines = []; };
+      text.split('\n').map(l => l.trim()).filter(Boolean).forEach(l => {
+          const header = l.match(/^\[(.+)\]$/);
+          if (header) { flush(); label = header[1].toLowerCase(); }
+          else lines.push(l);
+      });
+      flush();
+  }
+
+  /** Before the baton is raised: the DJ picks the language for the genre and writes lyrics (or a vowel vocalise). */
+  public async djPrepareLyrics(style: string, mood: string): Promise<{ text: string; language: string; vowels: boolean }> {
+      const choirOnly = Object.values(this.instruments).every(ch => !ch.active || !isVocalInstrument(ch.instrument) || ch.instrument.toLowerCase().includes('choir'));
+      const { language, vowels } = chooseDjLanguage(this.genre, choirOnly);
+      let text = VOWEL_LYRICS;
+      if (!vowels) {
+          // Don't keep the DJ waiting forever if the lyrics service is slow
+          const timeout = new Promise<string>(r => setTimeout(() => r('Error: timeout'), 10000));
+          const written = await Promise.race([this.generateLyrics(this.genre, language, 2, 4, undefined, style, mood), timeout]);
+          text = written.startsWith('Error') || written.startsWith('Could not') ? VOWEL_LYRICS : written;
+      }
+      const usedVowels = text === VOWEL_LYRICS;
+      this.setLyrics(text, language, usedVowels);
+      return { text, language, vowels: usedVowels };
+  }
+
+  private nextLyricCue(chorus: boolean): string {
+      if (this.lyricsVowelsOnly || this.lyricBlocks.length === 0) {
+          return ' Sing only open vowel vocalise (Ah, Oh, Ooh), no words.';
+      }
+      const isHook = (b: { label: string }) => /chorus|hook|refrain/.test(b.label);
+      const hooks = this.lyricBlocks.filter(isHook);
+      const verses = this.lyricBlocks.filter(b => !isHook(b));
+      let block;
+      if (chorus && hooks.length) block = hooks[Math.floor(Math.random() * hooks.length)];
+      else { const pool = verses.length ? verses : this.lyricBlocks; block = pool[this.lyricCursor++ % pool.length]; }
+      return ` Sing exactly these real ${this.lyricsLanguage} words, clearly pronounced: "${block.lines.slice(0, 220)}".`;
+  }
+
+  public setDjPersonality(personality: DjPersonality | null) { this.djPersonality = personality; }
+  public get djPersonalityChannels() { return this.djPersonality?.channels; }
+
+  public notifyUserInteraction(id: string) {
       this.userInteractionCooldowns.set(id, Date.now()); 
   }
 
@@ -429,7 +547,8 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     // 2. Build Rich, Descriptive Narrative Prompt
-    let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM. `;
+    let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM in ${this.meter} time. `;
+    if (this.mood && this.mood !== 'None') narrative += `The overall mood is ${this.mood.toLowerCase()}. `;
     
     const activeInstruments: string[] = [];
     const playingKeys: ChannelKey[] = [];
@@ -505,25 +624,6 @@ export class LiveMusicHelper extends EventTarget {
         try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); this.lastPrompts = finalPayload; } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
   }
-  private getRegionalLanguage(): string {
-      const g = this.genre.toLowerCase();
-      if (g === 'romanian') return 'Romanian';
-      if (g === 'indian') return 'Hindi/Sanskrit';
-      if (g === 'spiritual') return 'Liturgical Latin/Greek';
-      if (g === 'african') return 'Swahili/Yoruba';
-      if (g === 'irish') return 'Irish-Gaelic';
-      if (g === 'spanish') return 'Spanish';
-      if (g === 'celtic') return 'Celtic';
-      if (g === 'oriental') {
-          const s = this.style.toLowerCase();
-          if (s.includes('japanese')) return 'Japanese';
-          if (s.includes('chinese')) return 'Mandarin';
-          if (s.includes('arabic')) return 'Arabic';
-          return 'Oriental-Phonemes';
-      }
-      return 'English';
-  }
-
   private knobPhrase(knobText: string): string {
       const phrase = KNOB_PHRASES[knobText.trim().toLowerCase()];
       if (!phrase) return knobText;
@@ -552,6 +652,7 @@ export class LiveMusicHelper extends EventTarget {
       let hasChoir = false;
       let hasGirl = false;
       let hasBoy = false;
+      let hasRapper = false;
 
       Object.values(this.instruments).forEach(ch => {
           if (!ch.active || ch.visible === false || !ch.instrument) return;
@@ -559,7 +660,8 @@ export class LiveMusicHelper extends EventTarget {
               activeVocals.push(ch.instrument);
               const lower = ch.instrument.toLowerCase();
               if (lower.includes('female')) hasFemale = true;
-              if (lower.includes('male')) hasMale = true;
+              if (lower.includes('male') && !lower.includes('female')) hasMale = true;
+              if (lower.includes('rapper') || lower.includes('mc ')) { hasMale = true; hasRapper = true; }
               if (lower.includes('choir') || lower.includes('chant') || lower.includes('a cappella')) hasChoir = true;
               if (lower.includes('girl')) hasGirl = true;
               if (lower.includes('boy') || lower.includes('bou')) hasBoy = true;
@@ -573,7 +675,8 @@ export class LiveMusicHelper extends EventTarget {
           hasMale,
           hasChoir,
           hasGirl,
-          hasBoy
+          hasBoy,
+          hasRapper
       };
   }
 
@@ -596,8 +699,21 @@ export class LiveMusicHelper extends EventTarget {
       const isOutro = stage.includes('outro') || stage.includes('fade');
       const styleHint = this.getVocalStyleHint(this.genre);
 
+      const isAcappella = stage.includes('cappella');
       const cues: string[] = [];
+      const langHint = ` Language: ${this.lyricsLanguage}, real words or open vowels only, never gibberish.`;
       const addCue = (msg: string) => cues.push(`${msg} ${styleHint}`);
+
+      if (isAcappella) {
+          const rap = details.hasRapper || this.genre === 'Hip Hop';
+          const cue = rap
+              ? 'A CAPPELLA RAP: drums and instruments drop out completely, only the rapper with tight rhythmic flow, breath accents and vocal percussion'
+              : 'A CAPPELLA: all instruments drop out completely, only unaccompanied human voices in natural harmony';
+          return `${cue}.${this.nextLyricCue(false)}${langHint}`;
+      }
+      if (details.hasRapper) {
+          addCue(isClimax ? 'RAP VOCAL: Hard-hitting hook with layered ad-libs and crowd-style shouts' : isIntro ? 'RAP VOCAL: Low murmured spoken-word intro setting the scene' : isOutro ? 'RAP VOCAL: Slowed-down final bars fading into ad-libs' : 'RAP VOCAL: Confident rhythmic verse with tight internal rhymes and on-beat flow');
+      }
 
       if (details.hasFemale) {
           if (isClimax) {
@@ -685,7 +801,9 @@ export class LiveMusicHelper extends EventTarget {
           addCue(`VOICE SIMULATION: Authentic human singing voices for ${details.activeVocals.join(' and ')} with natural vocal cords and expressive dynamics`);
       }
 
-      return cues[Math.floor(Math.random() * cues.length)];
+      const chosen = cues[Math.floor(Math.random() * cues.length)];
+      // Section cues carry the next real words (or vowels); the periodic guidance only keeps language and style
+      return stageName ? `${chosen}${this.nextLyricCue(isClimax)}${langHint}` : `${chosen}${langHint}`;
   }
 
   public toggleSolo(active: boolean) { this.soloMuted = !active; this.scheduleRefresh(); }
@@ -705,17 +823,6 @@ export class LiveMusicHelper extends EventTarget {
       });
   }
 
-  public isSoloActive(): boolean {
-      return Object.values(this.instruments).some(ch => {
-          if (!ch.active || ch.visible === false || !ch.instrument) return false;
-          const inst = ch.instrument.toLowerCase();
-          return inst.includes('solo') || inst.includes('violin') || inst.includes('saxophone') || 
-                 inst.includes('trumpet') || inst.includes('flute') || inst.includes('harmonica') || 
-                 inst.includes('guitar') || inst.includes('cello') || inst.includes('soprano') || 
-                 inst.includes('tenor') || inst.includes('soloist') || inst.includes('whistle') || 
-                 inst.includes('recorder') || inst.includes('string orchestra') || inst.includes('orchestra');
-      });
-  }
 
   public resetKnobsToZero() {
       this.prompts.forEach(p => {
@@ -726,13 +833,12 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh();
   }
 
-  private getNarrativeStructure(genre: string, style: string, totalSec: number): { name: string, type: string, durationPct: number }[] {
+  private getNarrativeStructure(genre: string): { name: string, type: string, durationPct: number }[] {
       const templates: { name: string, type: string, durationPct: number }[][] = [];
       
       const isClassical = ['Classic', 'Cinematic', 'Spiritual', 'Victorian', 'Renascentist', 'Ambient', 'Oriental', 'Marching'].includes(genre);
       const isJazz = ['Jazz', 'Blues'].includes(genre);
       const isWestern = ['Western', 'Hawaiian'].includes(genre);
-      const isElectronic = ['Electronic', 'Gaming'].includes(genre);
       
       // --- Classical / Traditional / Cinematic / Marching ---
       if (isClassical) {
@@ -886,6 +992,9 @@ export class LiveMusicHelper extends EventTarget {
       const availableKeys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'].filter(k =>
           this.instruments[k as keyof InstrumentSet].visible !== false && !!this.instruments[k as keyof InstrumentSet].instrument
       ) as Array<keyof InstrumentSet>;
+      // A DJ personality can bench channels; ignore that if it would leave nobody on stage
+      const personalityKeys = this.djPersonality ? availableKeys.filter(k => this.djPersonality!.channels[k] !== false) : availableKeys;
+      if (personalityKeys.length > 0 && personalityKeys.length < availableKeys.length) availableKeys.splice(0, availableKeys.length, ...personalityKeys);
 
       this.currentPlanIdx = 0;
       if (availableKeys.length === 0) return;
@@ -899,10 +1008,17 @@ export class LiveMusicHelper extends EventTarget {
       // --- STORY GENERATION MODE ---
       
       // 1. Get Narrative Structure (Randomized based on Genre)
-      const story = this.getNarrativeStructure(this.genre, this.style, totalSec);
+      const story = this.getNarrativeStructure(this.genre);
 
       // 2. Build Stages
       let currentTime = 0;
+      // Sometimes the DJ drops the band for one a cappella section (rap, gospel, folk...) when a voice is on stage
+      const hasVoice = availableKeys.some(k => isVocalInstrument(this.instruments[k].instrument));
+      if (hasVoice && story.length >= 4 && Math.random() < (ACAPPELLA_ODDS[this.genre] ?? 0)) {
+          const candidates = story.map((seg, i) => ({ seg, i })).filter(({ seg, i }) => i > 0 && i < story.length - 1 && ['verse', 'main', 'breakdown', 'percussion', 'groove', 'build'].includes(seg.type));
+          const pick = candidates[Math.floor(Math.random() * candidates.length)];
+          if (pick) story[pick.i] = { ...pick.seg, name: 'A Cappella', type: 'acapella' };
+      }
       story.forEach(seg => {
           // Normalize duration to avoid rounding gaps, though addStage handles timing
           const dur = seg.durationPct * totalSec;
@@ -932,7 +1048,9 @@ export class LiveMusicHelper extends EventTarget {
           let type = 'main';
           
           // Even spread across ensemble sizes: solo, duet, trio, quartet, full band
-          if (typeRoll < 0.2) { name = "Solo Feature"; type = 'solo'; }
+          const canAcappella = enabledKeys.some(k => isVocalInstrument(this.instruments[k].instrument)) && Math.random() < (ACAPPELLA_ODDS[this.genre] ?? 0) * 0.5;
+          if (canAcappella) { name = "A Cappella"; type = 'acapella'; }
+          else if (typeRoll < 0.2) { name = "Solo Feature"; type = 'solo'; }
           else if (typeRoll < 0.4 && enabledKeys.length >= 2) { name = "Duet Session"; type = 'duet'; }
           else if (typeRoll < 0.6 && enabledKeys.length >= 3) { name = "Trio Section"; type = 'trio'; }
           else if (typeRoll < 0.8) { name = "Quartet Groove"; type = 'main'; }
@@ -1007,6 +1125,14 @@ export class LiveMusicHelper extends EventTarget {
           'Atmosphere': [0.3, 0.8, 0.5], 'Groove': [0.7, 1.3, 1.0], 'Complexity': [0.4, 0.9, 0.6],
           'Ornamentation': [0.3, 0.7, 0.5], 'Variation': [0.3, 0.8, 0.5], 'Density': [0.6, 1.2, 0.9],
           'Attack': [0.7, 1.4, 1.0], 'Staccato': [0.4, 0.9, 0.6], 'Glide': [0.1, 0.5, 0.3]
+      },
+      'Hip Hop': {
+          'Guidance': [0.9, 1.5, 1.2], 'Authenticity': [0.6, 1.1, 0.8], 'Organic': [0.3, 0.8, 0.5],
+          'Dynamics': [0.8, 1.4, 1.1], 'Presence': [0.9, 1.5, 1.2], 'Space': [0.3, 0.8, 0.5],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.3, 0.8, 0.5], 'Texture': [0.5, 1.0, 0.7],
+          'Atmosphere': [0.3, 0.8, 0.5], 'Groove': [1.1, 1.7, 1.4], 'Complexity': [0.3, 0.8, 0.5],
+          'Ornamentation': [0.2, 0.6, 0.4], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.4, 0.9, 0.6],
+          'Attack': [0.8, 1.4, 1.1], 'Staccato': [0.5, 1.0, 0.7], 'Glide': [0.1, 0.5, 0.3]
       },
       'Pop': {
           'Guidance': [0.9, 1.5, 1.2], 'Authenticity': [0.5, 1.0, 0.7], 'Organic': [0.4, 0.9, 0.6],
@@ -1136,11 +1262,12 @@ export class LiveMusicHelper extends EventTarget {
       'trio':       { 'Groove': +0.3, 'Presence': +0.2, 'Organic': +0.2, 'Ornamentation': +0.1 },
       'breakdown':  { 'Density': -0.4, 'Space': +0.4, 'Atmosphere': +0.4, 'Dynamics': -0.3, 'Brightness': -0.3, 'Attack': -0.3 },
       'groove':     { 'Groove': +0.5, 'Density': +0.3, 'Attack': +0.2, 'Dynamics': +0.2, 'Staccato': +0.2 },
+      'acapella':   { 'Presence': +0.5, 'Organic': +0.3, 'Space': +0.2, 'Density': -0.3, 'Groove': +0.2 },
       'outro':      { 'Space': +0.5, 'Atmosphere': +0.5, 'Dynamics': -0.4, 'Density': -0.4, 'Brightness': -0.3, 'Glide': +0.3 }
   };
 
   // DJ knob choice for a stage: up to 2 genre "anchor" knobs (the genre's signature, kept across stages so the
-  // DJ stays in genre) plus stage "flavor" knobs, never more than MAX_DJ_KNOBS and never a contradictory pair.
+  // DJ stays in genre) plus stage "flavor" knobs, never more than the genre's knob limit and never a contradictory pair.
   // Every knob not returned here is driven to 0 while the DJ is in control.
   private getKnobTargetsForStage(type: string): { parameterName: string; targetValue: number }[] {
       const profile = LiveMusicHelper.GENRE_KNOB_PROFILES[this.genre] || LiveMusicHelper.GENRE_KNOB_PROFILES['Pop'];
@@ -1155,9 +1282,10 @@ export class LiveMusicHelper extends EventTarget {
       const conflicts = (a: string, b: string) =>
           CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
+      const knobLimit = getDjKnobLimit(this.genre);
       const chosen: string[] = [];
       const tryAdd = (knob: string) => {
-          if (chosen.length >= MAX_DJ_KNOBS || chosen.includes(knob) || !profile[knob]) return;
+          if (chosen.length >= knobLimit || chosen.includes(knob) || !profile[knob]) return;
           if (chosen.some(c => conflicts(c, knob))) return;
           if (valueOf(knob) < 0.3) return; // A knob the genre barely allows is not worth a slot
           chosen.push(knob);
@@ -1196,8 +1324,15 @@ export class LiveMusicHelper extends EventTarget {
       };
       const melody = availableKeys.includes('lead') ? 'lead' : (availableKeys.includes('alto') ? 'alto' : melodic[0]);
 
+      // Voice channels: the DJ brings the voice in where it makes harmonious music and rests it elsewhere
+      const vocalKeys = availableKeys.filter(k => isVocalInstrument(this.instruments[k].instrument));
+
       let lineup: ChannelKey[];
       switch (type) {
+          case 'acapella':
+              // Unaccompanied voices only
+              lineup = vocalKeys.slice(0, 2);
+              break;
           case 'intro':
           case 'outro':
               // Sparse: one harmonic/melodic voice opens or closes the piece
@@ -1236,6 +1371,21 @@ export class LiveMusicHelper extends EventTarget {
               lineup = lineupOf([melody], 5);
               break;
       }
+      if (vocalKeys.length > 0 && type !== 'acapella') {
+          const voiceIn = ['verse', 'main', 'chorus', 'climax', 'solo', 'duet', 'trio', 'build'].includes(type);
+          const voiceOut = ['percussion', 'groove', 'breakdown'].includes(type);
+          if (voiceIn) {
+              const voice = vocalKeys.find(k => lineup.includes(k)) ?? vocalKeys[Math.floor(Math.random() * vocalKeys.length)];
+              if (!lineup.includes(voice)) {
+                  if (lineup.length > 1 || Math.random() < 0.5) lineup[lineup.length - 1] = voice;
+              }
+              // The voice leads the melody in sung sections
+              if (['verse', 'main', 'chorus', 'climax'].includes(type) && lineup.includes(voice)) lineup = [voice, ...lineup.filter(k => k !== voice)];
+          } else if (voiceOut) {
+              const without = lineup.filter(k => !vocalKeys.includes(k));
+              if (without.length > 0) lineup = without;
+          }
+      }
       if (lineup.length === 0) lineup = [availableKeys[0]];
 
       const formation = (['solo', 'duet', 'trio', 'quartet', 'full'] as Formation[])[Math.min(lineup.length, 5) - 1];
@@ -1247,7 +1397,8 @@ export class LiveMusicHelper extends EventTarget {
           channelWeights: { lead: 0, alto: 0, harmonic: 0, bass: 0, rhythm: 0 },
           targets: this.getKnobTargetsForStage(type),
           formation,
-          featured
+          featured,
+          type
       };
 
       // Featured voice at full weight, supporting players slightly under it so the formation stays readable
@@ -1256,10 +1407,10 @@ export class LiveMusicHelper extends EventTarget {
           stage.channelWeights[k] = k === featured ? 1.0 : FORMATION_SUPPORT_WEIGHT[formation];
       });
 
-      const formationLabel = formation === 'solo'
+      const formationLabel = type === 'acapella' ? 'A Cappella' : formation === 'solo'
           ? `${this.instruments[featured].instrument} Solo`
           : formation === 'full' ? 'Full Band' : formation.charAt(0).toUpperCase() + formation.slice(1);
-      stage.stageName = `${name} · ${formationLabel}`;
+      stage.stageName = type === 'acapella' ? `${name} · A Cappella` : `${name} · ${formationLabel}`;
 
       this.currentPlan.push(stage);
   }
@@ -1270,7 +1421,6 @@ export class LiveMusicHelper extends EventTarget {
           clearInterval(this.conductorTimer); 
           this.conductorTimer = null; 
       } 
-      this.activeHands = []; 
   }
   
   private updateConductor() {
@@ -1299,9 +1449,9 @@ export class LiveMusicHelper extends EventTarget {
           const currentStage = this.currentPlan[this.currentPlanIdx];
           this.currentStatusMessage = currentStage.stageName;
 
-          this.synchronizeInstrumentsWithStage(currentStage.stageName);
+          this.synchronizeInstrumentsWithStage();
 
-          this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false } }));
+          this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false, type: currentStage.type, index: this.currentPlanIdx } }));
           this.interpolateParameters();
           this.scheduleRefresh();
 
@@ -1328,7 +1478,7 @@ export class LiveMusicHelper extends EventTarget {
       this.interpolateParameters();
   }
 
-  private synchronizeInstrumentsWithStage(stageName: string) {
+  private synchronizeInstrumentsWithStage() {
       // Conductor STRICTLY controls weights and active state based on the Plan.
       // It does NOT change instrument strings.
       
@@ -1370,21 +1520,23 @@ export class LiveMusicHelper extends EventTarget {
       // Knobs leaving the mix are pulled out faster so new ones can enter without breaking the knob cap
       const retireStep = Math.max(step, 0.15);
 
-      // DJ HANDS OFF knobs for traditional genres (channels are still conducted below)
-      if (currentStage.targets && !isTraditionalGenre(this.genre)) {
-          // Knobs outside the stage's selection target 0, so at most MAX_DJ_KNOBS stay engaged
+      const knobLimit = getDjKnobLimit(this.genre);
+      const eagerness = this.djPersonality ? 0.5 + this.djPersonality.eagerness / 100 : 1;
+      if (currentStage.targets) {
+          // Knobs outside the stage's selection target 0, so at most knobLimit stay engaged
+          // (knobs the user turned recently are theirs: the DJ neither moves nor counts them)
           const targets: Record<string, number> = {};
           currentStage.targets.forEach(t => { targets[t.parameterName] = t.targetValue; });
           const targetOf = (p: Prompt) => targets[p.text] ?? 0;
 
           const isEngaged = (p: Prompt) => p.weight > 0.01;
+          const isUserHeld = (p: Prompt) => currentTimeMs - (this.userInteractionCooldowns.get(p.promptId) || 0) < USER_KNOB_HOLD_MS;
           let engagedCount = 0;
-          this.prompts.forEach(p => { if (isEngaged(p)) engagedCount++; });
+          this.prompts.forEach(p => { if (isEngaged(p) && !isUserHeld(p)) engagedCount++; });
 
           const retiring: Prompt[] = [], adjusting: Prompt[] = [], entering: Prompt[] = [];
           this.prompts.forEach(p => {
-              const lastInteracted = this.userInteractionCooldowns.get(p.promptId) || 0;
-              if (currentTimeMs - lastInteracted < interactionCooldownMs) return;
+              if (isUserHeld(p)) return;
               const target = targetOf(p);
               if (Math.abs(target - p.weight) <= 0.01) return;
               if (target === 0) retiring.push(p);
@@ -1397,17 +1549,16 @@ export class LiveMusicHelper extends EventTarget {
           for (const p of [...retiring, ...adjusting, ...entering]) {
               if (hands.length >= 2) break;
               if (entering.includes(p)) {
-                  if (engagedCount >= MAX_DJ_KNOBS) continue;
+                  if (engagedCount >= knobLimit) continue;
                   engagedCount++;
               }
               hands.push(p);
           }
-          this.activeHands = hands.map(p => p.promptId);
 
           hands.forEach(p => {
               const target = targetOf(p);
               const diff = target - p.weight;
-              const move = Math.sign(diff) * Math.min(Math.abs(diff), target === 0 ? retireStep : step);
+              const move = Math.sign(diff) * Math.min(Math.abs(diff), (target === 0 ? retireStep : step) * eagerness);
               p.weight = Math.max(0, Math.min(2.0, p.weight + move));
               p.volume = p.weight / 2;
           });
@@ -1569,7 +1720,7 @@ export class LiveMusicHelper extends EventTarget {
     await this.stop(false, true); 
     this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0;
     this.automationLog = [];
-    this.currentRecordingStartTime = 0; this.dispatchEvent(new CustomEvent('recording-cleared'));
+    this.dispatchEvent(new CustomEvent('recording-cleared'));
     this.audioContext.resume();
     this.currentStatusMessage = '';
 
@@ -1591,7 +1742,7 @@ export class LiveMusicHelper extends EventTarget {
       
       // During warmup, ensure the first stage setup is applied immediately
       this.currentPlanIdx = 0;
-      this.synchronizeInstrumentsWithStage(this.currentPlan[0]?.stageName || 'Intro');
+      this.synchronizeInstrumentsWithStage();
       
       this.startConductor();
       this.startTimeTracking();
@@ -1749,7 +1900,7 @@ export class LiveMusicHelper extends EventTarget {
     }, remainingTimeMs + 5000);
   }
 
-  public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string): Promise<string> {
+  public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string, style?: string, mood?: string): Promise<string> {
       if (!this.ai) {
           console.error("AI not initialized");
           return "Error: AI not initialized.";
@@ -1757,8 +1908,10 @@ export class LiveMusicHelper extends EventTarget {
       try {
           const prompt = songTitle
               ? `Translate or adapt 2 verses of the song "${songTitle}" into ${lang}. The style should fit a ${genre} genre.`
-              : `Create ${verseCount} verses of lyrics, with ${lineCount} lines per verse, for a ${genre} song in ${lang}. 
-                 Return ONLY the lyrics in standard block format (e.g. [Verse 1], [Chorus]). Do not include any intro, outro, explanations, or commentary.`;
+              : `Write ${verseCount} verses of ${lineCount} short lines each, plus a 2-line [Chorus], for a ${genre} song${style ? ` in ${style} style` : ''}${mood && mood !== 'None' ? ` with a ${mood} mood` : ''}, sung in ${lang}.
+                 Use ONLY real, correctly spelled ${lang} words that a native speaker would say (or open vowel sounds such as Ah, Oh, Ooh). Never invent nonsense words or fake syllables.
+                 Keep the vocabulary, imagery and rhythm authentic to ${genre}${genre === 'Hip Hop' ? ' (rhymed rap bars with strong flow)' : ''}. Lines must be singable: at most 8 words each.
+                 Return ONLY the lyrics in block format ([Verse 1], [Chorus], [Verse 2]). No intro, outro, translation, explanations or commentary.`;
           
           console.log("Generating lyrics with prompt:", prompt);
           

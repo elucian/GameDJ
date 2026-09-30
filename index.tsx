@@ -15,7 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, VOCAL_STRINGS, SONG_REFERENCES, isVocalInstrument, LYRIA_GENRES } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, SONG_REFERENCES, isVocalInstrument, chooseDjManifest, chooseDjTab } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -80,8 +80,9 @@ function main() {
   });
 
   (djPresetDialog as any).addEventListener('send-dj-config', (e: CustomEvent) => {
-      const { directive, name } = e.detail;
+      const { directive, name, config } = e.detail;
       liveMusicHelper.setSpecialInstruction(directive);
+      if (config) liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels });
       pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
   });
 
@@ -118,6 +119,11 @@ function main() {
     if (liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing') {
         (liveMusicHelper as any).playRecording();
     }
+  });
+
+  (vocalDialog as any).addEventListener('lyrics-set', (e: CustomEvent<string>) => {
+    // Lyrics typed or edited by the user: keep the DJ's language, sing them as real words
+    if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, undefined, false);
   });
 
   (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => {
@@ -188,7 +194,6 @@ function main() {
 
   (topToolbar as any).addEventListener('genre-changed', ((e: Event) => {
       cancelAutoLoop();
-      userChangedMode = false;
       const genre = (e as CustomEvent<string>).detail;
       rightSidebar.genre = genre;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
@@ -199,7 +204,6 @@ function main() {
 
   (topToolbar as any).addEventListener('style-changed', ((e: Event) => {
       cancelAutoLoop();
-      userChangedMode = false;
       const style = (e as CustomEvent<string>).detail;
       rightSidebar.musicStyle = style;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
@@ -362,26 +366,77 @@ function main() {
   (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail); });
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
-  let userChangedMode = false;
+  // When the DJ picks voice channels it also sets the Voice dialog (solo voices / duet / choir kind) to match.
+  const djConfigureVoices = () => {
+      const s = rightSidebar.settings;
+      const voices = ['Soprano', 'Alto', 'Tenor', 'Baritone'];
+      const pick = (n: number) => [...voices].sort(() => Math.random() - 0.5).slice(0, n);
+      const solos = new Set<string>();
+      let choir = 'None';
+      (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
+          const c = s[ch];
+          if (c.visible === false || !c.active || !isVocalInstrument(c.instrument)) return;
+          const n = c.instrument.toLowerCase();
+          if (n.includes('duet')) pick(2).forEach(v => solos.add(v));
+          else if (n.includes('chamber')) choir = 'Chamber';
+          else if (n.includes('gospel') || n.includes('gregorian') || n.includes('chant')) choir = 'Church';
+          else if (n.includes('male choir') && !n.includes('female')) choir = 'Military';
+          else if (n.includes('child') && n.includes('choir')) choir = 'Children';
+          else if (n.includes('boy') || n.includes('girl')) pick(1).forEach(v => solos.add(v));
+          else if (n.includes('choir') || n.includes('cappella') || n.includes('ensemble')) choir = 'Mixed';
+          else if (n.includes('female') || n.includes('soprano')) solos.add(Math.random() < 0.5 ? 'Soprano' : 'Alto');
+          else if (n.includes('male') || n.includes('tenor') || n.includes('rapper') || n.includes('mc ')) solos.add(Math.random() < 0.5 ? 'Tenor' : 'Baritone');
+          else pick(1).forEach(v => solos.add(v));
+      });
+      if (solos.size === 0 && choir === 'None') return false;
+      vocalDialog.djConfigure([...solos], choir);
+      return true;
+  };
+
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
       const active = (e as CustomEvent<boolean>).detail;
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
-          // DJ plans music settings and can change instruments before music starts
-          const shouldBeLyria = LYRIA_GENRES.includes(topToolbar.genre);
-          rightSidebar.currentTab = shouldBeLyria ? 'Lyria' : 'Band';
-          
           const rsLocks = (rightSidebar as any).locks;
-          if (!rsLocks.channels) {
-              await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, leftSidebar.primaryMode, shouldBeLyria);
-          }
-          
-          if (!isLive) {
+          // Before the baton is raised (nothing playing/recording) the DJ plans everything:
+          // Lyria or Band, instruments, manifest, master mood and variations (evolution).
+          // Once music is running the DJ only conducts: no tab, instrument or manifest changes.
+          const canPlan = liveMusicHelper.playbackState === 'stopped';
+          if (canPlan) {
+              if (!rsLocks.channels) {
+                  const tab = chooseDjTab(topToolbar.genre);
+                  rightSidebar.currentTab = tab;
+                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, tab === 'Lyria');
+              }
+
+              // Manifesto: the DJ may switch some channels off completely and work with a smaller ensemble
+              if (!rsLocks.manifest) {
+                  const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels);
+                  rightSidebar.applyDjManifest(keep);
+              }
+
+              if (!rsLocks.channels && djConfigureVoices()) {
+                  pdjMidi.setMessage("DJ SET THE VOICE OPTIONS", "info");
+              }
+
+              const mood = topToolbar.djPickMood();
+              const evo = Math.floor(Math.random() * 7) - 1; // -1..+5
+              rightSidebar.setEvolution(evo);
+              liveMusicHelper.setEvolution(evo);
+
+              // Voices on stage: the DJ writes lyrics in the language that suits the genre (real words or vowels)
+              if (liveMusicHelper.isVocalInstrumentActive()) {
+                  pdjMidi.setMessage("DJ WRITING LYRICS...", "info");
+                  const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood);
+                  vocalDialog.vocalText = text;
+                  pdjMidi.setMessage(vowels ? "DJ LYRICS: VOCALISE (VOWELS)" : `DJ LYRICS READY: ${language.toUpperCase()}`, "info");
+              }
+
               liveMusicHelper.generatePerformancePlan(0);
-              pdjMidi.setMessage("DJ PLANNED MUSIC SETTINGS & READY", "info");
-          } else {
+              pdjMidi.setMessage(`DJ PLANNED: ${rightSidebar.currentTab.toUpperCase()}, ${mood.toUpperCase()}, EVO ${evo > 0 ? '+' : ''}${evo}`, "info");
+          } else if (isLive) {
               djEngagingCountdown = true;
               let count = 5;
               pdjMidi.setMessage(`DJ ENGAGING IN ${count}S...`, "info");
@@ -413,7 +468,6 @@ function main() {
   (leftSidebar as any).addEventListener('mode-changed', ((e: Event) => {
       cancelAutoLoop();
       const mode = (e as CustomEvent<MusicGenerationMode>).detail;
-      userChangedMode = true;
       liveMusicHelper.setGenerationMode(mode);
       pdjMidi.setMessage(`MODE: ${mode}`, "info");
 
@@ -456,9 +510,37 @@ function main() {
       pdjMidi.setMessage(`AI STORYTELLING: ${e.detail} MODE`, 'info');
   });
 
+  // Tempo never reached the engine before: forward toolbar tempo changes (user or DJ)
+  (topToolbar as any).addEventListener('bpm-changed', ((e: Event) => {
+      liveMusicHelper.setGlobalSettings({ bpm: (e as CustomEvent<number>).detail });
+  }));
+
+  // While the DJ conducts a live recording it also works the master controls (volume, evolution) — even though
+  // they are disabled for the user — and varies tempo, key and rhythm. It never touches manifest or instruments.
+  const STAGE_VOLUME: Record<string, number> = { acapella: 0.7, intro: 0.5, outro: 0.5, breakdown: 0.6, build: 0.7, chorus: 0.9, climax: 0.9 };
+  const STAGE_EVOLUTION: Record<string, number> = { acapella: 1, intro: -3, outro: -4, breakdown: 0, build: 2, verse: 1, main: 2, chorus: 5, climax: 6, solo: 3 };
+  const djStageControls = (type: string | undefined, index: number) => {
+      const t = type || 'main';
+      const volume = STAGE_VOLUME[t] ?? 0.7;
+      rightSidebar.volume = volume;
+      liveMusicHelper.setVolume(volume);
+
+      const evo = Math.max(-10, Math.min(10, (STAGE_EVOLUTION[t] ?? 1) + Math.round(Math.random() * 2 - 1)));
+      rightSidebar.setEvolution(evo);
+      liveMusicHelper.setEvolution(evo);
+
+      if (index > 0 && Math.random() < 0.5) {
+          const change = topToolbar.djVary();
+          if (change) pdjMidi.setMessage(`DJ VARIATION: ${change}`, 'info');
+      }
+  };
+
   liveMusicHelper.addEventListener('conductor-stage-changed', (e: any) => {
-      const { name } = e.detail;
+      const { name, type, index } = e.detail;
       pdjMidi.setMessage(`DJ: ${name}`, 'info');
+      if (type !== undefined && liveMusicHelper.conductorMode && liveMusicHelper.playbackState === 'recording') {
+          djStageControls(type, index ?? 0);
+      }
   });
   
   liveMusicHelper.addEventListener('conductor-anticipation', (e: any) => {
@@ -523,15 +605,16 @@ function main() {
       // 4. Update Instruments and Manifest based on Style Matrix for current tab
       const rsLocks = (rightSidebar as any).locks;
       if (!rsLocks.channels) {
-          const lyriaGenres = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
-          const shouldBeLyria = lyriaGenres.includes(topToolbar.genre);
-          rightSidebar.currentTab = shouldBeLyria ? 'Lyria' : 'Band';
+          rightSidebar.currentTab = chooseDjTab(topToolbar.genre);
       }
       const isLyria = rightSidebar.currentTab === 'Lyria';
       
       // Pass genre/style explicitly (via topToolbar property) to randomizeInstruments
-      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, leftSidebar.primaryMode, isLyria);
+      await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, isLyria);
       
+      // Dice roll enables all channels (the DJ may thin them out later with its manifesto)
+      rightSidebar.enableAllChannels();
+
       // Reset knobs to zero — dice roll gives a clean slate
       liveMusicHelper.resetKnobsToZero();
       
@@ -645,10 +728,6 @@ function main() {
       };
   }));
 
-  (rightSidebar as any).addEventListener('locks-changed', ((e: Event) => {
-      const locks = (e as CustomEvent<any>).detail;
-      liveMusicHelper.setChannelsLocked(locks.channels);
-  }));
 
   (rightSidebar as any).addEventListener('instrument-interacted', ((e: Event) => {
       cancelAutoLoop();

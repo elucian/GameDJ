@@ -1,6 +1,10 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 
+const STORAGE_KEY_PRESETS = 'gamedj.djPresets';
+const STORAGE_KEY_SELECTED = 'gamedj.djPresetSelected';
+const STORAGE_KEY_APPLIED = 'gamedj.djPresetApplied';
+
 interface DjConfig {
   name: string; bass: number; reverb: number; filter: number; bpm: number;
   channels: { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
@@ -144,6 +148,35 @@ export class DjPresetDialog extends LitElement {
   connectedCallback() {
       super.connectedCallback();
       window.addEventListener('keydown', this.handleKeyDown);
+      this.restoreFromStorage();
+  }
+
+  // Each DJ personality keeps its own settings; they survive an app restart via localStorage.
+  private restoreFromStorage() {
+      try {
+          const raw = localStorage.getItem(STORAGE_KEY_PRESETS);
+          if (raw) {
+              const saved = JSON.parse(raw) as Partial<DjConfig>[];
+              if (Array.isArray(saved)) {
+                  this.presets = this.presets.map(def => {
+                      const s = saved.find(x => x && x.name === def.name);
+                      return s ? { ...def, ...s, channels: { ...def.channels, ...(s.channels || {}) } } : def;
+                  });
+              }
+          }
+          const idx = parseInt(localStorage.getItem(STORAGE_KEY_SELECTED) || '', 10);
+          if (idx >= 0 && idx < this.presets.length) this.selectedIndex = idx;
+          // Re-engage the personality that was active when the app was closed
+          if (localStorage.getItem(STORAGE_KEY_APPLIED) === '1') setTimeout(() => this.emitConfig(), 0);
+      } catch { /* localStorage unavailable or corrupt: keep defaults */ }
+  }
+
+  private saveToStorage(applied?: boolean) {
+      try {
+          localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(this.presets));
+          localStorage.setItem(STORAGE_KEY_SELECTED, String(this.selectedIndex));
+          if (applied !== undefined) localStorage.setItem(STORAGE_KEY_APPLIED, applied ? '1' : '0');
+      } catch { /* ignore */ }
   }
 
   disconnectedCallback() {
@@ -165,7 +198,7 @@ export class DjPresetDialog extends LitElement {
           <h3>DJ: ${p.name}</h3>
 
           <span class="label">PRESET</span>
-          <div class='row'>${this.presets.map((_, i) => html`<div class='preset-btn ${this.selectedIndex === i ? 'active' : ''}' @click=${() => this.selectedIndex = i}>${this.presets[i].name}</div>`)}</div>
+          <div class='row'>${this.presets.map((_, i) => html`<div class='preset-btn ${this.selectedIndex === i ? 'active' : ''}' @click=${() => { this.selectedIndex = i; this.saveToStorage(); }}>${this.presets[i].name}</div>`)}</div>
 
           <span class="label">CHANNELS</span>
           <div class='channels'>${Object.keys(p.channels).map(c => html`<div class='chan-toggle ${p.channels[c as keyof typeof p.channels] ? 'active' : ''}' @click=${() => this.toggleChan(c as keyof typeof p.channels)}>${c.toUpperCase()}</div>`)}</div>
@@ -207,14 +240,20 @@ export class DjPresetDialog extends LitElement {
     const newPresets = [...this.presets];
     newPresets[this.selectedIndex] = p;
     this.presets = newPresets;
+    this.saveToStorage();
   }
 
   private cancelSelection() { this.show = false; }
 
   private applySelection() {
+    this.saveToStorage(true);
+    this.emitConfig();
+    this.show = false;
+  }
+
+  private emitConfig() {
     const p = this.presets[this.selectedIndex];
     const directive = `DJ: ${p.name}, BASS:${p.bass}%, REVERB:${p.reverb}%, FILTER:${p.filter}%, BPM:${p.bpm}, WARMUP:${p.warmup}s, EAGER:${p.eagerness}%, DIVERSITY:${p.diversity}%, PAUSE:${p.pause}s, CHANNELS:${Object.keys(p.channels).filter(c => p.channels[c as keyof typeof p.channels]).join(',')}`;
-    this.dispatchEvent(new CustomEvent('send-dj-config', { detail: { directive, name: p.name }, bubbles: true, composed: true }));
-    this.show = false;
+    this.dispatchEvent(new CustomEvent('send-dj-config', { detail: { directive, name: p.name, config: p }, bubbles: true, composed: true }));
   }
 }
