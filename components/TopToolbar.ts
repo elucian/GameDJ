@@ -961,6 +961,39 @@ Object.values(MUSIC_DATA).forEach(genreDef => {
     });
 });
 
+// Favorite instruments (harmonica, mandocello, accordion, whistle, low whistle) offered in more genres, as lead and alto choices.
+// Only where they fit the tradition: modern and regional genres broadly, traditional genres just where they belong.
+const FAVORITE_INSTRUMENTS: Record<string, string[]> = {
+    'Pop': ['Harmonica', 'Accordion', 'Mandocello', 'Whistle', 'Low Whistle'],
+    'Hip Hop': ['Harmonica', 'Whistle'],
+    'Rock': ['Accordion', 'Mandocello', 'Low Whistle'],
+    'Blues': ['Accordion', 'Mandocello', 'Whistle'],
+    'Jazz': ['Accordion', 'Mandocello', 'Low Whistle'],
+    'Electronic': ['Harmonica', 'Accordion', 'Whistle', 'Low Whistle'],
+    'Gaming': ['Harmonica', 'Accordion', 'Mandocello', 'Whistle', 'Low Whistle'],
+    'Spiritual': ['Harmonica', 'Low Whistle'],
+    'Renascentist': ['Mandocello', 'Whistle'],
+    'Classic': ['Mandocello'],
+    'Irish': ['Mandocello', 'Whistle', 'Low Whistle'],
+    'Spanish': ['Mandocello', 'Low Whistle'],
+    'Romanian': ['Mandocello', 'Whistle', 'Low Whistle'],
+    'African': ['Harmonica', 'Accordion', 'Whistle'],
+    'Hawaiian': ['Harmonica', 'Whistle', 'Low Whistle'],
+    'Indian': ['Harmonica', 'Accordion', 'Low Whistle'],
+    'Oriental': ['Harmonica', 'Low Whistle'],
+    'Victorian': ['Mandocello', 'Whistle'],
+    'Western': ['Whistle', 'Low Whistle']
+};
+Object.entries(FAVORITE_INSTRUMENTS).forEach(([genre, favorites]) => {
+    Object.values(MUSIC_DATA[genre]?.styles || {}).forEach(style => {
+        (['lead', 'alto'] as const).forEach(channel => {
+            const pool = style.instrumentPools[channel];
+            if (!pool || !style.manifest[channel]) return;
+            favorites.forEach(inst => { if (!pool.includes(inst)) pool.push(inst); });
+        });
+    });
+});
+
 const STORAGE_KEY_GENRE = 'gamedj_genre';
 const STORAGE_KEY_STYLE = 'gamedj_style';
 
