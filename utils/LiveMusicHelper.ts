@@ -173,6 +173,33 @@ export function chooseDjLanguage(genre: string, choirOnly = false): { language: 
 
 export const VOWEL_LYRICS = '[Vocalise]\nAh... ah... oh...\nOoh... ah... oh...\nAh-ah... oh-oh... ooh...';
 
+// Lyria takes a scale as a relative major/minor pair; index = pitch class of the major key.
+const LYRIA_SCALES = ['C_MAJOR_A_MINOR', 'D_FLAT_MAJOR_B_FLAT_MINOR', 'D_MAJOR_B_MINOR', 'E_FLAT_MAJOR_C_MINOR', 'E_MAJOR_D_FLAT_MINOR', 'F_MAJOR_D_MINOR',
+    'G_FLAT_MAJOR_E_FLAT_MINOR', 'G_MAJOR_E_MINOR', 'A_FLAT_MAJOR_F_MINOR', 'A_MAJOR_G_FLAT_MINOR', 'B_FLAT_MAJOR_G_MINOR', 'B_MAJOR_A_FLAT_MINOR'];
+const NOTE_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/** Maps a key such as "F# Minor" or "Bb Major" to the Lyria scale enum (all 12 pairs). */
+export function scaleForKey(key: string): string | null {
+    const m = key.trim().match(/^([A-G])([#b]?)\s+(major|minor)/i);
+    if (!m) return null;
+    let pc = NOTE_PC[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+    if (m[3].toLowerCase() === 'minor') pc += 3; // relative major
+    return LYRIA_SCALES[((pc % 12) + 12) % 12];
+}
+
+// Lyria has no lyrics input and only understands short descriptive prompts: vocals are just another instrument
+// (VOCALIZATION mode + a prompt that names the voice), so instrument names are turned into plain voice descriptions.
+export function describeVoice(instrument: string): string {
+    const n = instrument.toLowerCase();
+    if (n.includes('rapper') || n.includes('mc ')) return 'rap vocals, rhythmic spoken flow';
+    if (n.includes('duet')) return 'two human voices singing in harmony';
+    if (n.includes('solo') || n.includes('soprano') || n.includes('tenor') || n.includes('soloist')) return 'solo human singing voice';
+    if (n.includes('chamber')) return 'chamber choir vocals, ooh and aah harmonies';
+    if (n.includes('choir') || n.includes('chant') || n.includes('cappella') || n.includes('ensemble')) return `${instrument} vocals, ooh and aah harmonies`;
+    if (n.includes('boy') || n.includes('girl') || n.includes('female') || n.includes('male')) return `${instrument} singing voice`;
+    return `${instrument}, human vocals`;
+}
+
 export interface DjPersonality {
     name: string;
     eagerness: number;
@@ -234,7 +261,7 @@ export class LiveMusicHelper extends EventTarget {
   private userInteractionCooldowns = new Map<string, number>();
   private djPersonality: DjPersonality | null = null;
   private lyricBlocks: { label: string; lines: string }[] = [];
-  private lyricCursor = 0;
+  private lyricsPrompt = '';
   public lyricsLanguage = 'English';
   public lyricsVowelsOnly = false;
   private mediaRecorder: MediaRecorder | null = null;
@@ -447,7 +474,6 @@ export class LiveMusicHelper extends EventTarget {
   public setLyrics(text: string, language?: string, vowelsOnly = false) {
       if (language) this.lyricsLanguage = language;
       this.lyricsVowelsOnly = vowelsOnly;
-      this.lyricCursor = 0;
       this.lyricBlocks = [];
       let label = 'verse'; let lines: string[] = [];
       const flush = () => { if (lines.length) this.lyricBlocks.push({ label, lines: lines.join(' / ') }); lines = []; };
@@ -457,6 +483,12 @@ export class LiveMusicHelper extends EventTarget {
           else lines.push(l);
       });
       flush();
+      // Lyria cannot follow lyrics line by line, so the DJ hands over the essentials once, at the start:
+      // the language plus the opening lines, and lets Lyria shape the singing itself.
+      const opening = (this.lyricBlocks.find(b => /chorus|hook|refrain/.test(b.label)) ?? this.lyricBlocks[0])?.lines ?? '';
+      this.lyricsPrompt = vowelsOnly || !opening
+          ? 'vocalise on open vowels, ah oh ooh'
+          : `vocals sung in ${this.lyricsLanguage}: "${opening.slice(0, 140)}"`;
   }
 
   /** Before the baton is raised: the DJ picks the language for the genre and writes lyrics (or a vowel vocalise). */
@@ -473,19 +505,6 @@ export class LiveMusicHelper extends EventTarget {
       const usedVowels = text === VOWEL_LYRICS;
       this.setLyrics(text, language, usedVowels);
       return { text, language, vowels: usedVowels };
-  }
-
-  private nextLyricCue(chorus: boolean): string {
-      if (this.lyricsVowelsOnly || this.lyricBlocks.length === 0) {
-          return ' Sing only open vowel vocalise (Ah, Oh, Ooh), no words.';
-      }
-      const isHook = (b: { label: string }) => /chorus|hook|refrain/.test(b.label);
-      const hooks = this.lyricBlocks.filter(isHook);
-      const verses = this.lyricBlocks.filter(b => !isHook(b));
-      let block;
-      if (chorus && hooks.length) block = hooks[Math.floor(Math.random() * hooks.length)];
-      else { const pool = verses.length ? verses : this.lyricBlocks; block = pool[this.lyricCursor++ % pool.length]; }
-      return ` Sing exactly these real ${this.lyricsLanguage} words, clearly pronounced: "${block.lines.slice(0, 220)}".`;
   }
 
   public setDjPersonality(personality: DjPersonality | null) { this.djPersonality = personality; }
@@ -518,6 +537,17 @@ export class LiveMusicHelper extends EventTarget {
     }, durationMs);
   }
 
+  private contextResetTimer: number | null = null;
+  private scheduleContextReset() {
+      if (this.contextResetTimer) clearTimeout(this.contextResetTimer);
+      this.contextResetTimer = window.setTimeout(() => {
+          this.contextResetTimer = null;
+          if (this.session && (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'playing')) {
+              try { (this.session as any).resetContext(); } catch (e) { console.error("resetContext failed:", e); }
+          }
+      }, 800);
+  }
+
   private lastConfig: any = null;
   private lastPrompts: any = null;
 
@@ -528,22 +558,24 @@ export class LiveMusicHelper extends EventTarget {
     const config: any = {
         musicGenerationMode: this.generationMode,
         bpm: this.bpm,
-        guidance: 10.0,
+        guidance: 4.0, // API range is 0-6
         temperature: 0.9,
     };
     
-    const scaleMap: any = {
-        "C Major": "C_MAJOR_A_MINOR", "A Minor": "C_MAJOR_A_MINOR",
-        "D Major": "D_MAJOR_B_MINOR", "B Minor": "D_MAJOR_B_MINOR",
-        "F Major": "F_MAJOR_D_MINOR", "D Minor": "F_MAJOR_D_MINOR",
-        "G Major": "G_MAJOR_E_MINOR", "E Minor": "G_MAJOR_E_MINOR"
-    };
-    if (scaleMap[this.key]) {
-        config.scale = scaleMap[this.key];
-    }
+    const scale = scaleForKey(this.key);
+    if (scale) config.scale = scale;
 
     if (JSON.stringify(config) !== JSON.stringify(this.lastConfig)) {
-        try { await this.session.setMusicGenerationConfig({ musicGenerationConfig: config }); this.lastConfig = config; } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
+        const prev = this.lastConfig;
+        try {
+            await this.session.setMusicGenerationConfig({ musicGenerationConfig: config });
+            this.lastConfig = config;
+            // Lyria only picks up a new BPM or scale after a context reset; the generation mode is not documented
+            // as switchable mid-stream, so it gets the same treatment.
+            if (prev && (prev.bpm !== config.bpm || prev.scale !== config.scale || prev.musicGenerationMode !== config.musicGenerationMode)) {
+                this.scheduleContextReset();
+            }
+        } catch (e) { console.error("setMusicGenerationConfig failed:", e); }
     }
 
     // 2. Build Rich, Descriptive Narrative Prompt
@@ -561,7 +593,7 @@ export class LiveMusicHelper extends EventTarget {
             if (isChoir && this.choirMuted) return;
             if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
 
-            activeInstruments.push(`${k} ${ch.instrument}`);
+            activeInstruments.push(`${k} ${isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : ch.instrument}`);
             playingKeys.push(k);
         }
     });
@@ -574,9 +606,9 @@ export class LiveMusicHelper extends EventTarget {
     const currentStage = this.conductorMode ? this.currentPlan?.[this.currentPlanIdx] : undefined;
     const ensembleDirective = currentStage ? this.describeEnsemble(playingKeys, currentStage.featured) : null;
 
-    // Inject Vocal/Solo Directives
+    // Inject Vocal/Solo Directives (kept short: Lyria reads prompts as tags, not instructions)
     if (this.currentVocalSignal) {
-        narrative += `Direct command: ${this.currentVocalSignal}. Please focus on this directive with high emotional expression and tight instrumental response. `;
+        narrative += `Vocal direction: ${this.currentVocalSignal}. `;
     }
 
     // Evolution modifiers
@@ -614,11 +646,16 @@ export class LiveMusicHelper extends EventTarget {
         const ch = this.instruments[k];
         const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
         finalPayload.push({
-            text: isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`,
+            text: isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`),
             weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
         });
     });
 
+
+    // Vocals are on stage: one compact prompt carries the DJ's language / lyrics for the whole piece
+    if (this.lyricsPrompt && playingKeys.some(k => isVocalInstrument(this.instruments[k].instrument))) {
+        finalPayload.push({ text: this.lyricsPrompt, weight: 1.2 });
+    }
 
     if (JSON.stringify(finalPayload) !== JSON.stringify(this.lastPrompts)) {
         try { await this.session.setWeightedPrompts({ weightedPrompts: finalPayload }); this.lastPrompts = finalPayload; } catch (e) { console.error("setWeightedPrompts failed:", e); }
@@ -631,7 +668,7 @@ export class LiveMusicHelper extends EventTarget {
   }
 
   private describeEnsemble(playingKeys: ChannelKey[], featured: ChannelKey | null): string | null {
-      const names = playingKeys.map(k => this.instruments[k].instrument).filter(Boolean);
+      const names = playingKeys.map(k => this.instruments[k].instrument).filter(Boolean).map(n => isVocalInstrument(n) ? describeVoice(n) : n);
       if (names.length === 0) return null;
       const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
       const lead = featured && playingKeys.includes(featured) && MELODIC_CHANNELS.includes(featured) ? this.instruments[featured].instrument : null;
@@ -701,7 +738,7 @@ export class LiveMusicHelper extends EventTarget {
 
       const isAcappella = stage.includes('cappella');
       const cues: string[] = [];
-      const langHint = ` Language: ${this.lyricsLanguage}, real words or open vowels only, never gibberish.`;
+      const langHint = ` Sung in ${this.lyricsLanguage}.`;
       const addCue = (msg: string) => cues.push(`${msg} ${styleHint}`);
 
       if (isAcappella) {
@@ -709,7 +746,7 @@ export class LiveMusicHelper extends EventTarget {
           const cue = rap
               ? 'A CAPPELLA RAP: drums and instruments drop out completely, only the rapper with tight rhythmic flow, breath accents and vocal percussion'
               : 'A CAPPELLA: all instruments drop out completely, only unaccompanied human voices in natural harmony';
-          return `${cue}.${this.nextLyricCue(false)}${langHint}`;
+          return `${cue}.${langHint}`;
       }
       if (details.hasRapper) {
           addCue(isClimax ? 'RAP VOCAL: Hard-hitting hook with layered ad-libs and crowd-style shouts' : isIntro ? 'RAP VOCAL: Low murmured spoken-word intro setting the scene' : isOutro ? 'RAP VOCAL: Slowed-down final bars fading into ad-libs' : 'RAP VOCAL: Confident rhythmic verse with tight internal rhymes and on-beat flow');
@@ -802,8 +839,7 @@ export class LiveMusicHelper extends EventTarget {
       }
 
       const chosen = cues[Math.floor(Math.random() * cues.length)];
-      // Section cues carry the next real words (or vowels); the periodic guidance only keeps language and style
-      return stageName ? `${chosen}${this.nextLyricCue(isClimax)}${langHint}` : `${chosen}${langHint}`;
+      return `${chosen}${langHint}`;
   }
 
   public toggleSolo(active: boolean) { this.soloMuted = !active; this.scheduleRefresh(); }
@@ -1774,6 +1810,8 @@ export class LiveMusicHelper extends EventTarget {
     }
     
     this.sessionCounter++; const currentSessionId = this.sessionCounter;
+    // A new session knows nothing yet: make sure config and prompts are sent again
+    this.lastConfig = null; this.lastPrompts = null;
 
     // Create a timeout promise to prevent hanging indefinitely
     const timeout = new Promise((_, reject) => 

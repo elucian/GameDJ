@@ -227,9 +227,8 @@ export class VocalDialog extends LitElement {
       const active = config.length > 0;
       
       // Instruction for Lyira with routing and volume
-      const directive = active 
-        ? `VOCAL CONFIG: ${config.join(', ')}, ROUTING: SOLO->Ch1, CHOIR->Ch2, SOLO_VOL:${this.soloVolume}%, CHOIR_VOL:${this.choirVolume}%` 
-        : 'VOCAL CONFIG: None';
+      // Lyria has no routing or per-voice volume: it only understands a short description of the voices
+      const directive = active ? `VOCAL CONFIG: ${config.join(', ')}` : 'VOCAL CONFIG: None';
       
       this.dispatchEvent(new CustomEvent('send-vocal-command', { detail: directive }));
       this.dispatchEvent(new CustomEvent('lyrics-set', { detail: this.vocalText, bubbles: true, composed: true }));

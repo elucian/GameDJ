@@ -42,11 +42,14 @@ export class PromptDjMidi extends LitElement {
       letter-spacing: 1px;
       /* Removed text-transform: uppercase to support mixed case messages */
       width: 100%;
-      height: 28px;
+      /* Permanent 4-line message log: newest line at the bottom, older lines fade, long lines are cut with an ellipsis */
+      line-height: 1.5em;
+      height: calc(4 * 1.5em + 12px);
       display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 0 16px;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+      padding: 6px 16px;
       border-radius: 4px;
       background: #000;
       box-shadow: inset 0 2px 8px rgba(0,0,0,1);
@@ -54,6 +57,10 @@ export class PromptDjMidi extends LitElement {
       border: 1px solid rgba(255, 255, 255, 0.05);
     }
     
+    .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 1.5em; flex-shrink: 0; opacity: 0.4; }
+    .log-line.latest { opacity: 1; }
+    .log-line.error { color: #FF3B30; }
+
     .display-box.info {
       color: var(--accent-color);
       text-shadow: 0 0 8px rgba(61, 255, 171, 0.4);
@@ -106,9 +113,9 @@ export class PromptDjMidi extends LitElement {
         padding: 2px 8px; 
       }
       .display-box { 
-        height: 24px; 
         font-size: 10.5px; 
-        padding: 0 10px;
+        padding: 4px 10px;
+        height: calc(4 * 1.5em + 8px);
       }
       .grid-container { 
         padding: 12px 6px; 
@@ -124,8 +131,8 @@ export class PromptDjMidi extends LitElement {
 
   @property({ type: String }) public playbackState: PlaybackState = 'stopped';
   @state() public audioLevel = 0;
-  @state() private message = 'SYSTEM READY';
   @state() private messageType: 'info' | 'error' = 'info';
+  @state() private log: { text: string; type: 'info' | 'error' }[] = [{ text: 'SYSTEM READY', type: 'info' }];
   
   @property({ type: Boolean }) public interactionEnabled = false;
 
@@ -137,8 +144,8 @@ export class PromptDjMidi extends LitElement {
   }
 
   public setMessage(text: string, type: 'info' | 'error' = 'info') {
-    this.message = text;
     this.messageType = type;
+    if (this.log[this.log.length - 1]?.text !== text) this.log = [...this.log, { text, type }].slice(-4);
   }
 
   public setPrompts(prompts: Map<string, Prompt>) {
@@ -153,8 +160,8 @@ export class PromptDjMidi extends LitElement {
     }
     const newPrompts = new Map(this.prompts);
     this.prompts = newPrompts;
-    this.message = 'SYSTEM READY';
     this.messageType = 'info';
+    this.log = [{ text: 'SYSTEM READY', type: 'info' }];
     (this as any).requestUpdate();
 
     (this as unknown as HTMLElement).dispatchEvent(
@@ -200,7 +207,7 @@ export class PromptDjMidi extends LitElement {
     return html`
       <div class="display-panel">
         <div class="display-box ${this.messageType}">
-          ${this.message}
+          ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
         </div>
       </div>
       <div class="grid-container">
