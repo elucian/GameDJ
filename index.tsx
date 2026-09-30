@@ -15,7 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, SONG_REFERENCES, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage } from './utils/LiveMusicHelper';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -404,7 +404,13 @@ function main() {
   }));
   (rightSidebar as any).addEventListener('seed-lock-changed', ((e: Event) => liveMusicHelper.setSeedLock((e as CustomEvent<boolean>).detail)));
   liveMusicHelper.addEventListener('prompt-filtered', ((e: Event) => {
-      const { text, filteredReason } = (e as CustomEvent<{ text?: string; filteredReason?: string }>).detail;
+      const { text, filteredReason, payload, config } = (e as CustomEvent<{ text?: string; filteredReason?: string; payload?: unknown; config?: unknown }>).detail;
+      // Dev mode: keep a log of every rejected prompt with the full payload it was part of (window.__lyriaFiltered)
+      if ((import.meta as any).env?.DEV) {
+          const w = window as any;
+          (w.__lyriaFiltered ||= []).push({ at: new Date().toISOString(), text, reason: filteredReason, payload, config });
+          console.warn('[Lyria] prompt filtered:', text, '| reason:', filteredReason, '| payload:', payload, '| config:', config);
+      }
       pdjMidi.setMessage(`PROMPT FILTERED: ${filteredReason || text || 'unknown reason'}`, 'error');
   }));
   liveMusicHelper.addEventListener('config-applied', ((e: Event) => {
@@ -750,7 +756,7 @@ function main() {
       liveMusicHelper.setGenerationMode(newMode);
 
       // 6. Apply Special Reference Instruction
-      const genreRefs = SONG_REFERENCES[topToolbar.genre] || SONG_REFERENCES['Pop'];
+      const genreRefs = STYLE_DESCRIPTORS[topToolbar.genre] || STYLE_DESCRIPTORS['Pop'];
       const ref = genreRefs[Math.floor(Math.random() * genreRefs.length)];
       
       // Enforce channel isolation, harmonic cohesion, and vocal style authenticity in special instructions

@@ -30,10 +30,9 @@ const DJ_KNOBS_MODERN = 6;
 const DJ_KNOBS_TRADITIONAL = 4;
 const DJ_KNOBS_REGIONAL = 2;
 // Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
-// The Guidance knob (0..2 = 0..6) is the overall control and is capped at 5; only the DJ may go above 5, up to the API maximum.
-const USER_GUIDANCE_MAX = 5;
+// The Guidance knob is the single truth: guidance = knob value x 3 (knob 0..2 = guidance 0..6), so an unset knob means 0.
+// While the DJ conducts it turns that knob itself (up to 6 for solos, duets and a cappella), so the knob always shows the real value.
 const LYRIA_GUIDANCE_MAX = 6;
-const DEFAULT_GUIDANCE = 4.0; // Lyria's default, used while the Guidance knob is at zero
 const isGuidanceKnob = (p: { text: string }) => p.text.trim().toLowerCase() === 'guidance';
 // When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
 const USER_KNOB_HOLD_MS = 30000;
@@ -108,22 +107,33 @@ export function isVocalInstrument(instrumentName: string | undefined | null): bo
     return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase()));
 }
 
-export const SONG_REFERENCES: Record<string, string[]> = {
-  'Hip Hop': ['Lose Yourself', 'Juicy', 'N.Y. State of Mind', 'Nuthin But a G Thang', 'Sicko Mode', 'Alright', 'Freestyle cypher energy', 'Kendrick Lamar style', 'Nas boom bap aesthetic', 'J Dilla lo-fi groove', 'Wu-Tang Clan grit'],
-  'Pop': ['Blinding Lights', 'Flowers', 'As It Was', 'Levitating', 'Anti-Hero', 'Shape of You', 'Bad Guy', 'Cruel Summer', 'Vampire', 'Taylor Swift style', 'The Weeknd vibe', 'Max Martin production style', 'Jack Antonoff aesthetic'],
-  'R&B': ['Kill Bill', 'Snooze', 'Adorn', 'Cuff It', 'No Guidance', 'Blame It', 'Ordinary People', 'Creepin', 'Earned It', 'SZA influence', 'Frank Ocean aesthetic', 'Prince-style arrangement', 'Stevie Wonder harmony'],
-  'Jazz': ['Take Five', 'So What', 'Autumn Leaves', 'My Funny Valentine', 'Fly Me To The Moon', 'Blue In Green', 'Cantaloupe Island', 'Miles Davis style', 'Coltrane changes', 'Duke Ellington orchestration', 'Bill Evans voicings'],
-  'Electronic': ['Around the World', 'Strobe', 'Levels', 'Titanium', 'One More Time', 'Sandstorm', 'Scary Monsters and Nice Sprites', 'Clarity', 'Daft Punk style', 'Deadmau5 vibe', 'Aphex Twin complexity', 'Skrillex sound design'],
-  'Rock': ['Bohemian Rhapsody', 'Hotel California', 'Smells Like Teen Spirit', 'Comfortably Numb', 'Seven Nation Army', 'Do I Wanna Know?', 'Pink Floyd aesthetic', 'Nirvana vibe', 'Led Zeppelin riff-style', 'Beatles melodic structure'],
-  'Blues': ['The Thrill Is Gone', 'Crossroads', 'Hoochie Coochie Man', 'Sweet Home Chicago', 'Texas Flood', 'Pride and Joy', 'B.B. King style', 'SRV influence', 'Muddy Waters aesthetic', 'John Lee Hooker groove'],
-  'Ambient': ['Weightless', 'Music for Airports', 'Selected Ambient Works', 'Riceboy Sleeps', '76:14', 'Deep Blue Day', 'Brian Eno style', 'Hans Zimmer texture', 'Vangelis synth layers'],
-  'Gaming': ['Sweden (Minecraft)', 'Megalovania', 'Dragonborn', 'One-Winged Angel', 'The Legend of Zelda Theme', 'Halo Theme', 'Koji Kondo style', 'Nobuo Uematsu composition', 'Mick Gordon intensity'],
-  'Classic': ['Symphony No. 5', 'Clair de Lune', 'The Four Seasons', 'Moonlight Sonata', 'Ride of the Valkyries', 'Bolero', 'Beethoven style', 'Debussy vibe', 'Mozart structure', 'Bach counterpoint'],
-  'Traditional': ['Greensleeves', 'Danny Boy', 'The Foggy Dew', 'Scarborough Fair', 'Wild Mountain Thyme', 'Auld Lang Syne', 'Traditional arrangement'],
-  'Spanish': ['Despacito', 'The Girl from Ipanema', 'Oye Como Va', 'Bailando', 'Chan Chan', 'La Camisa Negra', 'Santana style', 'Tito Puente rhythm', 'Antonio Carlos Jobim harmony', 'Andrés Segovia style', 'Paco de Lucía influence'],
-  'African': ['Pata Pata', 'Zangalewa', 'African Queen', 'Jerusalema', 'Water No Get Enemy', 'Essence', 'Fela Kuti vibe', 'Burna Boy style', 'Miriam Makeba aesthetic'],
-  'Indian': ['Jai Ho', 'Tum Hi Ho', 'Chaiyya Chiaayya', 'Kesariya', 'Kal Ho Naa Ho', 'Pasoori', 'A.R. Rahman style', 'R.D. Burman groove', 'Shankar-Ehsaan-Loy production'],
-  'Romanian': ['Dragostea Din Tei', 'Ciuleandra', 'Trandafir de la Moldova', 'Constantine, Constantine', 'Luna Alba', 'Gheorghe Zamfir style', 'Maria Tanase aesthetic']
+// Descriptive style tags used by the dice roll. Lyria's safety filter rejects artist and band names ("... style",
+// "... vibe") and sometimes song titles, so these describe the sound instead. Never put names in here.
+export const STYLE_DESCRIPTORS: Record<string, string[]> = {
+  'Hip Hop': ['dusty boom bap drums with jazzy sampled loops', 'hard-hitting 808 bass and crisp hi-hats', 'laid-back synth whine and a deep groove', 'raw cypher energy with punchy drums'],
+  'Pop': ['bright polished pop production with a catchy hook', 'shimmering synths and a driving four on the floor beat', 'warm radio-friendly pop with layered harmonies'],
+  'R&B': ['smooth neo-soul chords with a slow groove', 'silky late-night r&b with warm bass', 'sensual slow jam with electric piano and soft drums'],
+  'Jazz': ['relaxed modal jazz with walking bass and brushed drums', 'swinging bebop energy with lively improvisation', 'smoky late-night jazz lounge feel'],
+  'Electronic': ['pulsing analog synth arpeggios and a steady kick', 'hypnotic four on the floor groove with evolving pads', 'intricate glitchy electronica textures'],
+  'Rock': ['driving guitar riffs with a big live drum sound', 'anthemic rock with soaring guitar leads', 'gritty garage rock energy'],
+  'Blues': ['slow twelve bar blues with expressive bending guitar', 'smoky shuffle groove with soulful call and response', 'gritty delta blues feel'],
+  'Ambient': ['slowly evolving atmospheric pads with deep space', 'weightless drifting textures and soft reverb', 'meditative calm soundscape'],
+  'Gaming': ['epic heroic adventure score with sweeping melodies', 'playful chiptune flavoured game soundtrack', 'tense cinematic boss battle energy'],
+  'Classic': ['elegant romantic era orchestral writing', 'expressive piano and strings with graceful phrasing', 'dramatic symphonic build with rich harmony'],
+  'Opera': ['grand dramatic operatic orchestration', 'sweeping romantic orchestra supporting expressive voices', 'theatrical tension and release'],
+  'Marching': ['crisp parade snare rhythm with bold brass', 'disciplined martial pulse with fanfare', 'stirring military band energy'],
+  'Renascentist': ['gentle renaissance consort with lute and recorder', 'polyphonic early music with delicate ornaments', 'courtly dance rhythm'],
+  'Victorian': ['refined parlour music with graceful piano', 'ornate romantic salon melody', 'stately nineteenth century orchestral colour'],
+  'Spiritual': ['reverent sacred atmosphere with slow harmony', 'uplifting gospel warmth and call and response', 'peaceful contemplative chant-like phrases'],
+  'Traditional': ['timeless folk feel with organic acoustic instruments', 'warm rustic traditional melody', 'heartfelt traditional dance rhythm'],
+  'Spanish': ['passionate flamenco guitar with rhythmic handclaps', 'warm nylon string guitar and lively Latin rhythm', 'fiery Spanish dance energy'],
+  'African': ['vibrant polyrhythmic percussion with a joyful groove', 'interlocking highlife style guitar lines', 'lively afrobeat groove with call and response'],
+  'Indian': ['raga inspired melody with drone and tabla rhythm', 'rich Indian classical ornamentation with sitar', 'lively Bollywood style orchestral colour'],
+  'Irish': ['spirited Irish folk with fiddle and tin whistle', 'lilting jig and reel rhythm', 'wistful Celtic melody'],
+  'Oriental': ['delicate pentatonic melody with plucked strings', 'flowing East Asian instrumental colour', 'serene traditional oriental atmosphere'],
+  'Romanian': ['lively Balkan folk with fast violin and accordion', 'nostalgic folk melody with cimbalom shimmer', 'energetic hora dance rhythm'],
+  'Western': ['dusty frontier ballad with acoustic guitar and harmonica', 'lonesome prairie atmosphere with twangy guitar', 'steady trail riding rhythm'],
+  'Hawaiian': ['gentle island slack key guitar and ukulele', 'sunny tropical lilt with warm steel guitar', 'relaxed ocean breeze feel']
 };
 export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
 export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
@@ -280,7 +290,6 @@ export class LiveMusicHelper extends EventTarget {
   public lyricsText = '';
   /** How strongly the voices sing (0 soft .. 1 powerful). The DJ moves it from section to section. */
   public voiceIntensity = 0.7;
-  private djGuidance = 4.0;
   /** Lyria temperature: 0.0 to 3.0, default 1.1. Set from the DJ dialog. */
   private temperature = 1.1;
   public setTemperature(value: number) { this.temperature = Math.round(Math.max(0, Math.min(3, value)) * 10) / 10; this.scheduleRefresh(); }
@@ -298,12 +307,11 @@ export class LiveMusicHelper extends EventTarget {
   }
   /** The guidance the app wants right now (the applied one is reported by 'config-applied'). */
   public get intendedGuidance(): number { return this.effectiveGuidance(); }
-  /** Guidance sent to Lyria: your Guidance knob (default 4), plus a boost from the DJ for tight formations, up to 6. */
+  /** Guidance sent to Lyria: exactly what the Guidance knob says (weight x 3, 0 when the knob is not set). */
   private effectiveGuidance(): number {
-      let user = DEFAULT_GUIDANCE;
-      for (const p of this.prompts.values()) if (isGuidanceKnob(p) && p.weight > 0.01) user = Math.min(USER_GUIDANCE_MAX, p.weight * 3);
-      const boost = this.conductorMode ? Math.max(0, this.djGuidance - DEFAULT_GUIDANCE) : 0;
-      return Math.round(Math.min(LYRIA_GUIDANCE_MAX, user + boost) * 10) / 10;
+      let g = 0;
+      for (const p of this.prompts.values()) if (isGuidanceKnob(p)) g = p.weight * 3;
+      return Math.round(Math.max(0, Math.min(LYRIA_GUIDANCE_MAX, g)) * 10) / 10;
   }
   public setVoiceIntensity(value: number) {
       this.voiceIntensity = Math.max(0, Math.min(1, value));
@@ -628,6 +636,8 @@ export class LiveMusicHelper extends EventTarget {
   // Prompt weights are cross-faded: new prompts fade in, replaced prompts fade out, so a section change
   // is a smooth transition instead of a jump (Lyria's docs recommend sending intermediate weights).
   private smoothedPrompts = new Map<string, number>();
+  /** Prompt texts Lyria's safety filter rejected: they are not sent again (each rejection is logged in dev mode). */
+  private rejectedPrompts = new Set<string>();
   private crossfadeTimer: number | null = null;
   private crossfade(target: { text: string; weight: number }[]): { text: string; weight: number }[] {
       const goals = new Map<string, number>();
@@ -705,6 +715,7 @@ export class LiveMusicHelper extends EventTarget {
     }
 
     // 2. Build Rich, Descriptive Narrative Prompt
+    let arrangement = '', vocalDirection = '', evolutionText = '', special = '';
     let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM in ${this.meter} time. `;
     if (this.mood && this.mood !== 'None') narrative += `The overall mood is ${this.mood.toLowerCase()}. `;
     
@@ -725,7 +736,7 @@ export class LiveMusicHelper extends EventTarget {
     });
 
     if (activeInstruments.length > 0) {
-        narrative += `The arrangement features: ${activeInstruments.join(', ')}. `;
+        arrangement = `The arrangement features: ${activeInstruments.join(', ')}`;
     }
 
     // DJ ensemble directive: name the exact formation so Lyria plays a real solo/duet/trio/quartet/tutti
@@ -734,26 +745,27 @@ export class LiveMusicHelper extends EventTarget {
 
     // Inject Vocal/Solo Directives (kept short: Lyria reads prompts as tags, not instructions)
     if (this.currentVocalSignal) {
-        narrative += `Vocal direction: ${this.currentVocalSignal}. `;
+        vocalDirection = `Vocal direction: ${this.currentVocalSignal}`;
     }
 
     // Evolution modifiers
     if (this.evolutionValue > 0) {
-        narrative += `The music should be progressive, dynamic, and complex. `;
+        evolutionText = 'progressive, dynamic and complex music';
     } else if (this.evolutionValue < 0) {
-        narrative += `The music should be stable, minimal, and steady. `;
+        evolutionText = 'stable, minimal and steady music';
     }
 
     if (this.specialInstruction) {
-        narrative += `Additional context: ${this.specialInstruction}. `;
+        special = this.specialInstruction;
     }
 
-    // Placed last so the current section's formation overrides the full instrument palette above
-    if (ensembleDirective) {
-        narrative += `Current section: ${ensembleDirective} `;
-    }
-
-    const finalPayload = [ { text: narrative, weight: 2.0 } ];
+    // Separate short prompts, not one long narrative: Lyria reads them as tags and, when its safety filter drops one,
+    // the others still play (a single long prompt would lose everything).
+    const finalPayload = [ { text: narrative.trim(), weight: 2.0 } ];
+    if (arrangement) finalPayload.push({ text: arrangement, weight: 1.4 });
+    if (special) finalPayload.push({ text: special, weight: 1.0 });
+    if (vocalDirection) finalPayload.push({ text: vocalDirection, weight: 1.2 });
+    if (evolutionText) finalPayload.push({ text: evolutionText, weight: 0.8 });
     // Every channel gets its own prompt below and the voices theirs; this one asks for a clean, well separated mix
     finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix, each instrument clear and distinct', weight: 0.8 });
     if (ensembleDirective) {
@@ -786,7 +798,7 @@ export class LiveMusicHelper extends EventTarget {
         finalPayload.push({ text: this.lyricsPrompt, weight: 1.2 });
     }
 
-    const fadedPayload = this.crossfade(finalPayload);
+    const fadedPayload = this.crossfade(finalPayload.filter(p => !this.rejectedPrompts.has(p.text)));
     if (JSON.stringify(fadedPayload) !== JSON.stringify(this.lastPrompts)) {
         try { await this.session.setWeightedPrompts({ weightedPrompts: fadedPayload }); this.lastPrompts = fadedPayload; this.dispatchEvent(new CustomEvent('prompts-sent', { detail: { prompts: fadedPayload, guidance: config.guidance } })); } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
@@ -1680,12 +1692,18 @@ export class LiveMusicHelper extends EventTarget {
       const currentStage = this.currentPlan?.[this.currentPlanIdx];
       if (!currentStage) return;
 
-      // Guidance follows the section: eased in small steps because a jump makes the music change abruptly
-      if (this.conductorMode) {
-          const target = this.djGuidanceTarget();
-          const before = Math.round(this.djGuidance * 10);
-          this.djGuidance += Math.sign(target - this.djGuidance) * Math.min(Math.abs(target - this.djGuidance), 0.12);
-          if (Math.round(this.djGuidance * 10) !== before) this.scheduleRefresh();
+      // The DJ turns the Guidance knob to follow the section (eased in small steps: a jump makes the music change
+      // abruptly). If you touched the knob, it is yours for the next 30 seconds.
+      const guidanceKnob = Array.from(this.prompts.values()).find(isGuidanceKnob);
+      if (guidanceKnob && currentTimeMs - (this.userInteractionCooldowns.get(guidanceKnob.promptId) || 0) >= USER_KNOB_HOLD_MS) {
+          const targetWeight = this.djGuidanceTarget() / 3;
+          const diff = targetWeight - guidanceKnob.weight;
+          if (Math.abs(diff) > 0.005) {
+              guidanceKnob.weight = Math.max(0, Math.min(2, guidanceKnob.weight + Math.sign(diff) * Math.min(Math.abs(diff), 0.04)));
+              guidanceKnob.volume = guidanceKnob.weight / 2;
+              this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts }));
+              this.scheduleRefresh();
+          }
       }
 
       const interactionCooldownMs = 10000 - (this.evolutionValue * 500);
@@ -1705,7 +1723,7 @@ export class LiveMusicHelper extends EventTarget {
           const targetOf = (p: Prompt) => targets[p.text] ?? 0;
 
           const isEngaged = (p: Prompt) => p.weight > 0.01;
-          // The Guidance knob belongs to you: the DJ only adds a temporary boost on top of it
+          // The Guidance knob is handled above (it follows the section), not as one of the DJ's musical knobs
           const isUserHeld = (p: Prompt) => currentTimeMs - (this.userInteractionCooldowns.get(p.promptId) || 0) < USER_KNOB_HOLD_MS;
           let engagedCount = 0;
           this.prompts.forEach(p => { if (isEngaged(p) && !isUserHeld(p) && !isGuidanceKnob(p)) engagedCount++; });
@@ -1965,7 +1983,8 @@ export class LiveMusicHelper extends EventTarget {
       model: this.model, 
       callbacks: { 
         onmessage: async (e) => { 
-          if (e.filteredPrompt) this.dispatchEvent(new CustomEvent('prompt-filtered', { detail: e.filteredPrompt }));
+          if (e.filteredPrompt?.text) { this.rejectedPrompts.add(e.filteredPrompt.text); this.scheduleRefresh(); }
+          if (e.filteredPrompt) this.dispatchEvent(new CustomEvent('prompt-filtered', { detail: { ...e.filteredPrompt, payload: this.lastPrompts, config: this.lastConfig } }));
           if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); 
         }, 
         onerror: (err: any) => { 

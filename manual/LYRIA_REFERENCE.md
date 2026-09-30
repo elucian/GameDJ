@@ -72,7 +72,7 @@ Descriptor vocabulary listed in the guide (use these words, they are known to wo
 | Lyria feature | GameDJ |
 |---|---|
 | Prompts | `refreshSessionPrompts()` builds one narrative prompt (weight 2.0), a quality prompt (0.8), an ensemble/formation prompt, one prompt per active channel (weight = channel weight x per-channel factor), one per active knob, a compact vocal/lyrics prompt (1.2) when a voice is on stage. Weights are **cross-faded** (`crossfade`): new prompts fade in and replaced ones fade out over a few 350 ms steps. Sent only when the payload changed. |
-| Config | `musicGenerationMode`, `bpm` (clamped 60 to 200), `scale` (from the key, all 12 pairs), `guidance` (the Guidance knob: weight x 3, default 4 while the knob is 0, capped at 5; the DJ adds a boost on top, up to 6), `temperature` (default 1.1, set per DJ preset with the Lyria Temp slider, 0.0 to 3.0), `density` and `brightness` (driven by the Density and Brightness knobs, 0 to 1), `muteBass` and `muteDrums` (a switched-off bass or drum channel is really muted), `onlyBassAndDrums` (rhythm-only sections), `seed` (new per recording, lockable from the SEED chip in the mixer panel). Whole config resent whenever it changes. |
+| Config | `musicGenerationMode`, `bpm` (clamped 60 to 200), `scale` (from the key, all 12 pairs), `guidance` (exactly the Guidance knob: weight x 3, so 0 when the knob is not set; the DJ turns the knob itself, up to 6), `temperature` (default 1.1, set per DJ preset with the Lyria Temp slider, 0.0 to 3.0), `density` and `brightness` (driven by the Density and Brightness knobs, 0 to 1), `muteBass` and `muteDrums` (a switched-off bass or drum channel is really muted), `onlyBassAndDrums` (rhythm-only sections), `seed` (new per recording, lockable from the SEED chip in the mixer panel). Whole config resent whenever it changes. |
 | `resetContext()` | scheduled 0.8 s after a bpm, scale or mode change (`scheduleContextReset`). |
 | Vocals | `VOCALIZATION` mode + voice descriptions (`describeVoice`). Lyrics are sent once as a short prompt (language plus the opening line, or vowels). |
 | Server messages | `filteredPrompt` is shown in the message log as `PROMPT FILTERED: reason`. |
@@ -90,7 +90,27 @@ The right-hand panel above the knobs shows the prompt list and the guidance valu
 6. **Never send a prompt with weight 0.** Filter tiny weights out (the code drops channel and knob prompts under 0.05).
 7. **Change prompts gradually.** For big style changes ramp weights over a few updates instead of swapping text.
 8. **Stay in range:** guidance 0 to 6, temperature 0 to 3, bpm 60 to 200 (the tempo slider must respect this), density and brightness 0 to 1.
-9. **Guidance is global** (one value for the whole session), driven by the Guidance knob; the DJ never moves that knob. Per-channel emphasis has to be done with prompt weights.
+9. **Guidance is global** (one value for the whole session), driven only by the Guidance knob (the DJ turns that knob, so the knob always shows the real value). Per-channel emphasis has to be done with prompt weights.
 10. **New session, new state.** `connect()` clears the remembered config and prompts so they are sent again.
 11. The model is experimental: names, ranges and behaviour can change. Re-check the two source pages above before large changes.
 12. Done from the earlier idea list: Density and Brightness knobs drive the real config, `onlyBassAndDrums` for rhythm-only sections, a lockable `seed`, prompt cross-fading, and filtered prompts in the log. Still open: `topK` control, and ramping `density` and `brightness` themselves in small steps.
+
+## 8. Prompt safety filter: what we measured
+
+Lyria RealTime drops prompts that trigger its safety filter and reports them in the server message's `filteredPrompt` (`text` plus a generic reason: "We couldn't create what you asked for..."). The other prompts of the payload keep working. The notice arrives a few seconds after the prompt was sent, so match it by its `text`.
+`npm run sim:prompts` (`tools/lyria-prompt-sim.mjs`) sends prompts one at a time to a real session and lists the rejected ones; it takes a JSON list of your own prompts as an argument. Findings from about 330 prompts:
+
+| Prompt kind | Result |
+|---|---|
+| **Artist / band / producer names** ("Kendrick Lamar style", "Miles Davis style", "Daft Punk style", "Taylor Swift style", "The Weeknd vibe", "Burna Boy style", "Wu-Tang Clan grit", ...) | **rejected, repeatably** |
+| Song titles ("Juicy", "Anti-Hero", "Bad Guy", "Cruel Summer", ...) | sometimes rejected, sometimes accepted |
+| A few ordinary phrases ("gritty east coast rap", "boys choir", "Vocal Chops, human vocals", a Hindi lyric line) | rejected in one run, accepted in another: the filter is a classifier and not fully repeatable |
+| Genre, style, mood, instrument and voice descriptions, knob phrases, ensemble directives, vocal cues, "STRICTLY INSTRUMENTAL...", quoted lyrics in English, Spanish and Latin, "IMPORTANT: Only use these instruments..." | accepted |
+| The old long single narrative prompt | accepted, but a filtered one would have lost the whole prompt |
+
+What GameDJ does about it:
+- **No names.** The dice roll used artist and song references; they are replaced by descriptive style tags (`STYLE_DESCRIPTORS` in `LiveMusicHelper.ts`). Never put artist, band, producer or song names in a prompt.
+- **Several short prompts instead of one narrative:** core (genre, style, key, bpm, meter, mood), arrangement, special instruction, vocal direction and evolution are separate prompts, so if one is dropped the rest still play.
+- **Rejected prompts are remembered** for the session and not sent again.
+- **Dev mode logging:** in `npm run dev` every rejection is logged to the browser console (`[Lyria] prompt filtered`) and appended to `window.__lyriaFiltered` with the whole payload and config it belonged to. Production builds only show `PROMPT FILTERED` in the message log.
+- Rule of thumb for new wording: describe the sound (instruments, era, mood, tempo), never a person or a specific song.
