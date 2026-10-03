@@ -659,6 +659,11 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
         instrumentPools: { lead: ['Whistle', 'Cello', 'Harmonica', 'Recorder', 'Pan Flute', 'Ocarina'], alto: ['Flute', 'Whistle', 'Recorder', 'Low Whistle', 'Pan Flute'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Cello'], rhythm: [] }
       },
+      'Celtic Folk': {
+        bpm: 100, bpmRange: [70, 125], meters: ['4/4', '3/4', '6/8'], keys: ['D Major', 'G Major', 'A Dorian', 'E Minor', 'D Dorian', 'A Minor', 'C Major'], mode: 'Natural', mood: 'Sentimental',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Violin', 'Whistle', 'Flute', 'Bagpipes', 'Ocarina'], alto: ['Low Whistle', 'Whistle', 'Accordion', 'Violin', 'Recorder'], harmonic: ['Harp', 'Acoustic Guitar'], bass: ['Double Bass', 'Cello'], rhythm: ['Hand Drum', 'Tambourine'] }
+      },
       'Celtic Punk/Rock': {
         bpm: 140, bpmRange: [125, 160], meters: ['4/4'], keys: ['D Major', 'G Major', 'A Minor', 'E Minor', 'B Minor', 'A Major', 'C Major'], mode: 'Natural', mood: 'Energetic',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },

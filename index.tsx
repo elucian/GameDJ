@@ -207,6 +207,42 @@ function main() {
     }
   });
 
+  // The dice's special instruction (genre reference + instrument list) always describes the genre and style that the
+  // main bar shows right now, so it is rebuilt whenever they change instead of keeping the text of an earlier genre.
+  // The main bar is the guidance for every prompt: the engine always gets exactly what the bar shows
+  const syncMainBar = () => {
+      liveMusicHelper.setGlobalSettings({
+          genre: topToolbar.genre, style: topToolbar.musicStyle,
+          key: topToolbar.key, mode: topToolbar.mode, bpm: topToolbar.bpm, meter: topToolbar.meter,
+      });
+      liveMusicHelper.setMood(topToolbar.currentMood);
+  };
+  syncMainBar();
+
+  let diceReferenceActive = false;
+  let referenceGenre = '';
+  let referenceText = '';
+  const applyGenreReference = (fresh = false) => {
+      const genre = topToolbar.genre;
+      if (fresh || genre !== referenceGenre) {
+          const genreRefs = STYLE_DESCRIPTORS[genre] || STYLE_DESCRIPTORS['Pop'];
+          referenceText = genreRefs[Math.floor(Math.random() * genreRefs.length)];
+          referenceGenre = genre;
+      }
+      const activeInstruments = Object.values(rightSidebar.settings)
+          .filter(ch => ch.active && ch.visible !== false)
+          .map(ch => ch.instrument);
+      const g = genre.toLowerCase();
+      const genreVocalHint = (() => {
+          if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
+          return 'Use vocal styles appropriate for the genre.';
+      })();
+      liveMusicHelper.setSpecialInstruction(`${referenceText}, ${topToolbar.musicStyle}. IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`);
+  };
+
   (topToolbar as any).addEventListener('genre-changed', ((e: Event) => {
       cancelAutoLoop();
       const genre = (e as CustomEvent<string>).detail;
@@ -215,6 +251,7 @@ function main() {
           pdjMidi.setMessage(`GENRE: ${genre.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setGlobalSettings({ genre });
+      if (diceReferenceActive) applyGenreReference();
   }));
 
   (topToolbar as any).addEventListener('style-changed', ((e: Event) => {
@@ -225,6 +262,7 @@ function main() {
           pdjMidi.setMessage(`STYLE: ${style.toUpperCase()}`, 'info');
       }
       liveMusicHelper.setGlobalSettings({ style });
+      if (diceReferenceActive) applyGenreReference();
   }));
 
   (topToolbar as any).addEventListener('mood-changed', ((e: Event) => {
@@ -746,7 +784,9 @@ function main() {
       topToolbar.currentMood = currentMood;
       rightSidebar.resetWeightsToZero();
 
-      topToolbar.randomize(true); 
+      topToolbar.randomize(true);
+      // randomize(true) stays silent about genre, style, mood and key: hand the new main bar to the music engine
+      syncMainBar();
 
       // Sync RightSidebar with the new genre/style before randomizing instruments
       rightSidebar.genre = topToolbar.genre;
@@ -804,25 +844,9 @@ function main() {
 
       liveMusicHelper.setGenerationMode(newMode);
 
-      // 6. Apply Special Reference Instruction
-      const genreRefs = STYLE_DESCRIPTORS[topToolbar.genre] || STYLE_DESCRIPTORS['Pop'];
-      const ref = genreRefs[Math.floor(Math.random() * genreRefs.length)];
-      
-      // Enforce channel isolation, harmonic cohesion, and vocal style authenticity in special instructions
-      const activeInstruments = Object.entries(rightSidebar.settings)
-          .filter(([_, ch]) => ch.active && ch.visible !== false)
-          .map(([_, ch]) => ch.instrument);
-          
-      const genreVocalHint = (() => {
-          const g = topToolbar.genre.toLowerCase();
-          if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          return 'Use vocal styles appropriate for the genre.';
-      })();
-
-      liveMusicHelper.setSpecialInstruction(`${ref}. IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`);
+      // 6. Apply Special Reference Instruction (follows the genre and style of the main bar)
+      diceReferenceActive = true;
+      applyGenreReference(true);
 
       pdjMidi.setMessage(`DICE ROLL: ${topToolbar.genre}, ${topToolbar.musicStyle} (${newMode})`, 'info');
       

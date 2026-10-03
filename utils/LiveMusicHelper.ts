@@ -517,16 +517,20 @@ export class LiveMusicHelper extends EventTarget {
   public setGlobalSettings(settings: any) {
     if (settings.bpm !== undefined) this.bpm = settings.bpm;
     if (settings.key !== undefined) this.key = settings.key;
+    let knobsStale = false;
     if (settings.genre !== undefined) {
-        const changed = settings.genre !== this.genre;
+        knobsStale = settings.genre !== this.genre;
         this.genre = settings.genre;
-        // Stage knob targets were baked for the old genre: rebuild them so the DJ steers the knobs by the new genre's limits
-        if (changed && this.currentPlan?.length) {
-            this.currentPlan.forEach(s => { if (s.type) s.targets = this.getKnobTargetsForStage(s.type); });
-            if (this.conductorMode) this.updateConductor();
-        }
     }
-    if (settings.style !== undefined) this.style = settings.style;
+    if (settings.style !== undefined) {
+        knobsStale = knobsStale || settings.style !== this.style;
+        this.style = settings.style;
+    }
+    // Stage knob targets were baked for the old genre / style: rebuild them so the DJ steers the knobs by the new ones
+    if (knobsStale && this.currentPlan?.length) {
+        this.currentPlan.forEach(s => { if (s.type) s.targets = this.getKnobTargetsForStage(s.type); });
+        if (this.conductorMode) this.updateConductor();
+    }
     if (settings.meter !== undefined) this.meter = settings.meter;
     this.scheduleRefresh();
   }
@@ -1471,6 +1475,57 @@ Prompt: ${text}`
       }
   };
 
+  // Style adjustments — the genre profile is the base, the style on the main bar shifts it (added to the genre default,
+  // and widening the genre's min/max by the same amount). Styles not listed use the genre profile unchanged.
+  private static readonly STYLE_KNOB_ADJUST: Record<string, Record<string, number>> = {
+      // Jazz
+      'Acid Jazz': { Groove: +0.3, Texture: +0.2, Brightness: +0.2 }, 'Jazz Fusion': { Complexity: +0.4, Density: +0.3, Dynamics: +0.2 },
+      'Bebop': { Complexity: +0.4, Staccato: +0.3, Variation: +0.3, Density: +0.2 }, 'Cool Jazz': { Space: +0.3, Dynamics: -0.3, Brightness: -0.2 },
+      'Smooth Jazz': { Density: -0.1, Glide: +0.2, Dynamics: -0.2, Brightness: +0.1 },
+      // Blues
+      'Delta Blues': { Authenticity: +0.2, Density: -0.1, Glide: +0.2 }, 'Chicago Blues': { Presence: +0.2, Groove: +0.2 },
+      'Texas Blues': { Attack: +0.2, Presence: +0.2 }, 'Blues Rock': { Dynamics: +0.3, Attack: +0.3, Density: +0.2 }, 'Soul Blues': { Groove: +0.2, Glide: +0.2, Organic: +0.1 },
+      // Electronic
+      'Techno': { Groove: +0.3, Density: +0.2, Organic: -0.1 }, 'Drum & Bass': { Density: +0.3, Attack: +0.3, Staccato: +0.2, Groove: +0.2 },
+      'Vaporwave': { Space: +0.3, Glide: +0.3, Attack: -0.2, Density: -0.2 }, 'Deep House': { Groove: +0.2, Atmosphere: +0.2, Attack: -0.1 },
+      'Synthwave': { Brightness: +0.2, Atmosphere: +0.3, Width: +0.2 },
+      // Rock
+      'Classic Rock': { Authenticity: +0.2, Organic: +0.2 }, 'Shoegaze': { Texture: +0.4, Space: +0.3, Atmosphere: +0.3, Attack: -0.3, Brightness: -0.2 },
+      'Heavy Metal': { Dynamics: +0.3, Attack: +0.3, Density: +0.3, Brightness: -0.1, Glide: -0.1 }, 'Indie Rock': { Texture: +0.1, Organic: +0.2 },
+      // Pop / Hip Hop
+      'Synth-Pop': { Brightness: +0.2, Organic: -0.2 }, 'Disco Pop': { Groove: +0.3, Brightness: +0.2 }, 'K-Pop': { Dynamics: +0.2, Complexity: +0.2, Variation: +0.2 },
+      'Indie Pop': { Organic: +0.3, Density: -0.1 }, 'Pop Rock': { Dynamics: +0.2, Attack: +0.2 },
+      'Boom Bap': { Groove: +0.2, Texture: +0.2, Organic: +0.2 }, 'Trap': { Attack: +0.3, Staccato: +0.3, Space: +0.2 }, 'Lo-Fi Hip Hop': { Texture: +0.3, Dynamics: -0.3, Brightness: -0.2, Space: +0.2 },
+      'Drill': { Attack: +0.2, Staccato: +0.3, Atmosphere: +0.2 }, 'Cloud Rap': { Space: +0.4, Atmosphere: +0.4, Attack: -0.3 }, 'Jazz Rap': { Organic: +0.3, Complexity: +0.2 },
+      // Ambient
+      'Dark Ambient': { Atmosphere: +0.2, Brightness: -0.2, Texture: +0.2 }, 'Deep Space': { Space: +0.3, Width: +0.2 }, 'Cinematic': { Dynamics: +0.4, Width: +0.3, Presence: +0.2 },
+      'Industrial Decay': { Texture: +0.4, Attack: +0.2, Organic: -0.3 }, 'Nature Soundscape': { Organic: +0.3, Texture: +0.1 }, 'Lofi Chill': { Dynamics: -0.1, Texture: +0.2 },
+      // Gaming
+      '8-Bit Retro': { Organic: -0.3, Staccato: +0.3, Brightness: +0.2 }, 'Epic Boss': { Dynamics: +0.3, Density: +0.2, Presence: +0.2 },
+      'Stealth': { Dynamics: -0.4, Density: -0.3, Space: +0.2 }, 'Survival Horror': { Atmosphere: +0.3, Brightness: -0.3, Dynamics: -0.1 }, 'Cozy Simulation': { Dynamics: -0.3, Brightness: +0.1, Organic: +0.2 },
+      'Racing Arcade': { Groove: +0.2, Attack: +0.2, Density: +0.2 },
+      // Classical / early
+      'Baroque': { Ornamentation: +0.3, Complexity: +0.2, Staccato: +0.1 }, 'Romantic': { Dynamics: +0.2, Glide: +0.2 }, 'Impressionist': { Atmosphere: +0.3, Texture: +0.2 },
+      'Minimalist Classical': { Density: -0.2, Variation: -0.2, Space: +0.2 }, 'Viennese Waltz': { Groove: +0.2, Glide: +0.1 }, 'Cathedral': { Space: +0.3, Atmosphere: +0.2 },
+      'Tudor Dance': { Groove: +0.3, Staccato: +0.2 }, 'Village Festival': { Groove: +0.3, Brightness: +0.2 },
+      // Spiritual
+      'Gregorian Chant': { Space: +0.3, Density: -0.2, Dynamics: -0.2 }, 'Byzantine Chant': { Glide: +0.2, Space: +0.2 }, 'Gospel': { Dynamics: +0.4, Groove: +0.3, Presence: +0.2 },
+      'Zen Meditation': { Space: +0.3, Density: -0.3, Dynamics: -0.3 }, 'Shamanic Pulse': { Groove: +0.3, Atmosphere: +0.2 },
+      // Regional
+      'Afrobeats': { Groove: +0.2, Brightness: +0.2 }, 'Bhangra': { Groove: +0.4, Attack: +0.3, Dynamics: +0.3 }, 'Carnatic': { Ornamentation: +0.3, Complexity: +0.2 },
+      'Hindustani': { Glide: +0.2, Ornamentation: +0.2 }, 'Bollywood': { Dynamics: +0.3, Width: +0.2, Brightness: +0.2 }, 'Tabla Solo/Raga': { Density: -0.1, Ornamentation: +0.3 },
+      'Jig': { Groove: +0.3, Staccato: +0.2, Dynamics: +0.2 }, 'Reel': { Groove: +0.3, Attack: +0.2, Dynamics: +0.3 }, 'Air': { Space: +0.3, Dynamics: -0.3, Glide: +0.2, Groove: -0.3 },
+      'Celtic Folk': { Atmosphere: +0.2, Organic: +0.2 }, 'Celtic Punk/Rock': { Dynamics: +0.4, Attack: +0.4, Density: +0.3, Organic: -0.3 },
+      'Salsa': { Groove: +0.4, Dynamics: +0.3, Density: +0.2 }, 'Bossa Nova': { Dynamics: -0.3, Staccato: +0.1, Space: +0.2 }, 'Tango': { Staccato: +0.2, Dynamics: +0.2, Ornamentation: +0.2 },
+      'Reggaeton': { Groove: +0.4, Attack: +0.2, Organic: -0.3 }, 'Flamenco': { Attack: +0.3, Ornamentation: +0.3, Dynamics: +0.3 }, 'Bolero': { Dynamics: -0.2, Glide: +0.2 }, 'Paso Doble': { Dynamics: +0.3, Staccato: +0.3 },
+      'Manele': { Ornamentation: +0.3, Groove: +0.3, Brightness: +0.2 }, 'Doina': { Space: +0.4, Groove: -0.4, Ornamentation: +0.3, Glide: +0.2, Dynamics: -0.2 },
+      'Hora': { Groove: +0.3, Dynamics: +0.2 }, 'Sârbă': { Groove: +0.3, Staccato: +0.3, Attack: +0.2 }, 'Colinde': { Space: +0.2, Atmosphere: +0.2, Groove: -0.2 },
+      'Bluegrass': { Attack: +0.3, Staccato: +0.2, Density: +0.3, Groove: +0.2 }, 'Honky Tonk': { Groove: +0.2, Attack: +0.2 }, 'Spaghetti Western': { Space: +0.3, Atmosphere: +0.3, Dynamics: +0.2 },
+      'Cowboy Ballad': { Dynamics: -0.2, Space: +0.2, Groove: -0.2 }, 'Rockabilly': { Groove: +0.3, Attack: +0.3, Staccato: +0.2 },
+      'Slack Key Guitar': { Glide: +0.2, Dynamics: -0.1 }, 'Traditional Hula': { Groove: +0.2, Authenticity: +0.1 }, 'Island Reggae': { Groove: +0.4, Space: +0.1, Dynamics: -0.1 },
+      'Military Fanfare': { Attack: +0.3, Staccato: +0.2, Dynamics: +0.3 }, 'Ceremonial': { Dynamics: -0.2, Space: +0.2 }
+  };
+
   // Stage modifiers — how much to adjust from the genre default for each stage type
   private static readonly STAGE_MODIFIERS: Record<string, Record<string, number>> = {
       'intro':      { 'Density': -0.3, 'Dynamics': -0.3, 'Space': +0.3, 'Atmosphere': +0.3, 'Brightness': -0.2, 'Attack': -0.2 },
@@ -1499,9 +1554,14 @@ Prompt: ${text}`
       // Genre default + stage modifier, always inside the genre's own min/max (the genre range is the ceiling);
       // solo and a cappella sections may override the genre maximum (up to the knob's full scale)
       const override = isGenreOverrideStage(type);
+      // The style on the main bar shifts the genre profile: its default and its limits move together
+      const styleAdj = LiveMusicHelper.STYLE_KNOB_ADJUST[this.style] || {};
       const valueOf = (knob: string) => {
           const [min, max, defaultVal] = profile[knob];
-          return Math.max(min, Math.min(override ? 2 : max, defaultVal + (stageMod[knob] || 0)));
+          const adj = styleAdj[knob] || 0;
+          const lo = Math.max(0, min + Math.min(0, adj));
+          const hi = Math.min(2, max + Math.max(0, adj));
+          return Math.max(lo, Math.min(override ? 2 : hi, defaultVal + adj + (stageMod[knob] || 0)));
       };
       const conflicts = (a: string, b: string) =>
           CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
@@ -1518,7 +1578,7 @@ Prompt: ${text}`
       // 1. Genre anchors: the two highest genre defaults ('Guidance' is generic, not a musical colour)
       Object.entries(profile)
           .filter(([knob]) => knob !== 'Guidance')
-          .sort((a, b) => b[1][2] - a[1][2])
+          .sort((a, b) => (b[1][2] + (styleAdj[b[0]] || 0)) - (a[1][2] + (styleAdj[a[0]] || 0)))
           .slice(0, 2)
           .forEach(([knob]) => tryAdd(knob));
 
