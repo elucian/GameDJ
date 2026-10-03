@@ -585,7 +585,7 @@ export class RightSidebar extends LitElement {
 
   /** DJ manifesto: only the `keep` channels stay in the manifest, the rest are disabled completely. */
   public applyDjManifest(keep: Array<keyof InstrumentSet>) {
-    if (this.manifestLocked) return;
+    if (this.manifestLocked || this.channelsLocked) return;
     const newSettings = { ...this.settings };
     (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
         const on = keep.includes(ch) && !!newSettings[ch].instrument;

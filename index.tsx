@@ -577,8 +577,10 @@ function main() {
                   await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, tab === 'Lyria');
               }
 
-              // Manifesto: the DJ may switch some channels off completely and work with a smaller ensemble
-              if (!rsLocks.manifest) {
+              // Manifesto: the DJ may switch some channels off completely and work with a smaller ensemble.
+              // With the channels locked the DJ keeps every channel in the manifest: it can still switch them on and off
+              // while recording (solo, duet, trio, quartet, full orchestra) and set their weights, but not remove them.
+              if (!rsLocks.manifest && !rsLocks.channels) {
                   const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels);
                   rightSidebar.applyDjManifest(keep);
               }
