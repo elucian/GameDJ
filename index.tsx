@@ -381,19 +381,47 @@ function main() {
   (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail); });
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
-  // Right-hand panel: voices, lyrics / vocal prompt, and the prompt last sent to Lyria
+  // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
+  const replaceVocalInstruments = () => {
+      if (liveMusicHelper.generationMode === 'VOCALIZATION' || rightSidebar.locks.channels) return;
+      const settings = { ...rightSidebar.settings };
+      let changed = false;
+      Object.keys(settings).forEach((ch) => {
+          const channel = ch as keyof InstrumentSet;
+          if (!isVocalInstrument(settings[channel].instrument)) return;
+          const nonVocalPool = (rightSidebar as any).getRecommendedInstruments(channel).filter((i: string) => !isVocalInstrument(i));
+          if (nonVocalPool.length > 0) {
+              settings[channel] = { ...settings[channel], instrument: nonVocalPool[Math.floor(Math.random() * nonVocalPool.length)] };
+              changed = true;
+          }
+      });
+      if (changed) (rightSidebar as any).auditAndCommit(settings);
+  };
+
+  // Right-hand panel: the prompt last sent to Lyria first, then the instruments it names (voices and lyrics in voice mode)
   let lastPromptText = '';
   let appliedGuidance: number | null = null;
   const refreshPromptPanel = () => {
-      const { solos, choir } = vocalDialog.getVoices();
-      const voices = [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', ')
-          + ` · INTENSITY ${Math.round(liveMusicHelper.voiceIntensity * 100)}%`;
-      const lyrics = liveMusicHelper.vocalPrompt || liveMusicHelper.lyricsText.replace(/\s*\n\s*/g, ' / ').slice(0, 200);
+      // Voice settings only exist while the voice master mode is on
+      const voiceOn = liveMusicHelper.generationMode === 'VOCALIZATION';
+      let voices = '';
+      let lyrics = '';
+      if (voiceOn) {
+          const { solos, choir } = vocalDialog.getVoices();
+          voices = [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', ')
+              + ` · INTENSITY ${Math.round(liveMusicHelper.voiceIntensity * 100)}%`;
+          lyrics = liveMusicHelper.vocalPrompt || liveMusicHelper.lyricsText.replace(/\s*\n\s*/g, ' / ').slice(0, 200);
+      }
+      // Instruments of the band that the prompt actually names
+      const promptLower = lastPromptText.toLowerCase();
+      const instruments = [...new Set((Object.values(rightSidebar.settings) as ChannelState[])
+          .filter(ch => ch.active && ch.visible !== false && ch.instrument && promptLower.includes(ch.instrument.toLowerCase()))
+          .map(ch => ch.instrument))].join(', ');
       // Guidance: what Lyria really has, and where the DJ is heading while it eases there
       const intended = liveMusicHelper.intendedGuidance;
       const guidance = appliedGuidance === null ? '[GUIDANCE waiting] ' : `[GUIDANCE ${appliedGuidance.toFixed(1)}${Math.abs(intended - appliedGuidance) >= 0.1 ? ` → ${intended.toFixed(1)}` : ''}] `;
-      if (panelsCleared) { pdjMidi.setPromptInfo({ voices: '', lyrics: '', prompt: '' }); return; }
-      pdjMidi.setPromptInfo({ voices, lyrics, prompt: guidance + lastPromptText });
+      if (panelsCleared) { pdjMidi.setPromptInfo({ voices: '', lyrics: '', prompt: '', instruments: '' }); return; }
+      pdjMidi.setPromptInfo({ voices, lyrics, instruments, prompt: guidance + lastPromptText });
   };
   // Dice and reset empty both top text panels; the right one fills again with the next prompt sent to Lyria
   let panelsCleared = false;
@@ -610,28 +638,10 @@ function main() {
       liveMusicHelper.setGenerationMode(mode);
       pdjMidi.setMessage(`MODE: ${mode}`, "info");
 
-      // Replace vocal instruments when switching away from VOCALIZATION
-      if (mode !== 'VOCALIZATION' && !rightSidebar.locks.channels) {
-          const settings = { ...rightSidebar.settings };
-          let changed = false;
-          
-          Object.keys(settings).forEach((ch) => {
-              const channel = ch as keyof InstrumentSet;
-              const inst = settings[channel].instrument;
-              if (isVocalInstrument(inst)) {
-                  const pool = (rightSidebar as any).getRecommendedInstruments(channel);
-                  const nonVocalPool = pool.filter((i: string) => !isVocalInstrument(i));
-                  if (nonVocalPool.length > 0) {
-                      settings[channel].instrument = nonVocalPool[Math.floor(Math.random() * nonVocalPool.length)];
-                      changed = true;
-                  }
-              }
-          });
-          
-          if (changed) {
-              (rightSidebar as any).auditAndCommit(settings);
-          }
-      }
+      // Without the voice mode there are no voice instruments: the channels get the genre's recommended ones
+      rightSidebar.voiceEnabled = mode === 'VOCALIZATION';
+      replaceVocalInstruments();
+      refreshPromptPanel();
   }));
 
   (leftSidebar as any).addEventListener('theme-changed', ((e: Event) => {
@@ -646,6 +656,8 @@ function main() {
 
   liveMusicHelper.addEventListener('mode-changed-internal', (e: any) => {
       leftSidebar.primaryMode = e.detail;
+      rightSidebar.voiceEnabled = e.detail === 'VOCALIZATION';
+      refreshPromptPanel();
       pdjMidi.setMessage(`AI STORYTELLING: ${e.detail} MODE`, 'info');
   });
 
@@ -758,6 +770,9 @@ function main() {
       // Reset knobs to zero — dice roll gives a clean slate
       liveMusicHelper.resetKnobsToZero();
       
+      // Voice master mode off: the dice never leave voice instruments behind
+      replaceVocalInstruments();
+
       // 5. Intelligent Mode Selection based on Instruments
       const settings = rightSidebar.settings;
       const vocalChannels = (Object.values(settings) as ChannelState[]).filter(ch => {

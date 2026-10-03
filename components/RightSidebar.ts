@@ -24,8 +24,15 @@ export class RightSidebar extends LitElement {
 
   // The dropdowns only ever offer recommended instruments: the orchestra/voice/choir pool of the genre on the
   // Lyria tab, and the generous genre pool on the Band tab.
+  // Voice instruments are only offered while the voice master mode is on
+  @property({ type: Boolean }) voiceEnabled: boolean = false;
+
   private getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
       const base = this.getBaseRecommended(channel);
+      if (!this.voiceEnabled) {
+          const plain = base.filter(i => !isVocalInstrument(i));
+          return plain.length > 0 ? plain : base;
+      }
       if (this.currentTab === 'Lyria') return base;
       // Band also offers the voice instruments (solo / duet / quartet, choirs) on the alto and harmonic channels
       const voices = (VOICE_CHANNEL_POOLS[channel] || []).filter(v => !base.includes(v));

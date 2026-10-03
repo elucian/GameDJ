@@ -67,6 +67,7 @@ export class PromptDjMidi extends LitElement {
     .prompt-box .p-head { color: var(--accent-color); font-weight: 700; letter-spacing: 1px; margin-right: 6px; }
     .prompt-box .p-row { overflow-wrap: anywhere; }
     .prompt-box .p-empty { opacity: 0.4; }
+    .prompt-box .prompt-main { color: #d6f5e6; font-weight: 700; }
 
     .display-box {
       font-family: 'Courier New', Courier, monospace;
@@ -197,6 +198,7 @@ export class PromptDjMidi extends LitElement {
   @state() private voicesInfo = '';
   @state() private lyricsInfo = '';
   @state() private promptInfo = '';
+  @state() private instrumentsInfo = '';
 
   /** Right panel content: the voices, the lyrics (or vocal prompt) and the prompt currently sent to Lyria. */
   protected updated(changed: Map<string, unknown>) {
@@ -207,7 +209,8 @@ export class PromptDjMidi extends LitElement {
     }
   }
 
-  public setPromptInfo(info: { voices?: string; lyrics?: string; prompt?: string }) {
+  public setPromptInfo(info: { voices?: string; lyrics?: string; prompt?: string; instruments?: string }) {
+    if (info.instruments !== undefined) this.instrumentsInfo = info.instruments;
     if (info.voices !== undefined) this.voicesInfo = info.voices;
     if (info.lyrics !== undefined) this.lyricsInfo = info.lyrics;
     if (info.prompt !== undefined) this.promptInfo = info.prompt;
@@ -225,7 +228,7 @@ export class PromptDjMidi extends LitElement {
   /** Empties both top text panels (dice, reset): the message log restarts and the prompt info goes blank. */
   public clearPanels() {
     this.log = [];
-    this.voicesInfo = ''; this.lyricsInfo = ''; this.promptInfo = '';
+    this.voicesInfo = ''; this.lyricsInfo = ''; this.promptInfo = ''; this.instrumentsInfo = '';
   }
 
   public setMessage(text: string, type: 'info' | 'error' = 'info') {
@@ -304,9 +307,10 @@ export class PromptDjMidi extends LitElement {
           ${this.log.map((l, i) => html`<div class="log-line ${l.type} ${i === this.log.length - 1 ? 'latest' : ''}" title=${l.text}>${l.text}</div>`)}
         </div>
         <div class="prompt-box">
-          <div class="p-row"><span class="p-head">VOICES</span>${this.voicesInfo || html`<span class="p-empty">none</span>`}</div>
-          <div class="p-row"><span class="p-head">LYRICS</span>${this.lyricsInfo || html`<span class="p-empty">none</span>`}</div>
-          <div class="p-row"><span class="p-head">PROMPT</span>${this.promptInfo || html`<span class="p-empty">waiting for the first prompt</span>`}</div>
+          <div class="p-row prompt-main"><span class="p-head">PROMPT</span>${this.promptInfo || html`<span class="p-empty">waiting for the first prompt</span>`}</div>
+          ${this.instrumentsInfo ? html`<div class="p-row"><span class="p-head">INSTRUMENTS</span>${this.instrumentsInfo}</div>` : ''}
+          ${this.voicesInfo ? html`<div class="p-row"><span class="p-head">VOICES</span>${this.voicesInfo}</div>` : ''}
+          ${this.lyricsInfo ? html`<div class="p-row"><span class="p-head">LYRICS</span>${this.lyricsInfo}</div>` : ''}
         </div>
        </div>
       </div>
