@@ -584,6 +584,39 @@ export class RightSidebar extends LitElement {
     this.auditAndCommit(newSettings);
   }
 
+  /**
+   * Last step of a dice roll: every channel ends with a valid instrument or disappears.
+   * - The style's manifest switches a channel off: it disappears.
+   * - No instrument, or one that does not fit: roll again for that channel (one no other channel plays).
+   * - Nothing fits: the channel disappears from the manifest.
+   * A locked manifest keeps its channels; a locked channel set keeps its instruments.
+   */
+  public finalizeDiceChannels() {
+    if (this.channelsLocked) return;
+    const manifest = MUSIC_DATA[this.genre]?.styles[this.musicStyle]?.manifest as Record<string, boolean> | undefined;
+    const newSettings = { ...this.settings };
+    const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+    const hide = (ch: keyof InstrumentSet) => {
+        newSettings[ch] = { ...newSettings[ch], instrument: '', visible: false, active: false };
+    };
+    channels.forEach(ch => {
+        if (!this.manifestLocked && manifest && manifest[ch] === false) { hide(ch); return; }
+        const st = newSettings[ch];
+        if (st.visible === false) return; // already out of the manifest
+        const recommended = this.getRecommendedInstruments(ch);
+        if (st.instrument && recommended.includes(st.instrument)) return;
+        const used = channels.filter(c => c !== ch).map(c => newSettings[c].instrument);
+        const unused = recommended.filter(i => !used.includes(i));
+        const pool = unused.length > 0 ? unused : recommended;
+        if (pool.length > 0) {
+            newSettings[ch] = { ...st, instrument: pool[Math.floor(Math.random() * pool.length)], active: true, weight: st.weight > 0 ? st.weight : 1.0 };
+        } else if (!this.manifestLocked) {
+            hide(ch);
+        }
+    });
+    this.auditAndCommit(newSettings);
+  }
+
   /** DJ manifesto: only the `keep` channels stay in the manifest, the rest are disabled completely. */
   public applyDjManifest(keep: Array<keyof InstrumentSet>) {
     if (this.manifestLocked || this.channelsLocked) return;

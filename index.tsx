@@ -634,6 +634,7 @@ function main() {
               // The DJ follows the primary mode: voices only when it is the voice mode, never the other way round
               replaceVocalInstruments();
               ensureVoiceChannels();
+              rightSidebar.finalizeDiceChannels();
               if (!rsLocks.channels && liveMusicHelper.generationMode === 'VOCALIZATION' && djConfigureVoices()) {
                   pdjMidi.setMessage("DJ SET THE VOICE OPTIONS", "info");
               }
@@ -830,6 +831,8 @@ function main() {
       // 5. The primary mode is the user's: the dice never change it. Voice channels are assigned only in voice mode.
       const newMode: MusicGenerationMode = leftSidebar.primaryMode;
       ensureVoiceChannels();
+      // Every channel ends with an instrument (rolled again if needed) or disappears from the manifest
+      rightSidebar.finalizeDiceChannels();
       const hasVocalsInOutput = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && isVocalInstrument(ch.instrument));
       leftSidebar.hasVocalInstrument = hasVocalsInOutput;
 
