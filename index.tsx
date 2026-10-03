@@ -16,6 +16,7 @@ import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage } from './utils/LiveMusicHelper';
+import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -435,13 +436,15 @@ function main() {
       if (changed) (rightSidebar as any).auditAndCommit(settings);
   };
 
-  // Voice master mode on: the dice and the DJ put a voice on the alto channel when no channel has one (solo, duet or quartet)
+  // Voice master mode on: the dice and the DJ put a voice on the solo-voice channel when no channel has one
+  // (Band: alto, solo / duet / quartet. Lyria: VOICE/LEAD, solo / duet).
   const ensureVoiceChannels = () => {
       if (liveMusicHelper.generationMode !== 'VOCALIZATION' || rightSidebar.locks.channels) return;
       const hasVoice = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
       if (hasVoice) return;
       const kinds = ['Solo Voice', 'Duet Voices', 'Quartet Voices'];
-      rightSidebar.setVoiceInstruments({ alto: [kinds[Math.floor(Math.random() * kinds.length)]] });
+      const ch: keyof InstrumentSet = rightSidebar.currentTab === 'Lyria' ? LYRIA_VOICE_CHANNELS.solo : 'alto';
+      rightSidebar.setVoiceInstruments({ [ch]: [kinds[Math.floor(Math.random() * kinds.length)]] });
   };
 
   // Right-hand panel: the prompt last sent to Lyria first, then the instruments it names (voices and lyrics in voice mode)
@@ -594,12 +597,16 @@ function main() {
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
       const { solos, choir } = e.detail;
+      // Band: solo voices on alto, choir on harmonic. Lyria: solo voices on VOICE/LEAD, choir on VOICE/HARMONY.
+      const lyria = rightSidebar.currentTab === 'Lyria';
+      const soloCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.solo : 'alto';
+      const choirCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.choir : 'harmonic';
       const pick: Partial<Record<keyof InstrumentSet, string[]>> = {};
-      if (choir !== 'None') pick.harmonic = CHOIR_CANDIDATES[choir] || [];
-      if (solos.length === 1) pick.alto = ['Solo Voice'];
-      else if (solos.length === 2) pick.alto = ['Duet Voices'];
-      else if (solos.length >= 3) pick.alto = ['Quartet Voices'];
-      if (!pick.alto && !pick.harmonic) return;
+      if (choir !== 'None') pick[choirCh] = CHOIR_CANDIDATES[choir] || [];
+      if (solos.length === 1) pick[soloCh] = ['Solo Voice'];
+      else if (solos.length === 2) pick[soloCh] = ['Duet Voices'];
+      else if (solos.length >= 3) pick[soloCh] = ['Quartet Voices'];
+      if (!pick[soloCh] && !pick[choirCh]) return;
       syncingFromDialog = true;
       try { rightSidebar.setVoiceInstruments(pick); } finally { syncingFromDialog = false; }
       refreshPromptPanel();
@@ -887,6 +894,8 @@ function main() {
   (rightSidebar as any).addEventListener('channels-changed', ((e: Event) => {
       cancelAutoLoop();
       const detail = (e as CustomEvent<InstrumentSet>).detail;
+      // The prompts name each channel by its role, which differs between the Band and Lyria tabs
+      liveMusicHelper.isLiraMode = rightSidebar.currentTab === 'Lyria';
       liveMusicHelper.setInstruments(detail);
       syncVoiceDialog();
       

@@ -381,6 +381,11 @@ export class LiveMusicHelper extends EventTarget {
 
   private specialInstruction: string | null = null;
   public isLiraMode = false;
+  /** What a channel does in the music, as named in the prompts (Lyria tab: lead voice, harmony, orchestra, brass, percussion). */
+  private channelRole(k: ChannelKey): string {
+      if (!this.isLiraMode) return k;
+      return ({ lead: 'lead melody', alto: 'harmony accompaniment', harmonic: 'orchestral backing', bass: 'brass', rhythm: 'percussion' } as Record<ChannelKey, string>)[k];
+  }
   public toolbarLocks = {
       genre: false,
       style: false,
@@ -796,7 +801,7 @@ Prompt: ${text}`
             if (isChoir && this.choirMuted) return;
             if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
 
-            activeInstruments.push(`${k} ${isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : ch.instrument}`);
+            activeInstruments.push(`${this.channelRole(k)} ${isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : ch.instrument}`);
             playingKeys.push(k);
         }
     });
@@ -867,7 +872,7 @@ Prompt: ${text}`
         const ch = this.instruments[k];
         const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
         finalPayload.push({
-            text: isVocalInstrument(ch.instrument) ? `${describeVoice(ch.instrument)}, ${this.voiceIntensityPhrase()}` : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${k}`),
+            text: isVocalInstrument(ch.instrument) ? `${describeVoice(ch.instrument)}, ${this.voiceIntensityPhrase()}` : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${this.channelRole(k)}`),
             weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
         });
     });

@@ -32,7 +32,7 @@ export class RightSidebar extends LitElement {
       if (!this.voiceEnabled) {
           const plain = base.filter(i => !isVocalInstrument(i));
           if (plain.length > 0) return plain;
-          // Lyria's voice and choir channels have only voices: use orchestral sections, never a voice
+          // A voice channel whose pool has only voices: use its instrumental fallback, never a voice
           const instrumental = this.currentTab === 'Lyria' ? LYRIA_INSTRUMENTAL_POOLS[channel] : undefined;
           return instrumental || (FALLBACK_POOLS[channel] || []).filter(i => !isVocalInstrument(i));
       }
@@ -747,7 +747,7 @@ export class RightSidebar extends LitElement {
     const isEvolutionLocked = (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading') && this.conductorActive;
     
     const bandManifestLabels = { lead: 'LEAD', alto: 'ALTO', harmonic: 'HARM', bass: 'BASS', rhythm: 'RHYT' };
-    const liraManifestLabels = { lead: 'ORC', alto: 'SOL', harmonic: 'CHR', bass: 'BRS', rhythm: 'DRM' };
+    const liraManifestLabels = { lead: 'LEAD', alto: 'HARM', harmonic: 'ORC', bass: 'BRS', rhythm: 'PRC' };
     const manifestLabels = (this.currentTab === 'Lyria') ? liraManifestLabels : bandManifestLabels;
 
     return html`
@@ -766,11 +766,11 @@ export class RightSidebar extends LitElement {
             ${this.renderChannel('BASS', 'bass')}
             ${this.renderChannel('RHYTHM', 'rhythm')}
         ` : html`
-            ${this.renderChannel('ORCHESTRA', 'lead')}
-            ${this.renderChannel('SOLO', 'alto')}
-            ${this.renderChannel('CHOIR', 'harmonic')}
+            ${this.renderChannel('VOICE/LEAD', 'lead')}
+            ${this.renderChannel('VOICE/HARMONY', 'alto')}
+            ${this.renderChannel('ORCHESTRA', 'harmonic')}
             ${this.renderChannel('BRASS', 'bass')}
-            ${this.renderChannel('DRUMS', 'rhythm')}
+            ${this.renderChannel('PERCUSSION', 'rhythm')}
         `}
       </div>
 

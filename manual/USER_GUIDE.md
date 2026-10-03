@@ -31,14 +31,17 @@ The right sidebar has two tabs with five channels each:
 
 | Channel | Band tab | Lyria tab |
 |---|---|---|
-| lead | Lead | Orchestra |
-| alto | Alto | Solo (voice) |
-| harmonic | Harmonic | Choir |
+| lead | Lead | Voice/Lead |
+| alto | Alto | Voice/Harmony |
+| harmonic | Harmonic | Orchestra |
 | bass | Bass | Brass |
-| rhythm | Rhythm | Drums |
+| rhythm | Rhythm | Percussion |
 
-- The dropdowns only list **recommended** instruments for the genre. Band lists are generous, so combinations like a sax in a rock band are possible. Lyria lists are orchestral and choral.
-- **Solo (Lyria)** is a voice only: Solo Voice, Duet Voices, Choir Voices or Chamber Choir. The exact voices come from the Voice dialog.
+- Lyria itself has no channels: it plays one mixed stream from text prompts. The channels are how the app builds those prompts, one prompt per channel, named by its role.
+- The dropdowns only list **recommended** instruments for the genre. Band lists are generous, so combinations like a sax in a rock band are possible.
+- **Voice/Lead (Lyria)**: a solo voice or the genre's solo instrument (violin, sitar, whistle, harmonica...).
+- **Voice/Harmony (Lyria)**: the genre's accompaniment (piano, harp, organ, harmonium, guitars, string quartet...) or a choir.
+- Voices and choirs are offered only in the Voice primary mode; in the other modes these two channels play instruments. The exact voices come from the Voice dialog.
 - Each channel has an on/off checkbox and a weight slider.
 -  Changing an instrument locks the channels so the Dice and DJ won't overwrite your choice. Use the lock icon to release them.
 - **Manifest** switches decide which channels are part of the piece at all. A switch that is on keeps its light lit, even when it is greyed out during recording.
