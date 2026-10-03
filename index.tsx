@@ -268,6 +268,12 @@ function main() {
       const detail = (e as CustomEvent<any>).detail;
       liveMusicHelper.setGlobalSettings({ key: detail.key, mode: detail.mode });
   }));
+  // Mixer channel lock: the engine then allows only the selected instruments in the prompts
+  (rightSidebar as any).addEventListener('locks-changed', ((e: Event) => {
+      liveMusicHelper.setInstrumentsLocked(!!(e as CustomEvent<{ channels: boolean }>).detail.channels);
+  }));
+  liveMusicHelper.setInstrumentsLocked(rightSidebar.locks.channels);
+
   (topToolbar as any).addEventListener('locks-changed', ((e: Event) => {
       const locks = (e as CustomEvent<any>).detail;
       liveMusicHelper.setToolbarLocks(locks);

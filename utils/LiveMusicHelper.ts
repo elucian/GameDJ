@@ -34,6 +34,8 @@ const DJ_KNOBS_REGIONAL = 2;
 // The Guidance knob is the single truth: guidance = knob value x 3 (knob 0..2 = guidance 0..6), so an unset knob means 0.
 // While the DJ conducts it turns that knob itself (up to 6 for solos, duets and a cappella), so the knob always shows the real value.
 const LYRIA_GUIDANCE_MAX = 6;
+// With the mixer channels locked the DJ keeps guidance at least this high (Lyria default is 4.0)
+const LOCKED_GUIDANCE_MIN = 5.2;
 const isGuidanceKnob = (p: { text: string }) => p.text.trim().toLowerCase() === 'guidance';
 // Solo and a cappella sections are the exception to the genre knob maximums: the DJ may go past them when it calls for it.
 const isGenreOverrideStage = (type?: string, formation?: string) => type === 'solo' || type === 'acapella' || formation === 'solo';
@@ -312,6 +314,9 @@ export class LiveMusicHelper extends EventTarget {
       // except in solo and a cappella sections where the DJ may override the genre maximum
       const range = this.genreProfile()['Guidance'];
       if (range) g = Math.max(range[0] * 3, isGenreOverrideStage(stage?.type, stage?.formation) ? g : Math.min(range[1] * 3, g));
+      // Locked instruments: the model must stick to the selected instruments, so the DJ raises guidance above the
+      // genre range (+0.8, at least 5.2). Kept under the Lyria maximum of 6 so section changes do not get too abrupt.
+      if (this.instrumentsLocked) g = Math.max(g + 0.8, LOCKED_GUIDANCE_MIN);
       return Math.min(LYRIA_GUIDANCE_MAX, g);
   }
   private genreProfile(): Record<string, [number, number, number]> {
@@ -548,7 +553,8 @@ export class LiveMusicHelper extends EventTarget {
 
       // Precise and short: the genre colour, the exact instruments from the UI, and nothing generic ("appropriate", "suitable")
       const parts: string[] = [];
-      if (this.genreReference) parts.push(this.genreReference);
+      // Locked instruments: the genre colour text names typical instruments ("fiddle and tin whistle"), so it is left out
+      if (this.genreReference && !this.instrumentsLocked) parts.push(this.genreReference);
       if (activeInstruments.length > 0) parts.push(`Only these instruments: ${activeInstruments.join(', ')}`);
       if (hasVocals) {
           const g = this.genre.toLowerCase();
@@ -560,6 +566,14 @@ export class LiveMusicHelper extends EventTarget {
           parts.push('instrumental, no vocals');
       }
       this.setSpecialInstruction(parts.join('. '));
+  }
+
+  /** Channels locked in the mixer: only the selected instruments may play, nothing else in the background or in solos. */
+  private instrumentsLocked = false;
+  public setInstrumentsLocked(locked: boolean) {
+      if (this.instrumentsLocked === locked) return;
+      this.instrumentsLocked = locked;
+      this.setInstruments(this.instruments);
   }
 
   /** The genre colour the dice picked for the genre on the main bar; goes first in the special instruction. */
@@ -828,6 +842,20 @@ Prompt: ${text}`
         finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
     }
 
+    // Locked instruments: exactly these, nothing else in the background or in solos. A group instrument
+    // (orchestra, section, ensemble, choir) brings its own players, so those are allowed inside it.
+    if (this.instrumentsLocked && playingKeys.length > 0) {
+        const names = playingKeys.map(k => this.instruments[k].instrument).map(n => isVocalInstrument(n) ? describeVoice(n) : n);
+        const groups = names.filter(n => /orchestra|section|ensemble|strings|brass|choir|quintet|quartet|drums|percussion/i.test(n));
+        const groupNote = groups.length > 0 ? ` (${groups.join(', ')} with only their own players)` : '';
+        // Name only the extras that are really not selected (no "no drums" when drums are on a channel)
+        const all = names.join(' ').toLowerCase();
+        const extras = ['pads', 'synths', 'drums'].filter(x =>
+            x === 'pads' ? !/pad/.test(all) : x === 'synths' ? !/synth/.test(all) : !/drum|percussion|kit|snare|taiko/.test(all));
+        const noExtras = extras.length > 0 ? `, no added ${extras.join(', ')}` : '';
+        finalPayload.push({ text: `Only ${names.join(', ')}${groupNote}. No other instruments, no backing band${noExtras}.`, weight: 3.0 });
+    }
+
     // (Density, Brightness, Variation and Guidance are sent as real config values, not as text)
     const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase())).map((p) => {
         return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
@@ -856,7 +884,10 @@ Prompt: ${text}`
     }
   }
   private knobPhrase(knobText: string): string {
-      const phrase = KNOB_PHRASES[knobText.trim().toLowerCase()];
+      const key = knobText.trim().toLowerCase();
+      // Locked instruments: "traditional {genre}" pulls in the genre's typical instruments, so ask for the playing style only
+      if (key === 'authenticity' && this.instrumentsLocked) return `authentic ${this.style} phrasing`;
+      const phrase = KNOB_PHRASES[key];
       if (!phrase) return knobText;
       return phrase.replace('{genre}', this.genre).replace('{style}', this.style);
   }
