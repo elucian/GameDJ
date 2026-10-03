@@ -596,9 +596,14 @@ function main() {
       refreshPromptPanel();
   });
 
+  // Each click on the DJ button is a request; planning takes a while (awaits), so an older request that is
+  // overtaken by a newer click (DJ switched off while planning) must stop instead of switching the DJ on again.
+  let djRequest = 0;
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
       const active = (e as CustomEvent<boolean>).detail;
+      const myRequest = ++djRequest;
+      const superseded = () => myRequest !== djRequest;
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
@@ -612,6 +617,7 @@ function main() {
                   const tab = chooseDjTab(topToolbar.genre);
                   rightSidebar.currentTab = tab;
                   await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, tab === 'Lyria');
+                  if (superseded()) return;
               }
 
               // Manifesto: the DJ may switch some channels off completely and work with a smaller ensemble.
@@ -638,6 +644,7 @@ function main() {
               if (liveMusicHelper.isVocalInstrumentActive()) {
                   pdjMidi.setMessage("DJ WRITING LYRICS...", "info");
                   const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood);
+                  if (superseded()) return;
                   vocalDialog.vocalText = text;
                   refreshPromptPanel();
                   pdjMidi.setMessage(vowels ? "DJ LYRICS: VOCALISE (VOWELS)" : `DJ LYRICS READY: ${language.toUpperCase()}`, "info");
