@@ -417,7 +417,10 @@ function main() {
       Object.keys(settings).forEach((ch) => {
           const channel = ch as keyof InstrumentSet;
           if (!isVocalInstrument(settings[channel].instrument)) return;
-          const nonVocalPool = (rightSidebar as any).getRecommendedInstruments(channel).filter((i: string) => !isVocalInstrument(i));
+          const used = Object.values(settings).map(s => s.instrument);
+          const allNonVocal = (rightSidebar as any).getRecommendedInstruments(channel).filter((i: string) => !isVocalInstrument(i));
+          const unused = allNonVocal.filter((i: string) => !used.includes(i));
+          const nonVocalPool = unused.length > 0 ? unused : allNonVocal;
           if (nonVocalPool.length > 0) {
               settings[channel] = { ...settings[channel], instrument: nonVocalPool[Math.floor(Math.random() * nonVocalPool.length)] };
               changed = true;

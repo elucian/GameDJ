@@ -20,6 +20,12 @@ export const LYRIA_DEFAULT_POOLS: Record<ChannelName, string[]> = {
   rhythm: ['Timpani & Drums', 'Orchestral Percussion', 'Cinematic Drums', 'Taiko Drums', 'Snare Ensemble']
 };
 
+// Lyria with the voice mode off: the voice (alto) and choir (harmonic) channels play orchestral sections instead
+export const LYRIA_INSTRUMENTAL_POOLS: Partial<Record<ChannelName, string[]>> = {
+  alto: ['Woodwind Section', 'Violin Section', 'Cello Ensemble', 'Harp & Strings', 'French Horns'],
+  harmonic: ['String Orchestra', 'Chamber Strings', 'Harp & Strings', 'Woodwind Section']
+};
+
 // Voice instruments that can always be picked on the Band tab too, so the Voice dialog and the channels can stay in sync.
 export const VOICE_CHANNEL_POOLS: Partial<Record<ChannelName, string[]>> = {
   alto: ['Solo Voice', 'Duet Voices', 'Quartet Voices'],

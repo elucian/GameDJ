@@ -11,7 +11,7 @@ import './MasterVolumePanel';
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
-import { FALLBACK_POOLS, getLyriaPool, VOICE_CHANNEL_POOLS } from '../constants/instruments';
+import { FALLBACK_POOLS, getLyriaPool, VOICE_CHANNEL_POOLS, LYRIA_INSTRUMENTAL_POOLS } from '../constants/instruments';
 import { isVocalInstrument, isTraditionalGenre } from '../utils/LiveMusicHelper';
 
 
@@ -31,7 +31,10 @@ export class RightSidebar extends LitElement {
       const base = this.getBaseRecommended(channel);
       if (!this.voiceEnabled) {
           const plain = base.filter(i => !isVocalInstrument(i));
-          return plain.length > 0 ? plain : base;
+          if (plain.length > 0) return plain;
+          // Lyria's voice and choir channels have only voices: use orchestral sections, never a voice
+          const instrumental = this.currentTab === 'Lyria' ? LYRIA_INSTRUMENTAL_POOLS[channel] : undefined;
+          return instrumental || (FALLBACK_POOLS[channel] || []).filter(i => !isVocalInstrument(i));
       }
       if (this.currentTab === 'Lyria') return base;
       // Band also offers the voice instruments (solo / duet / quartet, choirs) on the alto and harmonic channels
@@ -434,7 +437,7 @@ export class RightSidebar extends LitElement {
                   st.visible = true;
               }
           } else {
-              this.validateCurrentInstrument(channelToValidate, st);
+              this.validateCurrentInstrument(channelToValidate, st, newSettings);
           }
       } else {
           // Fallback behavior if no channel specified (validate all)
@@ -455,7 +458,7 @@ export class RightSidebar extends LitElement {
                       st.visible = true;
                   }
               } else {
-                  this.validateCurrentInstrument(ch, st);
+                  this.validateCurrentInstrument(ch, st, newSettings);
               }
           });
       }
@@ -466,15 +469,18 @@ export class RightSidebar extends LitElement {
       this.dispatchChannelsChanged();
   }
 
-  private validateCurrentInstrument(channel: keyof InstrumentSet, st: any) {
+  private validateCurrentInstrument(channel: keyof InstrumentSet, st: any, all?: Record<string, any>) {
       if (!st.instrument) return;
       const recommended = this.getRecommendedInstruments(channel);
-      
+
       // If it's in recommended (style pool or fallback), it's valid — keep it
       if (recommended.includes(st.instrument)) return;
 
-      // Anything else is replaced by a recommended instrument
-      if (recommended.length > 0) st.instrument = recommended[Math.floor(Math.random() * recommended.length)];
+      // Anything else is replaced by a recommended instrument, preferably one no other channel plays
+      const used = all ? Object.values(all).map(s => s.instrument) : [];
+      const unused = recommended.filter(i => !used.includes(i));
+      const pool = unused.length > 0 ? unused : recommended;
+      if (pool.length > 0) st.instrument = pool[Math.floor(Math.random() * pool.length)];
   }
 
   public applyMatrixUpdate(detail: { manifest: any, instruments: any, weights?: any, style: string, pools: any }) {
