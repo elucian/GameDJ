@@ -462,11 +462,6 @@ export class RightSidebar extends LitElement {
       
       this.settings = { ...newSettings };
       
-      const isAnyVocal = Object.values(newSettings).some(st => isVocalInstrument(st.instrument));
-      if (isAnyVocal) {
-          window.dispatchEvent(new CustomEvent('change-primary-mode', { detail: { mode: 'VOCALIZATION' } }));
-      }
-
       (this as any).requestUpdate();
       this.dispatchChannelsChanged();
   }

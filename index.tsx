@@ -229,18 +229,8 @@ function main() {
           referenceText = genreRefs[Math.floor(Math.random() * genreRefs.length)];
           referenceGenre = genre;
       }
-      const activeInstruments = Object.values(rightSidebar.settings)
-          .filter(ch => ch.active && ch.visible !== false)
-          .map(ch => ch.instrument);
-      const g = genre.toLowerCase();
-      const genreVocalHint = (() => {
-          if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-          return 'Use vocal styles appropriate for the genre.';
-      })();
-      liveMusicHelper.setSpecialInstruction(`${referenceText}, ${topToolbar.musicStyle}. IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`);
+      // The engine builds the instruction: genre colour + the exact instruments of the UI
+      liveMusicHelper.setGenreReference(referenceText);
   };
 
   (topToolbar as any).addEventListener('genre-changed', ((e: Event) => {
@@ -436,6 +426,15 @@ function main() {
       if (changed) (rightSidebar as any).auditAndCommit(settings);
   };
 
+  // Voice master mode on: the dice and the DJ put a voice on the alto channel when no channel has one (solo, duet or quartet)
+  const ensureVoiceChannels = () => {
+      if (liveMusicHelper.generationMode !== 'VOCALIZATION' || rightSidebar.locks.channels) return;
+      const hasVoice = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
+      if (hasVoice) return;
+      const kinds = ['Solo Voice', 'Duet Voices', 'Quartet Voices'];
+      rightSidebar.setVoiceInstruments({ alto: [kinds[Math.floor(Math.random() * kinds.length)]] });
+  };
+
   // Right-hand panel: the prompt last sent to Lyria first, then the instruments it names (voices and lyrics in voice mode)
   let lastPromptText = '';
   let appliedGuidance: number | null = null;
@@ -623,7 +622,10 @@ function main() {
                   rightSidebar.applyDjManifest(keep);
               }
 
-              if (!rsLocks.channels && djConfigureVoices()) {
+              // The DJ follows the primary mode: voices only when it is the voice mode, never the other way round
+              replaceVocalInstruments();
+              ensureVoiceChannels();
+              if (!rsLocks.channels && liveMusicHelper.generationMode === 'VOCALIZATION' && djConfigureVoices()) {
                   pdjMidi.setMessage("DJ SET THE VOICE OPTIONS", "info");
               }
 
@@ -815,34 +817,18 @@ function main() {
       // Voice master mode off: the dice never leave voice instruments behind
       replaceVocalInstruments();
 
-      // 5. Intelligent Mode Selection based on Instruments
-      const settings = rightSidebar.settings;
-      const vocalChannels = (Object.values(settings) as ChannelState[]).filter(ch => {
-          if (ch.visible === false) return false;
-          return isVocalInstrument(ch.instrument);
-      });
-      const hasVocalsInOutput = vocalChannels.length > 0;
+      // 5. The primary mode is the user's: the dice never change it. Voice channels are assigned only in voice mode.
+      const newMode: MusicGenerationMode = leftSidebar.primaryMode;
+      ensureVoiceChannels();
+      const hasVocalsInOutput = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && isVocalInstrument(ch.instrument));
       leftSidebar.hasVocalInstrument = hasVocalsInOutput;
 
-      // Auto-switch mode if vocal instruments are present, otherwise default to Quality or preserve if compatible
-      let newMode: MusicGenerationMode = 'QUALITY';
-      if (hasVocalsInOutput) {
-          newMode = 'VOCALIZATION';
-      } else {
-          // If current was VOC but we lost vocals, fallback to QUALITY. If it was DIVERSITY, keep it.
-          if (leftSidebar.primaryMode === 'VOCALIZATION') newMode = 'QUALITY';
-          else newMode = leftSidebar.primaryMode;
-      }
-      leftSidebar.primaryMode = newMode;
-      
       // Update sidebar
       rightSidebar.requestUpdate();
       leftSidebar.requestUpdate();
-      
+
       // Stop shuffling
       leftSidebar.isShuffling = false;
-
-      liveMusicHelper.setGenerationMode(newMode);
 
       // 6. Apply Special Reference Instruction (follows the genre and style of the main bar)
       diceReferenceActive = true;

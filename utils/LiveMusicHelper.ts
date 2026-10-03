@@ -545,25 +545,28 @@ export class LiveMusicHelper extends EventTarget {
           .map(([_, ch]) => ch.instrument);
 
       const hasVocals = activeInstruments.some(inst => isVocalInstrument(inst));
-      
-      let instruction: string;
+
+      // Precise and short: the genre colour, the exact instruments from the UI, and nothing generic ("appropriate", "suitable")
+      const parts: string[] = [];
+      if (this.genreReference) parts.push(this.genreReference);
+      if (activeInstruments.length > 0) parts.push(`Only these instruments: ${activeInstruments.join(', ')}`);
       if (hasVocals) {
-          // Vocal-specific instructions when vocal instruments are active
-          const genreVocalHint = (() => {
-              const g = this.genre.toLowerCase();
-              if (g.includes('indian')) return 'Use Hindustani or Carnatic vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-              if (g.includes('irish') || g.includes('celtic')) return 'Use traditional Irish or Celtic folk vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-              if (g.includes('spanish') || g.includes('flamenco')) return 'Use traditional Spanish or Flamenco vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-              if (g.includes('romanian')) return 'Use traditional Romanian or Balkan vocal styles. Strictly avoid Japanese or East Asian vocal aesthetics.';
-              return 'Use vocal styles appropriate for the genre.';
-          })();
-          instruction = `IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. ${genreVocalHint} Maintain strict harmonic cohesion between instruments and vocals. Do not add any ghost instruments, unselected backing tracks, or non-native vocal styles.`;
+          const g = this.genre.toLowerCase();
+          if (g.includes('indian')) parts.push('Hindustani or Carnatic vocal style');
+          else if (g.includes('irish') || g.includes('celtic')) parts.push('traditional Irish folk vocal style');
+          else if (g.includes('spanish') || g.includes('flamenco')) parts.push('traditional Spanish or Flamenco vocal style');
+          else if (g.includes('romanian')) parts.push('traditional Romanian or Balkan vocal style');
       } else {
-          // Instrumental-only instructions when no vocal instruments are active
-          instruction = `IMPORTANT: Only use these instruments: ${activeInstruments.join(', ')}. STRICTLY INSTRUMENTAL — no vocals, no singing, no choir, no vocal chops. Maintain strict harmonic cohesion between instruments. Do not add any ghost instruments or unselected backing tracks.`;
+          parts.push('instrumental, no vocals');
       }
-      
-      this.setSpecialInstruction(instruction);
+      this.setSpecialInstruction(parts.join('. '));
+  }
+
+  /** The genre colour the dice picked for the genre on the main bar; goes first in the special instruction. */
+  private genreReference: string | null = null;
+  public setGenreReference(text: string | null) {
+      this.genreReference = text;
+      this.setInstruments(this.instruments);
   }
   
   /** Store the lyrics the DJ will cue section by section (real words only, or open vowels). */
