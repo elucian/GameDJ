@@ -49,10 +49,21 @@ const CONFLICTING_KNOBS: [string, string][] = [
 const MELODIC_CHANNELS: ChannelKey[] = ['lead', 'alto', 'harmonic'];
 // Channel weights (0..1 slider scale) per formation: the featured voice leads, the rest support.
 const FORMATION_SUPPORT_WEIGHT: Record<Formation, number> = { solo: 0, duet: 0.9, trio: 0.8, quartet: 0.75, full: 0.7 };
-// Prompt weight per channel sent to Lyria (multiplied by the channel slider). Kept well above knob
-// weights so the chosen instruments and ensemble size dominate the generation.
-const CHANNEL_PROMPT_WEIGHT: Record<ChannelKey, number> = { lead: 4.0, alto: 3.5, harmonic: 3.2, bass: 3.5, rhythm: 3.5 };
-const ENSEMBLE_PROMPT_WEIGHT = 3.5;
+// Prompt weights (Lyria normalises them, so only the proportions count). The genre + style prompt is the single
+// strongest one so it always shapes the music; the instrument list comes next, then each channel, then the knobs.
+const GENRE_PROMPT_WEIGHT = 3.5;
+const ENSEMBLE_PROMPT_WEIGHT = 2.5;
+// Per channel (multiplied by the channel slider): together they stay below genre + ensemble.
+const CHANNEL_PROMPT_WEIGHT: Record<ChannelKey, number> = { lead: 1.6, alto: 1.4, harmonic: 1.2, bass: 1.3, rhythm: 1.3 };
+// Knob prompts are colour only: at full knob (2) they reach 1.0, never above the instruments.
+const KNOB_PROMPT_SCALE = 0.5;
+// Voice mode with a voice on stage: the singer is the main prompt and the instruments accompany it.
+const VOICE_PROMPT_WEIGHT = 3.0;
+const ACCOMPANIMENT_SCALE = 0.6;
+// Guidance never drops under the Lyria default, otherwise the model ignores genre and instruments (noise).
+// The Guidance knob only raises it; voices and locked channels raise the floor further.
+const GUIDANCE_FLOOR = 4.0;
+const VOICE_GUIDANCE_FLOOR = 4.5;
 
 // What each knob asks Lyria for. A bare word like "Groove" is vague to the model; these describe playing
 // qualities only, never instruments, so a knob cannot pull extra instruments into a solo or duet.
@@ -230,6 +241,24 @@ export function describeVoice(instrument: string): string {
     return `${instrument}, human vocals`;
 }
 
+// Artistic singer profiles, written the way the Lyria prompt guide describes voices (gender, range, timbre, delivery).
+// The DJ picks one at random per voice, so every song gets its own singer.
+const VOICE_PERSONAS: Record<string, string[]> = {
+    Soprano: ['female soprano lead vocal, clear crystalline timbre, agile soaring delivery', 'female soprano lead vocal, airy breathy tone, gentle vibrato',
+        'female soprano lead vocal, bright bell-like voice, expressive phrasing'],
+    Alto: ['female alto lead vocal, rich warm husky lower range', 'female alto lead vocal, smoky velvet tone, soulful phrasing',
+        'female mezzo lead vocal, dark warm voice, intimate delivery'],
+    Tenor: ['male tenor lead vocal, bright energetic voice, ringing high notes', 'male tenor lead vocal, smooth lyrical tone, tender falsetto',
+        'male tenor lead vocal, open passionate voice, clear diction'],
+    Baritone: ['male baritone lead vocal, deep velvet-smooth chest voice', 'male baritone lead vocal, warm resonant tone, relaxed delivery',
+        'male baritone lead vocal, raspy gritty timbre, raw emotion'],
+    Rap: ['rap vocal, confident rhythmic flow, clear diction, on-beat delivery', 'rap vocal, laid-back smooth flow, deep voice',
+        'rap vocal, fast punchy delivery, sharp rhymes'],
+    Girl: ['young girl lead vocal, pure clear innocent tone'],
+    Boy: ['boy treble lead vocal, pure bell-like tone'],
+};
+const pickOne = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+
 export interface DjPersonality {
     name: string;
     eagerness: number;
@@ -324,11 +353,16 @@ export class LiveMusicHelper extends EventTarget {
   }
   /** The guidance the app wants right now (the applied one is reported by 'config-applied'). */
   public get intendedGuidance(): number { return this.effectiveGuidance(); }
-  /** Guidance sent to Lyria: exactly what the Guidance knob says (weight x 3, 0 when the knob is not set). */
+  /**
+   * Guidance sent to Lyria: the Guidance knob (weight x 3), but never under a floor. With guidance near 0 Lyria
+   * ignores the prompts, so genre, style and instruments are lost. Floor: 4 (Lyria default), 4.5 with voices on stage,
+   * 5.2 with the channels locked.
+   */
   private effectiveGuidance(): number {
       let g = 0;
       for (const p of this.prompts.values()) if (isGuidanceKnob(p)) g = p.weight * 3;
-      return Math.round(Math.max(0, Math.min(LYRIA_GUIDANCE_MAX, g)) * 10) / 10;
+      const floor = this.instrumentsLocked ? LOCKED_GUIDANCE_MIN : this.voiceMode && this.isVocalInstrumentActive() ? VOICE_GUIDANCE_FLOOR : GUIDANCE_FLOOR;
+      return Math.round(Math.max(floor, Math.min(LYRIA_GUIDANCE_MAX, g)) * 10) / 10;
   }
   public setVoiceIntensity(value: number) {
       this.voiceIntensity = Math.max(0, Math.min(1, value));
@@ -379,12 +413,47 @@ export class LiveMusicHelper extends EventTarget {
   private lastDjVocalMessageTime = 0;
   private conductorActivationTime = 0;
 
-  private specialInstruction: string | null = null;
   public isLiraMode = false;
   /** What a channel does in the music, as named in the prompts (Lyria tab: lead voice, harmony, orchestra, brass, percussion). */
   private channelRole(k: ChannelKey): string {
-      if (!this.isLiraMode) return k;
+      if (!this.isLiraMode) return ({ lead: 'lead melody', alto: 'countermelody', harmonic: 'chords', bass: 'bassline', rhythm: 'rhythm' } as Record<ChannelKey, string>)[k];
       return ({ lead: 'lead melody', alto: 'harmony accompaniment', harmonic: 'orchestral backing', bass: 'brass', rhythm: 'percussion' } as Record<ChannelKey, string>)[k];
+  }
+
+  /** The solo voices (Soprano, Alto, Tenor, Baritone) chosen in the Voice dialog or by the DJ. Each new cast gets new random singers. */
+  private voiceCast: { solos: string[] } = { solos: [] };
+  private voicePersonas = new Map<string, string>();
+  public setVoiceCast(solos: string[]) {
+      this.voiceCast = { solos: [...solos] };
+      this.voicePersonas.clear();
+      this.scheduleRefresh();
+  }
+  /** The singers the prompts describe right now (for the prompt panel). */
+  public get voiceDescriptions(): string[] { return [...this.voicePersonas.values()]; }
+
+  /** The artistic voice Lyria is asked for on a voice channel, chosen once at random and kept for the song. */
+  private voicePrompt(instrument: string): string {
+      const cached = this.voicePersonas.get(instrument);
+      if (cached) return cached;
+      const n = instrument.toLowerCase();
+      const solos = this.voiceCast.solos;
+      const persona = (voice: string) => pickOne(VOICE_PERSONAS[voice] || VOICE_PERSONAS.Alto);
+      let text: string;
+      if (n.includes('rapper') || n.includes('mc ')) text = persona('Rap');
+      else if (n.includes('quartet')) {
+          const parts = (solos.length >= 3 ? solos : ['Soprano', 'Alto', 'Tenor', 'Baritone']).map(v => v.toLowerCase());
+          text = `vocal quartet singing in close harmony, ${parts.join(', ')}`;
+      } else if (n.includes('duet')) {
+          const pair = solos.length >= 2 ? solos.slice(0, 2) : [pickOne(['Soprano', 'Alto']), pickOne(['Tenor', 'Baritone'])];
+          text = `vocal duet, ${pair.map(v => persona(v).replace(' lead vocal', '')).join(' and ')}, harmonies`;
+      } else if (/choir|chant|cappella|ensemble|coral/.test(n)) text = describeVoice(instrument);
+      else if (n.includes('girl')) text = persona('Girl');
+      else if (n.includes('boy')) text = persona('Boy');
+      else if (n.includes('female') || n.includes('soprano')) text = persona(solos[0] === 'Alto' ? 'Alto' : pickOne(['Soprano', 'Alto']));
+      else if (n.includes('male') || n.includes('tenor')) text = persona(solos[0] === 'Baritone' ? 'Baritone' : pickOne(['Tenor', 'Baritone']));
+      else text = persona(solos[0] || pickOne(['Soprano', 'Alto', 'Tenor', 'Baritone']));
+      this.voicePersonas.set(instrument, text);
+      return text;
   }
   public toolbarLocks = {
       genre: false,
@@ -491,11 +560,6 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh(); 
   }
   
-  public setSpecialInstruction(instruction: string | null) {
-      this.specialInstruction = instruction;
-      this.scheduleRefresh();
-  }
-
   public setToolbarLocks(locks: any) {
       this.toolbarLocks = { ...this.toolbarLocks, ...locks };
       this.scheduleRefresh();
@@ -545,32 +609,19 @@ export class LiveMusicHelper extends EventTarget {
     this.scheduleRefresh();
   }
 
-  public setInstruments(channels: InstrumentSet) { 
-      this.instruments = channels; 
-      this.scheduleRefresh(); 
-      
-      // Update model instructions with the new active instrument set
-      const activeInstruments = Object.entries(channels)
-          .filter(([_, ch]) => ch.active && ch.visible !== false && (this.voiceMode || !isVocalInstrument(ch.instrument)))
-          .map(([_, ch]) => ch.instrument);
+  public setInstruments(channels: InstrumentSet) {
+      this.instruments = channels;
+      this.scheduleRefresh();
+  }
 
-      const hasVocals = activeInstruments.some(inst => isVocalInstrument(inst));
-
-      // Precise and short: the genre colour, the exact instruments from the UI, and nothing generic ("appropriate", "suitable")
-      const parts: string[] = [];
-      // Locked instruments: the genre colour text names typical instruments ("fiddle and tin whistle"), so it is left out
-      if (this.genreReference && !this.instrumentsLocked) parts.push(this.genreReference);
-      if (activeInstruments.length > 0) parts.push(`Only these instruments: ${activeInstruments.join(', ')}`);
-      if (hasVocals) {
-          const g = this.genre.toLowerCase();
-          if (g.includes('indian')) parts.push('Hindustani or Carnatic vocal style');
-          else if (g.includes('irish') || g.includes('celtic')) parts.push('traditional Irish folk vocal style');
-          else if (g.includes('spanish') || g.includes('flamenco')) parts.push('traditional Spanish or Flamenco vocal style');
-          else if (g.includes('romanian')) parts.push('traditional Romanian or Balkan vocal style');
-      } else {
-          parts.push('instrumental, no vocals');
-      }
-      this.setSpecialInstruction(parts.join('. '));
+  /** Regional genres sing in their own tradition. */
+  private regionalVocalStyle(): string | null {
+      const g = this.genre.toLowerCase();
+      if (g.includes('indian')) return 'Hindustani vocal style';
+      if (g.includes('irish') || g.includes('celtic')) return 'traditional Irish folk vocal style';
+      if (g.includes('spanish') || g.includes('flamenco')) return 'flamenco vocal style';
+      if (g.includes('romanian')) return 'Romanian folk vocal style';
+      return null;
   }
 
   /** Channels locked in the mixer: only the selected instruments may play, nothing else in the background or in solos. */
@@ -605,9 +656,11 @@ export class LiveMusicHelper extends EventTarget {
       // Lyria cannot follow lyrics line by line, so the DJ hands over the essentials once, at the start:
       // the language plus the opening lines, and lets Lyria shape the singing itself.
       const opening = (this.lyricBlocks.find(b => /chorus|hook|refrain/.test(b.label)) ?? this.lyricBlocks[0])?.lines ?? '';
+      // Lyria RealTime cannot sing given words: quoted lyric lines only come out as garbled syllables (noise),
+      // so the prompt carries the language and the singing style, never the words themselves.
       this.lyricsPrompt = vowelsOnly || !opening
-          ? 'vocalise on open vowels, ah oh ooh'
-          : `vocals sung in ${this.lyricsLanguage}: "${opening.slice(0, 140)}"`;
+          ? 'wordless vocalise, ah and ooh'
+          : `sung in ${this.lyricsLanguage}, verse and chorus song structure`;
   }
 
   /** Before the baton is raised: the DJ picks the language for the genre and writes lyrics (or a vowel vocalise). */
@@ -784,104 +837,71 @@ Prompt: ${text}`
         }
     }
 
-    // 2. Build Rich, Descriptive Narrative Prompt
-    let arrangement = '', vocalDirection = '', evolutionText = '', special = '';
-    let narrative = `An authentic, high-quality music composition in the ${this.genre} genre, specifically in a ${this.style} style. The piece is in the key of ${this.key} at ${this.bpm} BPM in ${this.meter} time. `;
-    if (this.mood && this.mood !== 'None') narrative += `The overall mood is ${this.mood.toLowerCase()}. `;
-    
-    const activeInstruments: string[] = [];
+    // 2. Prompts. Lyria reads short tags, not sentences, and only the proportions of the weights count. Strength order:
+    //    genre + style > instrument list > singer (voice mode) > each channel > mood, melody, tempo > knobs.
+    //    Only what plays is named: no "no drums, no synths" negatives (naming an instrument invites it) and no genre
+    //    colour text that lists other instruments. Lyrics are never quoted (Lyria RealTime cannot sing given words).
     const playingKeys: ChannelKey[] = [];
-    const keys = ["lead", "alto", "harmonic", "bass", "rhythm"] as const;
-    keys.forEach((k) => {
+    (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach((k) => {
         const ch = this.instruments[k];
-        if (ch.active && ch.visible !== false && ch.weight > 0.05) {
-            const inst = ch.instrument.toLowerCase();
-            const isChoir = inst.includes('choir');
-            if (!this.voiceMode && isVocalInstrument(ch.instrument)) return; // voice master mode off: no voices in the prompt
-            if (isChoir && this.choirMuted) return;
-            if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return;
-
-            activeInstruments.push(`${this.channelRole(k)} ${isVocalInstrument(ch.instrument) ? describeVoice(ch.instrument) : ch.instrument}`);
-            playingKeys.push(k);
+        if (!ch.active || ch.visible === false || ch.weight <= 0.05 || !ch.instrument) return;
+        if (isVocalInstrument(ch.instrument)) {
+            if (!this.voiceMode) return; // voice master mode off: no voices in the prompt
+            const isChoir = ch.instrument.toLowerCase().includes('choir');
+            if (isChoir ? this.choirMuted : this.soloMuted) return;
         }
+        playingKeys.push(k);
     });
+    const voiceKeys = playingKeys.filter(k => isVocalInstrument(this.instruments[k].instrument));
+    const voiceLed = voiceKeys.length > 0;
 
-    if (activeInstruments.length > 0) {
-        arrangement = `The arrangement features: ${activeInstruments.join(', ')}`;
-    }
+    const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style}, ${this.genre}`;
+    const finalPayload: { text: string; weight: number }[] = [{ text: styleTag, weight: GENRE_PROMPT_WEIGHT }];
+    finalPayload.push({ text: `${this.key}, ${this.bpm} BPM, ${this.meter} time`, weight: 0.8 });
+    if (this.mood && this.mood !== 'None') finalPayload.push({ text: `${this.mood.toLowerCase()} mood`, weight: 1.2 });
 
-    // DJ ensemble directive: name the exact formation so Lyria plays a real solo/duet/trio/quartet/tutti
+    // The exact ensemble on the channels (solo, duet, trio, quartet or band), always, so no other instruments join in
     const currentStage = this.conductorMode ? this.currentPlan?.[this.currentPlanIdx] : undefined;
-    const ensembleDirective = currentStage ? this.describeEnsemble(playingKeys, currentStage.featured) : null;
+    const ensemble = this.describeEnsemble(playingKeys, currentStage?.featured ?? null, voiceLed);
+    if (ensemble) finalPayload.push({ text: ensemble, weight: ENSEMBLE_PROMPT_WEIGHT });
+    else if (this.genreReference) finalPayload.push({ text: this.genreReference, weight: 1.0 }); // nothing on the channels: the dice's genre colour
 
-    // Inject Vocal/Solo Directives (kept short: Lyria reads prompts as tags, not instructions)
-    if (this.currentVocalSignal) {
-        vocalDirection = `Vocal direction: ${this.currentVocalSignal}`;
-    }
-
-    // Evolution modifiers
-    if (this.evolutionValue > 0) {
-        evolutionText = 'progressive, dynamic and complex music';
-    } else if (this.evolutionValue < 0) {
-        evolutionText = 'stable, minimal and steady music';
-    }
-
-    if (this.specialInstruction && (this.voiceMode || !/^VOCAL/i.test(this.specialInstruction))) {
-        special = this.specialInstruction;
-    }
-
-    // Separate short prompts, not one long narrative: Lyria reads them as tags and, when its safety filter drops one,
-    // the others still play (a single long prompt would lose everything).
-    const finalPayload = [ { text: narrative.trim(), weight: 2.0 } ];
-    if (arrangement) finalPayload.push({ text: arrangement, weight: 1.4 });
-    if (special) finalPayload.push({ text: special, weight: 1.0 });
-    if (vocalDirection) finalPayload.push({ text: vocalDirection, weight: 1.2 });
-    if (evolutionText) finalPayload.push({ text: evolutionText, weight: 0.8 });
-    // Every channel gets its own prompt below and the voices theirs; this one asks for a clean, well separated mix
-    finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix, each instrument clear and distinct', weight: 0.8 });
-    if (ensembleDirective) {
-        finalPayload.push({ text: ensembleDirective, weight: ENSEMBLE_PROMPT_WEIGHT });
-    }
-
-    if (this.currentVocalSignal && activeInstruments.length > 0) {
-        finalPayload.push({ text: `Strictly feature: ${activeInstruments.join(', ')}`, weight: 3.0 });
-    }
-
-    // Locked instruments: exactly these, nothing else in the background or in solos. A group instrument
-    // (orchestra, section, ensemble, choir) brings its own players, so those are allowed inside it.
-    if (this.instrumentsLocked && playingKeys.length > 0) {
-        const names = playingKeys.map(k => this.instruments[k].instrument).map(n => isVocalInstrument(n) ? describeVoice(n) : n);
-        const groups = names.filter(n => /orchestra|section|ensemble|strings|brass|choir|quintet|quartet|drums|percussion/i.test(n));
-        const groupNote = groups.length > 0 ? ` (${groups.join(', ')} with only their own players)` : '';
-        // Name only the extras that are really not selected (no "no drums" when drums are on a channel)
-        const all = names.join(' ').toLowerCase();
-        const extras = ['pads', 'synths', 'drums'].filter(x =>
-            x === 'pads' ? !/pad/.test(all) : x === 'synths' ? !/synth/.test(all) : !/drum|percussion|kit|snare|taiko/.test(all));
-        const noExtras = extras.length > 0 ? `, no added ${extras.join(', ')}` : '';
-        finalPayload.push({ text: `Only ${names.join(', ')}${groupNote}. No other instruments, no backing band${noExtras}.`, weight: 3.0 });
-    }
-
-    // (Density, Brightness, Variation and Guidance are sent as real config values, not as text)
-    const weightedPrompts = Array.from(this.prompts.values()).filter(p => !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase())).map((p) => {
-        return { text: this.knobPhrase(p.text), weight: p.weight * 1.5 };
-    }).filter(p => p.weight > 0.05);
-    
-    finalPayload.push(...weightedPrompts);
-    // 3. Build Individual Channel Weighted Prompts
-    playingKeys.forEach((k) => {
-        const ch = this.instruments[k];
-        const isFeatured = currentStage?.featured === k && MELODIC_CHANNELS.includes(k) && playingKeys.length > 1;
-        finalPayload.push({
-            text: isVocalInstrument(ch.instrument) ? `${describeVoice(ch.instrument)}, ${this.voiceIntensityPhrase()}` : (isFeatured ? `Featuring ${ch.instrument} as the leading voice` : `Featuring ${ch.instrument} as ${this.channelRole(k)}`),
-            weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k]
+    if (voiceLed) {
+        // Voice mode with a voice on stage: the singer leads, the instruments accompany
+        voiceKeys.forEach(k => {
+            const ch = this.instruments[k];
+            finalPayload.push({ text: `${this.voicePrompt(ch.instrument)}, ${this.voiceIntensityPhrase()}`, weight: ch.weight * VOICE_PROMPT_WEIGHT });
         });
+        finalPayload.push({ text: 'clear sung lead melody, catchy vocal hook', weight: 1.5 });
+        if (this.lyricsPrompt) finalPayload.push({ text: this.lyricsPrompt, weight: 1.4 });
+        const regional = this.regionalVocalStyle();
+        if (regional) finalPayload.push({ text: regional, weight: 1.0 });
+        if (this.currentVocalSignal) finalPayload.push({ text: `Vocal direction: ${this.currentVocalSignal}`, weight: 1.0 });
+    } else {
+        if (playingKeys.some(k => MELODIC_CHANNELS.includes(k))) finalPayload.push({ text: 'clear memorable melody', weight: 1.0 });
+        finalPayload.push({ text: 'instrumental', weight: 0.8 });
+    }
+
+    // One prompt per instrument channel with its role in the music
+    playingKeys.filter(k => !voiceKeys.includes(k)).forEach((k) => {
+        const ch = this.instruments[k];
+        const melodic = MELODIC_CHANNELS.includes(k);
+        const isFeatured = !voiceLed && currentStage?.featured === k && melodic && playingKeys.length > 1;
+        const role = isFeatured ? 'lead melody, featured' : voiceLed && melodic ? 'accompaniment' : this.channelRole(k);
+        finalPayload.push({ text: `${ch.instrument} ${role}`, weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k] * (voiceLed ? ACCOMPANIMENT_SCALE : 1) });
     });
 
+    if (this.evolutionValue > 0) finalPayload.push({ text: 'progressive, evolving arrangement', weight: 0.6 });
+    else if (this.evolutionValue < 0) finalPayload.push({ text: 'steady, minimal arrangement', weight: 0.6 });
+    finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix', weight: 0.6 });
 
-    // Vocals are on stage: one compact prompt carries the DJ's language / lyrics for the whole piece
-    if (this.lyricsPrompt && playingKeys.some(k => isVocalInstrument(this.instruments[k].instrument))) {
-        finalPayload.push({ text: this.lyricsPrompt, weight: 1.2 });
-    }
+    // Knobs colour the playing but never outweigh genre or instruments
+    // (Density, Brightness, Variation and Guidance are sent as real config values, not as text)
+    Array.from(this.prompts.values())
+        .filter(p => !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase()))
+        .map(p => ({ text: this.knobPhrase(p.text), weight: p.weight * KNOB_PROMPT_SCALE }))
+        .filter(p => p.weight > 0.05)
+        .forEach(p => finalPayload.push(p));
 
     const fadedPayload = this.crossfade(this.guard.apply(finalPayload));
     if (JSON.stringify(fadedPayload) !== JSON.stringify(this.lastPrompts)) {
@@ -897,19 +917,25 @@ Prompt: ${text}`
       return phrase.replace('{genre}', this.genre).replace('{style}', this.style);
   }
 
-  private describeEnsemble(playingKeys: ChannelKey[], featured: ChannelKey | null): string | null {
-      const names = playingKeys.map(k => this.instruments[k].instrument).filter(Boolean).map(n => isVocalInstrument(n) ? describeVoice(n) : n);
+  /** Short name of a voice inside the instrument list (the singer itself is described in its own prompt). */
+  private static voiceTag(instrument: string): string {
+      const n = instrument.toLowerCase();
+      if (n.includes('rapper') || n.includes('mc ')) return 'rap vocals';
+      if (n.includes('quartet')) return 'vocal quartet';
+      if (n.includes('duet')) return 'vocal duet';
+      if (/choir|chant|cappella|ensemble|coral/.test(n)) return instrument.toLowerCase().includes('choir') ? instrument : `${instrument} choir`;
+      return 'lead vocals';
+  }
+
+  /** The exact line-up as one tag: "trio of Piano, Upright Bass and Drum Kit only". Positive wording only. */
+  private describeEnsemble(playingKeys: ChannelKey[], featured: ChannelKey | null, voiceLed: boolean): string | null {
+      const names = playingKeys.map(k => this.instruments[k].instrument).filter(Boolean).map(n => isVocalInstrument(n) ? LiveMusicHelper.voiceTag(n) : n);
       if (names.length === 0) return null;
       const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
-      const lead = featured && playingKeys.includes(featured) && MELODIC_CHANNELS.includes(featured) ? this.instruments[featured].instrument : null;
-      const leadHint = lead && names.length > 1 ? ` ${lead} carries the melody.` : '';
-      switch (names.length) {
-          case 1: return `Solo performance: ${list} playing alone, unaccompanied. No other instruments.`;
-          case 2: return `Duet: only ${list} playing together in dialogue. No other instruments.${leadHint}`;
-          case 3: return `Trio: only ${list}. No other instruments.${leadHint}`;
-          case 4: return `Quartet: only ${list}. No other instruments.${leadHint}`;
-          default: return `Full band: ${list} all playing together.${leadHint}`;
-      }
+      const lead = !voiceLed && featured && playingKeys.includes(featured) && MELODIC_CHANNELS.includes(featured) ? this.instruments[featured].instrument : null;
+      const leadHint = lead && names.length > 1 ? `, ${lead} carries the melody` : '';
+      const size = ['', 'solo', 'duet of', 'trio of', 'quartet of'][names.length] ?? 'ensemble of';
+      return names.length === 1 ? `solo ${list}, unaccompanied` : `${size} ${list} only${leadHint}`;
   }
 
   public getActiveVocalDetails() {

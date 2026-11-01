@@ -83,8 +83,8 @@ function main() {
   });
 
   (djPresetDialog as any).addEventListener('send-dj-config', (e: CustomEvent) => {
-      const { directive, name, config } = e.detail;
-      liveMusicHelper.setSpecialInstruction(directive);
+      // The preset's summary text is for the log only: it is not music, so it never goes to Lyria as a prompt
+      const { name, config } = e.detail;
       if (config) {
           liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6 });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
@@ -122,7 +122,8 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('send-vocal-command', (e: CustomEvent) => {
-    liveMusicHelper.setSpecialInstruction(`VOCAL DIRECTIVE: ${e.detail}`);
+    // Lyria gets the voices as singer descriptions (one random artistic voice per selected voice), not this text
+    liveMusicHelper.setVoiceCast(vocalDialog.getVoices().solos);
     pdjMidi.setMessage(`VOCAL DIRECTIVE SENT`, "info");
     
     // The voice master mode (VOC) is the user's switch: with it off the directive is kept but not sent to Lyria
@@ -457,7 +458,8 @@ function main() {
       let lyrics = '';
       if (voiceOn) {
           const { solos, choir } = vocalDialog.getVoices();
-          voices = [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', ')
+          const singers = liveMusicHelper.voiceDescriptions;
+          voices = (singers.length ? singers.join(' + ') : [...solos, choir !== 'None' ? `${choir} Choir` : ''].filter(Boolean).join(', '))
               + ` · INTENSITY ${Math.round(liveMusicHelper.voiceIntensity * 100)}%`;
           lyrics = liveMusicHelper.vocalPrompt || liveMusicHelper.lyricsText.replace(/\s*\n\s*/g, ' / ').slice(0, 200);
       }
@@ -581,6 +583,7 @@ function main() {
       const target = voicesFromChannels(current);
       if (target && (target.choir !== current.choir || target.solos.length !== current.solos.length)) {
           vocalDialog.setVoices(target.solos, target.choir);
+          liveMusicHelper.setVoiceCast(target.solos);
           refreshPromptPanel();
       }
   };
@@ -607,6 +610,12 @@ function main() {
       else if (solos.length === 2) pick[soloCh] = ['Duet Voices'];
       else if (solos.length >= 3) pick[soloCh] = ['Quartet Voices'];
       if (!pick[soloCh] && !pick[choirCh]) return;
+      // Picking voices makes the voice the primary mode: without VOCALIZATION no voice reaches Lyria
+      // (and the channels would not even offer voice instruments)
+      if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
+          liveMusicHelper.setGenerationMode('VOCALIZATION');
+          pdjMidi.setMessage('VOICES SELECTED: MODE VOCALIZATION', 'info');
+      }
       syncingFromDialog = true;
       try { rightSidebar.setVoiceInstruments(pick); } finally { syncingFromDialog = false; }
       refreshPromptPanel();
@@ -891,6 +900,7 @@ function main() {
       setTimeout(() => { leftSidebar.isResetting = false; }, 800);
   });
 
+  let hadVoiceOnStage = false;
   (rightSidebar as any).addEventListener('channels-changed', ((e: Event) => {
       cancelAutoLoop();
       const detail = (e as CustomEvent<InstrumentSet>).detail;
@@ -905,7 +915,14 @@ function main() {
       });
       leftSidebar.hasVocalInstrument = vocalInManifest;
 
-      /* Auto-mode switching removed for manual control */
+      // A voice just came on stage (preset, locked channels, Voice dialog): the voice becomes the primary mode.
+      // Only on the change, so switching the mode off yourself afterwards is respected.
+      const voiceOnStage = (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
+      if (voiceOnStage && !hadVoiceOnStage && liveMusicHelper.generationMode !== 'VOCALIZATION') {
+          liveMusicHelper.setGenerationMode('VOCALIZATION');
+          pdjMidi.setMessage('VOICE ON STAGE: MODE VOCALIZATION', 'info');
+      }
+      hadVoiceOnStage = voiceOnStage;
 
       timeline.visibleChannels = { 
         lead: detail.lead?.visible !== false, 
