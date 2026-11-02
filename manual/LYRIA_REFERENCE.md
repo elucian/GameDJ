@@ -118,3 +118,12 @@ What GameDJ does about it:
 - **Dev mode logging:** in `npm run dev` every rejection is logged to the browser console (`[Lyria] prompt filtered`) and appended to `window.__lyriaFiltered` with the whole payload and config it belonged to. Production builds only show `PROMPT FILTERED` in the message log.
 - **Runtime memory and on-the-fly improvement** (`utils/PromptGuard.ts`): when the server rejects a prompt, GameDJ remembers it (also in `localStorage`, key `gamedj.promptGuard`) and never sends that text again. It first rewrites it with rules (drops "Name style/vibe/..." references and quoted lyrics, swaps words rejected before such as "boys choir" to "youth choir", shortens it). If the rewrite is rejected too, a Gemini text model rewrites it into safe descriptive tags. A prompt that keeps failing is dropped for good. Phrases that had to be removed are stripped from all later prompts before they are sent. The message log shows `PROMPT REWRITTEN (rules|ai)` or `PROMPT DROPPED`.
 - Rule of thumb for new wording: describe the sound (instruments, era, mood, tempo), never a person or a specific song.
+
+## 9. Songs with real lyrics: Lyria 3.5
+
+Lyria RealTime cannot sing words. When the voice mode (VOCALIZATION) has a voice or choir on stage, Record renders the take as a whole song with **Lyria 3.5** instead (`renderSong()` in `LiveMusicHelper.ts`):
+
+- Interactions API: `ai.interactions.create({ model, input })`, models tried in order `lyria-3.5`, `lyria-3-pro-preview` (`SONG_MODELS`). Needs `@google/genai` **2.x** (1.x is rejected: "legacy Interactions API schema").
+- Input is plain text (no JSON schema exists): labelled lines built by `buildSongPrompt()` (genre, style, mood, tempo, key, "Instruments (only these)", the singer descriptions, playing style from the knobs), then `Lyrics:` with `[Verse]` / `[Chorus]` tags. No lyrics: Lyria writes them in the chosen language. Vowels: a wordless vocalise.
+- Output: one MP3 (base64 in an `audio` content block; read from `steps`, `outputs` or `output_audio`) plus text (the sung lyrics). It becomes the recording on the timeline (play, loop, download). It cannot be steered while it plays, so the DJ hands over when it is ready.
+- **Access:** the Free Tier allows 0 requests for Lyria 3 Pro / 3.5 and Clip (measured November 2026: HTTP 429). On a quota or tier refusal the app records live instead (voices without words) and does not try Lyria 3.5 again this session.

@@ -64,6 +64,10 @@ const ACCOMPANIMENT_SCALE = 0.6;
 // The Guidance knob only raises it; voices and locked channels raise the floor further.
 const GUIDANCE_FLOOR = 4.0;
 const VOICE_GUIDANCE_FLOOR = 4.5;
+// Lyria 3 song models (Interactions API), tried in order: an unknown model id falls back to the next one.
+const SONG_MODELS = ['lyria-3.5', 'lyria-3-pro-preview'];
+// A full song takes a while to render
+const SONG_RENDER_TIMEOUT_MS = 300000;
 
 // What each knob asks Lyria for. A bare word like "Groove" is vague to the model; these describe playing
 // qualities only, never instruments, so a knob cannot pull extra instruments into a solo or duet.
@@ -663,10 +667,16 @@ export class LiveMusicHelper extends EventTarget {
           : `sung in ${this.lyricsLanguage}, verse and chorus song structure`;
   }
 
-  /** Before the baton is raised: the DJ picks the language for the genre and writes lyrics (or a vowel vocalise). */
-  public async djPrepareLyrics(style: string, mood: string): Promise<{ text: string; language: string; vowels: boolean }> {
+  /**
+   * Before the baton is raised: the DJ writes lyrics (or a vowel vocalise). The language is `fixedLanguage` when the
+   * Voice dialog sets one, else the DJ picks it for the genre.
+   */
+  public async djPrepareLyrics(style: string, mood: string, fixedLanguage?: string): Promise<{ text: string; language: string; vowels: boolean }> {
       const choirOnly = Object.values(this.instruments).every(ch => !ch.active || !isVocalInstrument(ch.instrument) || ch.instrument.toLowerCase().includes('choir'));
-      const { language, vowels } = chooseDjLanguage(this.genre, choirOnly);
+      const pick = chooseDjLanguage(this.genre, choirOnly);
+      // A language set in the dialog means real words in that language, never a vowel vocalise
+      const language = fixedLanguage || pick.language;
+      const vowels = fixedLanguage ? false : pick.vowels;
       let text = VOWEL_LYRICS;
       if (!vowels) {
           // Don't keep the DJ waiting forever if the lyrics service is slow
@@ -841,17 +851,7 @@ Prompt: ${text}`
     //    genre + style > instrument list > singer (voice mode) > each channel > mood, melody, tempo > knobs.
     //    Only what plays is named: no "no drums, no synths" negatives (naming an instrument invites it) and no genre
     //    colour text that lists other instruments. Lyrics are never quoted (Lyria RealTime cannot sing given words).
-    const playingKeys: ChannelKey[] = [];
-    (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach((k) => {
-        const ch = this.instruments[k];
-        if (!ch.active || ch.visible === false || ch.weight <= 0.05 || !ch.instrument) return;
-        if (isVocalInstrument(ch.instrument)) {
-            if (!this.voiceMode) return; // voice master mode off: no voices in the prompt
-            const isChoir = ch.instrument.toLowerCase().includes('choir');
-            if (isChoir ? this.choirMuted : this.soloMuted) return;
-        }
-        playingKeys.push(k);
-    });
+    const playingKeys = this.playingChannelKeys();
     const voiceKeys = playingKeys.filter(k => isVocalInstrument(this.instruments[k].instrument));
     const voiceLed = voiceKeys.length > 0;
 
@@ -908,6 +908,17 @@ Prompt: ${text}`
         try { await this.session.setWeightedPrompts({ weightedPrompts: fadedPayload }); this.lastPrompts = fadedPayload; this.dispatchEvent(new CustomEvent('prompts-sent', { detail: { prompts: fadedPayload, guidance: config.guidance } })); } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
   }
+  /** Channels that play right now (voices only in the voice master mode, minus muted solo voices or choir). */
+  private playingChannelKeys(): ChannelKey[] {
+      return (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).filter((k) => {
+          const ch = this.instruments[k];
+          if (!ch.active || ch.visible === false || ch.weight <= 0.05 || !ch.instrument) return false;
+          if (!isVocalInstrument(ch.instrument)) return true;
+          if (!this.voiceMode) return false;
+          return !(ch.instrument.toLowerCase().includes('choir') ? this.choirMuted : this.soloMuted);
+      });
+  }
+
   private knobPhrase(knobText: string): string {
       const key = knobText.trim().toLowerCase();
       // Locked instruments: "traditional {genre}" pulls in the genre's typical instruments, so ask for the playing style only
@@ -2376,6 +2387,126 @@ Prompt: ${text}`
     if (this.conductorMode) this.startConductor();
     this.startTimeTracking();
   }
+
+  // === Lyria 3.5 song rendering (voices with real words) ===
+  // Lyria RealTime only makes instrumental music. When the voice mode has a voice or choir on stage, a take is
+  // rendered as a whole song by Lyria 3.5 instead: one request, one finished MP3 with the singers and the lyrics.
+  // It cannot be steered while it plays (no DJ, knobs or channel changes), it lands on the timeline like a recording.
+
+  /** A voice or choir is on stage in the voice mode: takes are rendered by Lyria 3.5 (unless the API key may not use it). */
+  public get usesSongModel(): boolean {
+      return !this.songModelBlocked && this.voiceMode && this.playingChannelKeys().some(k => isVocalInstrument(this.instruments[k].instrument));
+  }
+  /** Set when the API refused the song model for quota / tier reasons (free tier: 0 requests). Live takes are used then. */
+  public songModelBlocked: string | null = null;
+
+  private renderToken = 0;
+
+  /** The text prompt for Lyria 3.5: song description in labelled lines, then the lyrics with section tags. */
+  public buildSongPrompt(): string {
+      const keys = this.playingChannelKeys();
+      const voiceKeys = keys.filter(k => isVocalInstrument(this.instruments[k].instrument));
+      const instruments = keys.filter(k => !voiceKeys.includes(k)).map(k => this.instruments[k].instrument);
+      const voices = voiceKeys.map(k => this.voicePrompt(this.instruments[k].instrument));
+      const minutes = Math.max(1, Math.round(this.maxDurationMinutes));
+      const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style} ${this.genre}`;
+      const knobs = Array.from(this.prompts.values())
+          .filter(p => p.weight > 0.3 && !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase()))
+          .sort((a, b) => b.weight - a.weight).slice(0, 4).map(p => this.knobPhrase(p.text));
+      const regional = this.regionalVocalStyle();
+
+      const lines = [
+          `Create a ${minutes}-minute ${styleTag} song with vocals.`,
+          `Genre: ${this.genre}. Style: ${this.style}.`,
+          this.mood && this.mood !== 'None' ? `Mood: ${this.mood.toLowerCase()}.` : '',
+          `Tempo: ${this.bpm} BPM, ${this.meter} time. Key: ${this.key}.`,
+          instruments.length ? `Instruments (only these): ${instruments.join(', ')}.` : 'A cappella: voices only, no instruments.',
+          `Vocals: ${voices.join('; ')}, ${this.voiceIntensityPhrase()}${regional ? `, ${regional}` : ''}.`,
+          knobs.length ? `Playing style: ${knobs.join(', ')}.` : '',
+          this.evolutionValue > 0 ? 'Arrangement: progressive, building and evolving.' : this.evolutionValue < 0 ? 'Arrangement: steady and minimal.' : '',
+          'Clear, memorable sung melody, clean high fidelity mix.'
+      ];
+      const lyrics = this.lyricsText.trim();
+      let words: string;
+      if (this.lyricsVowelsOnly) words = 'Lyrics: wordless vocalise on open vowels (ah, oh, ooh), no words.';
+      else if (lyrics) words = `Language: ${this.lyricsLanguage}. Sing these lyrics exactly, clearly pronounced.\n\nLyrics:\n${lyrics}`;
+      else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage} with verses and a chorus, sung clearly.\n`
+          + 'Structure: [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]';
+      return [...lines.filter(Boolean), words].join('\n');
+  }
+
+  /** Pulls the audio (base64 + mime type) and the text parts out of a Lyria 3 interaction, whatever the response shape. */
+  private static readSongResponse(interaction: any): { audio: string | null; mime: string; text: string } {
+      const blocks: any[] = [];
+      (interaction?.steps || []).forEach((s: any) => { if (s?.type === 'model_output') blocks.push(...(s.content || [])); });
+      blocks.push(...(interaction?.outputs || []));
+      if (interaction?.output_audio) blocks.push({ type: 'audio', ...interaction.output_audio });
+      const audioBlock = [...blocks].reverse().find(b => b?.type === 'audio' && b.data);
+      const text = blocks.filter(b => b?.type === 'text' && b.text).map(b => b.text).join('\n').trim() || String(interaction?.output_text || '').trim();
+      return { audio: audioBlock?.data ?? null, mime: audioBlock?.mime_type || audioBlock?.mimeType || 'audio/mpeg', text };
+  }
+
+  /**
+   * Renders the take as one song with Lyria 3.5 (falls back to Lyria 3 Pro) and puts it on the timeline.
+   * Fires 'song-render-progress' while waiting, 'song-rendered' (with the sung lyrics) or 'song-render-failed'.
+   */
+  public async renderSong(): Promise<boolean> {
+      await this.stop(false, true);
+      const token = ++this.renderToken;
+      this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0; this.automationLog = [];
+      this.dispatchEvent(new CustomEvent('recording-cleared'));
+      this.audioContext.resume();
+      const prompt = this.buildSongPrompt();
+      this.dispatchEvent(new CustomEvent('song-render-started', { detail: { prompt } }));
+      this.setPlaybackState('loading');
+      const started = Date.now();
+      const progress = window.setInterval(() => {
+          this.dispatchEvent(new CustomEvent('song-render-progress', { detail: { seconds: Math.round((Date.now() - started) / 1000) } }));
+      }, 5000);
+      try {
+          let interaction: any = null;
+          let lastError: unknown = null;
+          for (const model of SONG_MODELS) {
+              try {
+                  interaction = await (this.ai as any).interactions.create({ model, input: prompt }, { timeout: SONG_RENDER_TIMEOUT_MS });
+                  break;
+              } catch (e) {
+                  lastError = e;
+                  // Only an unknown model moves on to the next one; anything else (safety, quota) is final
+                  if (!/not.?found|404|unsupported|invalid.*model/i.test(String((e as any)?.message || e))) break;
+              }
+          }
+          if (token !== this.renderToken) return false; // stopped or overtaken while rendering
+          if (!interaction) throw lastError ?? new Error('No response from Lyria');
+          const { audio, mime, text } = LiveMusicHelper.readSongResponse(interaction);
+          if (!audio) throw new Error(text ? `Lyria returned no audio: ${text.slice(0, 160)}` : 'Lyria returned no audio');
+          const bytes = decode(audio);
+          const blob = new Blob([bytes], { type: mime });
+          const buffer = await this.audioContext.decodeAudioData(bytes.buffer.slice(0) as ArrayBuffer);
+          if (token !== this.renderToken) return false;
+          this.segments = [{ startTime: 0, duration: buffer.duration, buffer }];
+          this.recordedAudioBlob = blob;
+          // Lyria wrote the words itself: keep them so the Voice dialog shows what is sung
+          if (!this.lyricsText.trim() && text && !this.lyricsVowelsOnly) this.setLyrics(text, this.lyricsLanguage, false);
+          this.setPlaybackState('stopped');
+          this.dispatchEvent(new CustomEvent('song-rendered', { detail: { duration: buffer.duration, lyrics: text, prompt } }));
+          return true;
+      } catch (e) {
+          if (token !== this.renderToken) return false;
+          const reason = e instanceof Error ? e.message : String(e);
+          // Quota or tier refusal: the same key will keep failing, so later takes go live straight away
+          const blocked = /\b429\b|rate limit|quota|tier/i.test(reason);
+          if (blocked) this.songModelBlocked = reason;
+          this.setPlaybackState('stopped');
+          this.dispatchEvent(new CustomEvent('song-render-failed', { detail: { reason, blocked } }));
+          return false;
+      } finally {
+          clearInterval(progress);
+      }
+  }
+
+  /** Stop pressed while a song renders: the result is thrown away when it arrives. */
+  public cancelSongRender() { this.renderToken++; }
 
   public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3') {
     if (this.segments.length === 0) return;

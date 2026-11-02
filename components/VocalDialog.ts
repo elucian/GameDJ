@@ -11,6 +11,8 @@ export class VocalDialog extends LitElement {
   @property({ type: Boolean }) generating = false;
   @state() private tab: 'voices' | 'lyrics' = 'voices';
   @state() private lyricsLang = 'Auto';
+  /** Locked: the DJ keeps these voices and this language, and only writes lyrics when there are none yet. */
+  @property({ type: Boolean }) locked = false;
   private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Romanian', 'Swahili', 'Irish Gaelic', 'Hawaiian'];
   @state() private activeSoloVoices = {
     'Soprano': false,
@@ -148,6 +150,8 @@ export class VocalDialog extends LitElement {
       font-size: 14px;
     }
     .close-x-btn:hover { background: var(--accent-color); color: #000; }
+    .lock-btn { right: 40px; font-size: 12px; }
+    .lock-btn.active { border-color: var(--accent-color); background: var(--accent-color); color: #000; }
 
     .apply-btn { background: #1e601e; color: #fff; }
     .cancel-btn { background: transparent; border: 1px solid var(--border-color); color: var(--text-color); }
@@ -159,6 +163,8 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
+            <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" @click=${() => this.toggleLock()}
+                    title=${this.locked ? 'Voice settings locked: the DJ keeps your voices and language, and writes lyrics only when there are none' : 'Lock the voice settings so the DJ cannot change them'}>${this.locked ? '🔒' : '🔓'}</button>
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
             <h3>Voice Configuration</h3>
             
@@ -223,6 +229,15 @@ export class VocalDialog extends LitElement {
           detail: { genre: this.genre, lang: this.lyricsLang, verseCount: 2, lineCount: 4 }, bubbles: true, composed: true
       }));
   }
+
+  private toggleLock() {
+      this.locked = !this.locked;
+      this.dispatchEvent(new CustomEvent('voice-lock-changed', { detail: this.locked, bubbles: true, composed: true }));
+  }
+
+  /** Language chosen for the lyrics ('Auto' = picked by genre). */
+  public get language() { return this.lyricsLang; }
+  public setLanguage(language: string) { if (this.languages.includes(language)) this.lyricsLang = language; }
 
   private toggleSolo(voice: keyof typeof this.activeSoloVoices) {
       this.activeSoloVoices = { ...this.activeSoloVoices, [voice]: !this.activeSoloVoices[voice] };

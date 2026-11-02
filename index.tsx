@@ -138,9 +138,14 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('lyrics-set', (e: CustomEvent<string>) => {
-    // Lyrics typed or edited by the user: keep the DJ's language, sing them as real words
-    if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, undefined, false);
+    // Lyrics typed or edited by the user: sung as real words in the dialog's language (Auto keeps the DJ's / genre's)
+    const lang = vocalDialog.language;
+    if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, lang !== 'Auto' ? lang : undefined, false);
     refreshPromptPanel();
+  });
+
+  (vocalDialog as any).addEventListener('voice-lock-changed', (e: CustomEvent<boolean>) => {
+      pdjMidi.setMessage(e.detail ? 'VOICE SETTINGS LOCKED' : 'VOICE SETTINGS UNLOCKED: DJ MAY CHANGE THEM', 'info');
   });
 
   (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => {
@@ -400,11 +405,56 @@ function main() {
           pdjMidi.setMessage("ERROR: NO ACTIVE CHANNELS", "error");
           return;
       }
+      // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
+      // as a whole song (instruments, singers and lyrics) by Lyria 3.5
+      if (liveMusicHelper.usesSongModel) {
+          // The dialog's lyrics and language are what gets sung, also when they were not applied yet
+          const lang = vocalDialog.language;
+          if (vocalDialog.vocalText.trim() && vocalDialog.vocalText !== liveMusicHelper.lyricsText) {
+              liveMusicHelper.setLyrics(vocalDialog.vocalText, lang !== 'Auto' ? lang : undefined, false);
+          } else if (lang !== 'Auto') liveMusicHelper.lyricsLanguage = lang;
+          liveMusicHelper.renderSong();
+          return;
+      }
       liveMusicHelper.record();
   });
 
+  liveMusicHelper.addEventListener('song-render-started', ((e: Event) => {
+      const { prompt } = (e as CustomEvent<{ prompt: string }>).detail;
+      if ((import.meta as any).env?.DEV) console.info('[Lyria 3.5] song prompt:\n' + prompt);
+      panelsCleared = false;
+      lastPromptText = `[LYRIA 3.5 SONG] ${prompt.replace(/\s*\n\s*/g, ' / ')}`;
+      refreshPromptPanel();
+      pdjMidi.setMessage('LYRIA 3.5: RENDERING SONG WITH VOICES...', 'info');
+  }));
+  liveMusicHelper.addEventListener('song-render-progress', ((e: Event) => {
+      pdjMidi.setMessage(`LYRIA 3.5: RENDERING SONG... ${(e as CustomEvent<{ seconds: number }>).detail.seconds}S`, 'info');
+  }));
+  liveMusicHelper.addEventListener('song-rendered', ((e: Event) => {
+      const { duration } = (e as CustomEvent<{ duration: number }>).detail;
+      // A rendered song cannot be conducted: the DJ hands over and the song plays from the start
+      deactivateDj();
+      timeline.hasRecording = true;
+      leftSidebar.hasRecording = true;
+      if (liveMusicHelper.lyricsText) vocalDialog.vocalText = liveMusicHelper.lyricsText;
+      pdjMidi.setMessage(`SONG READY: ${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`, 'info');
+      liveMusicHelper.playRecording(0);
+  }));
+  liveMusicHelper.addEventListener('song-render-failed', ((e: Event) => {
+      const { reason, blocked } = (e as CustomEvent<{ reason: string; blocked: boolean }>).detail;
+      console.error('[Lyria 3.5] song render failed:', reason);
+      if (blocked) {
+          // The API key may not use Lyria 3.5 (free tier): record live instead, voices without words
+          pdjMidi.setMessage('LYRIA 3.5 NOT AVAILABLE ON THIS API KEY (PAID TIER NEEDED): RECORDING LIVE, NO WORDS', 'error');
+          liveMusicHelper.record();
+          return;
+      }
+      pdjMidi.setMessage(`SONG FAILED: ${reason.slice(0, 80).toUpperCase()}`, 'error');
+  }));
+
   (leftSidebar as any).addEventListener('stop', () => {
     cancelAutoLoop();
+    liveMusicHelper.cancelSongRender();
     liveMusicHelper.stop(true, false);
     deactivateDj();
     if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
@@ -418,13 +468,14 @@ function main() {
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
-  const replaceVocalInstruments = () => {
-      if (liveMusicHelper.generationMode === 'VOCALIZATION' || rightSidebar.locks.channels) return;
+  // `keep` + `force`: also in voice mode, swap the voices on every channel except `keep` (locked voice settings)
+  const replaceVocalInstruments = (keep: (keyof InstrumentSet)[] = [], force = false) => {
+      if ((!force && liveMusicHelper.generationMode === 'VOCALIZATION') || rightSidebar.locks.channels) return;
       const settings = { ...rightSidebar.settings };
       let changed = false;
       Object.keys(settings).forEach((ch) => {
           const channel = ch as keyof InstrumentSet;
-          if (!isVocalInstrument(settings[channel].instrument)) return;
+          if (keep.includes(channel) || !isVocalInstrument(settings[channel].instrument)) return;
           const used = Object.values(settings).map(s => s.instrument);
           const allNonVocal = (rightSidebar as any).getRecommendedInstruments(channel).filter((i: string) => !isVocalInstrument(i));
           const unused = allNonVocal.filter((i: string) => !used.includes(i));
@@ -578,7 +629,8 @@ function main() {
 
   // Channel changed: mirror it in the Voice dialog (only when something actually differs)
   const syncVoiceDialog = () => {
-      if (syncingFromDialog) return;
+      // Locked voice settings are the truth: the channels never rewrite them
+      if (syncingFromDialog || vocalDialog.locked) return;
       const current = vocalDialog.getVoices();
       const target = voicesFromChannels(current);
       if (target && (target.choir !== current.choir || target.solos.length !== current.solos.length)) {
@@ -597,9 +649,9 @@ function main() {
       return true;
   };
 
-  // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
-  (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
-      const { solos, choir } = e.detail;
+  // The Voice dialog's voices go onto the voice channels as a matching random voice instrument.
+  // Returns the channels that got a voice (empty when the dialog has none).
+  const applyDialogVoices = (solos: string[], choir: string): (keyof InstrumentSet)[] => {
       // Band: solo voices on alto, choir on harmonic. Lyria: solo voices on VOICE/LEAD, choir on VOICE/HARMONY.
       const lyria = rightSidebar.currentTab === 'Lyria';
       const soloCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.solo : 'alto';
@@ -609,7 +661,7 @@ function main() {
       if (solos.length === 1) pick[soloCh] = ['Solo Voice'];
       else if (solos.length === 2) pick[soloCh] = ['Duet Voices'];
       else if (solos.length >= 3) pick[soloCh] = ['Quartet Voices'];
-      if (!pick[soloCh] && !pick[choirCh]) return;
+      if (!pick[soloCh] && !pick[choirCh]) return [];
       // Picking voices makes the voice the primary mode: without VOCALIZATION no voice reaches Lyria
       // (and the channels would not even offer voice instruments)
       if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
@@ -619,7 +671,26 @@ function main() {
       syncingFromDialog = true;
       try { rightSidebar.setVoiceInstruments(pick); } finally { syncingFromDialog = false; }
       refreshPromptPanel();
+      return Object.keys(pick) as (keyof InstrumentSet)[];
+  };
+
+  // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
+  (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
+      applyDialogVoices(e.detail.solos, e.detail.choir);
   });
+
+  // Dice and DJ planning in voice mode: locked voice settings put exactly the dialog's voices on stage (and no
+  // other voices); otherwise a voice is added only when no channel has one.
+  const placeVoices = () => {
+      const { solos, choir } = vocalDialog.getVoices();
+      if (vocalDialog.locked && liveMusicHelper.generationMode === 'VOCALIZATION' && !rightSidebar.locks.channels && (solos.length > 0 || choir !== 'None')) {
+          const voiced = applyDialogVoices(solos, choir);
+          replaceVocalInstruments(voiced, true);
+          liveMusicHelper.setVoiceCast(solos);
+          return;
+      }
+      ensureVoiceChannels();
+  };
 
   // Each click on the DJ button is a request; planning takes a while (awaits), so an older request that is
   // overtaken by a newer click (DJ switched off while planning) must stop instead of switching the DJ on again.
@@ -655,9 +726,10 @@ function main() {
 
               // The DJ follows the primary mode: voices only when it is the voice mode, never the other way round
               replaceVocalInstruments();
-              ensureVoiceChannels();
+              placeVoices();
               rightSidebar.finalizeDiceChannels();
-              if (!rsLocks.channels && liveMusicHelper.generationMode === 'VOCALIZATION' && djConfigureVoices()) {
+              // Unlocked: the DJ may change the voice settings (they follow the channels it picked)
+              if (!vocalDialog.locked && !rsLocks.channels && liveMusicHelper.generationMode === 'VOCALIZATION' && djConfigureVoices()) {
                   pdjMidi.setMessage("DJ SET THE VOICE OPTIONS", "info");
               }
 
@@ -666,12 +738,23 @@ function main() {
               rightSidebar.setEvolution(evo);
               liveMusicHelper.setEvolution(evo);
 
-              // Voices on stage: the DJ writes lyrics in the language that suits the genre (real words or vowels)
-              if (liveMusicHelper.isVocalInstrumentActive()) {
+              // Voices on stage: the DJ writes lyrics. Unlocked, it picks the language for the genre and the dialog
+              // follows it. Locked, it keeps the dialog's language and only writes lyrics when there are none yet.
+              const voiceLocked = vocalDialog.locked;
+              const haveLyrics = !!(liveMusicHelper.lyricsText.trim() || vocalDialog.vocalText.trim());
+              if (liveMusicHelper.isVocalInstrumentActive() && voiceLocked && haveLyrics) {
+                  // Your lyrics and language stay; make sure the engine sings those (also when not applied yet)
+                  const lang = vocalDialog.language;
+                  const text = vocalDialog.vocalText.trim() || liveMusicHelper.lyricsText;
+                  liveMusicHelper.setLyrics(text, lang !== 'Auto' ? lang : undefined, liveMusicHelper.lyricsVowelsOnly && text === liveMusicHelper.lyricsText);
+                  pdjMidi.setMessage("VOICE LOCKED: DJ KEEPS YOUR LYRICS", "info");
+              } else if (liveMusicHelper.isVocalInstrumentActive()) {
                   pdjMidi.setMessage("DJ WRITING LYRICS...", "info");
-                  const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood);
+                  const lang = vocalDialog.language;
+                  const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood, voiceLocked && lang !== 'Auto' ? lang : undefined);
                   if (superseded()) return;
                   vocalDialog.vocalText = text;
+                  if (!voiceLocked) vocalDialog.setLanguage(language);
                   refreshPromptPanel();
                   pdjMidi.setMessage(vowels ? "DJ LYRICS: VOCALISE (VOWELS)" : `DJ LYRICS READY: ${language.toUpperCase()}`, "info");
               }
@@ -852,7 +935,7 @@ function main() {
 
       // 5. The primary mode is the user's: the dice never change it. Voice channels are assigned only in voice mode.
       const newMode: MusicGenerationMode = leftSidebar.primaryMode;
-      ensureVoiceChannels();
+      placeVoices();
       // Every channel ends with an instrument (rolled again if needed) or disappears from the manifest
       rightSidebar.finalizeDiceChannels();
       const hasVocalsInOutput = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && isVocalInstrument(ch.instrument));
