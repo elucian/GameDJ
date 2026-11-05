@@ -21,7 +21,7 @@ import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 const model = 'models/lyria-realtime-exp';
 
 function main() {
