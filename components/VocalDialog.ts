@@ -9,6 +9,8 @@ export class VocalDialog extends LitElement {
   /** Lyrics the DJ (or you) wrote for this song: real words in the genre's language, or open vowels. */
   @property({ type: String }) vocalText = '';
   @property({ type: Boolean }) generating = false;
+  /** The song's name: becomes the file name when the song is downloaded. */
+  @property({ type: String }) songName = '';
   @state() private tab: 'voices' | 'lyrics' = 'voices';
   @state() private lyricsLang = 'Auto';
   /** Locked: the DJ keeps these voices and this language, and only writes lyrics when there are none yet. */

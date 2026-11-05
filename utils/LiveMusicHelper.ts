@@ -2593,12 +2593,14 @@ Prompt: ${text}`
   /** Stop pressed while a song renders: the result is thrown away when it arrives. */
   public cancelSongRender() { this.renderToken++; }
 
-  public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3') {
+  public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3', songName = '') {
     if (this.segments.length === 0) return;
     const url = URL.createObjectURL(this.recordedAudioBlob!);
     const a = document.createElement('a');
     a.href = url;
-    const filename = `${this.maxDurationMinutes}m-${this.genre}-${this.style.replace(/\s+/g, '')}-${this.bpm}bpm-${this.key.replace(/\s+/g, '')}.${format}`;
+    // A named song (Voice dialog) is saved under its name, spaces replaced by underscores
+    const named = songName.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+    const filename = named ? `${named}.${format}` : `${this.maxDurationMinutes}m-${this.genre}-${this.style.replace(/\s+/g, '')}-${this.bpm}bpm-${this.key.replace(/\s+/g, '')}.${format}`;
     a.download = filename; a.click();
     window.URL.revokeObjectURL(url);
   }

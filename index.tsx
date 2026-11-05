@@ -15,6 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
+import { getUserId, quotaStatus, recordUsage } from './utils/UserQuota';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
@@ -166,12 +167,21 @@ function main() {
       liveMusicHelper.setGenerationMode('DIVERSITY');
       leftSidebar.primaryMode = 'DIVERSITY'; // Sync UI
       pdjMidi.setMessage(`MODE: DIVERSITY`, "info");
+      // Without the voice mode there are no voice instruments (as when the mode is changed on the left sidebar)
+      replaceVocalInstruments();
   });
   document.body.appendChild(pdjMidi as any);
   document.body.appendChild(rightSidebar as any);
   document.body.appendChild(timeline as any);
   const toastMessage = new ToastMessage();
   document.body.appendChild(toastMessage as any);
+  // Every visitor gets a unique ID (kept in this browser); free quotas are counted under it
+  (window as any).userId = getUserId();
+  // Over the quota: the message dialog says so (the display panel keeps the line too)
+  const quotaBlocked = (message: string) => {
+      toastMessage.show(message);
+      pdjMidi.setMessage(message.toUpperCase(), 'error');
+  };
   const liveMusicHelper = new LiveMusicHelper(ai, model);
   // The engine must know the knobs from the start: otherwise its map is empty until the user touches a knob, and
   // anything it broadcasts to the grid (the dice roll) wipes all knobs out.
@@ -444,7 +454,15 @@ function main() {
       }
       // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
       // as a whole song (instruments, singers and lyrics) by Lyria 3.5
+      const kind = liveMusicHelper.usesSongModel ? 'song' : 'live';
+      const quota = quotaStatus(kind);
+      if (!quota.ok) { quotaBlocked(quota.message); return; }
       if (liveMusicHelper.usesSongModel) {
+          // A song with voices is rendered whole by Lyria 3.5 and cannot be conducted: the DJ steps down (button unselected)
+          if (liveMusicHelper.conductorMode || leftSidebar.isConductorActive) {
+              deactivateDj();
+              pdjMidi.setMessage('DJ OFF: A SONG WITH VOICES CANNOT BE CONDUCTED', 'info');
+          }
           // The dialog's lyrics and language are what gets sung, also when they were not applied yet
           const lang = vocalDialog.language;
           if (vocalDialog.vocalText.trim() && vocalDialog.vocalText !== liveMusicHelper.lyricsText) {
@@ -454,6 +472,9 @@ function main() {
           liveMusicHelper.renderSong();
           return;
       }
+      // A live take cannot sing words: voice instruments left on the channels would only babble
+      replaceVocalInstruments();
+      recordUsage('live');
       liveMusicHelper.record();
   });
 
@@ -480,6 +501,7 @@ function main() {
   }));
   liveMusicHelper.addEventListener('song-rendered', ((e: Event) => {
       const { duration } = (e as CustomEvent<{ duration: number }>).detail;
+      recordUsage('song'); // a Lyria 3.5 song counts once it was really delivered
       // A rendered song cannot be conducted: the DJ hands over and the song plays from the start
       deactivateDj();
       // The exact length is known now: the slider takes the nearest step that holds it, the timeline the exact length
@@ -525,7 +547,7 @@ function main() {
   (leftSidebar as any).addEventListener('loop-changed', (e: any) => { cancelAutoLoop(); liveMusicHelper.setLoop(e.detail); });
   (leftSidebar as any).addEventListener('play-recording', () => { cancelAutoLoop(); liveMusicHelper.playRecording(); });
   (leftSidebar as any).addEventListener('back-to-start', () => { cancelAutoLoop(); liveMusicHelper.startRewind(); });
-  (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail); });
+  (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail, vocalDialog.songName); });
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
