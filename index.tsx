@@ -15,7 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota } from './utils/UserQuota';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
@@ -184,7 +184,7 @@ function main() {
   };
   const liveMusicHelper = new LiveMusicHelper(ai, model);
   // Song quota used up: the voice dialog button is forbidden until the month ends
-  const syncVoiceBlocked = () => { leftSidebar.voiceBlocked = !quotaStatus('song').ok; };
+  const syncVoiceBlocked = () => { leftSidebar.voiceBlocked = !quotaStatus('song').ok; }; // local count or a remembered server refusal
   syncVoiceBlocked();
   // Fall back to the live model: Band tab selected, voice mode off (as when the voice dialog is cancelled)
   const fallBackToLive = () => {
@@ -470,15 +470,20 @@ function main() {
       // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
       // as a whole song (instruments, singers and lyrics) by Lyria 3.5
       let kind: 'song' | 'live' = liveMusicHelper.usesSongModel ? 'song' : 'live';
-      if (kind === 'song' && !quotaStatus('song').ok) {
-          // Monthly song quota used up: fall back to the live model, with the Band and without the voice mode
-          toastMessage.show(`${quotaStatus('song').message} Falling back to live model.`);
-          pdjMidi.setMessage('MONTHLY QUOTA USED UP: FALLBACK TO LIVE MODEL', 'error');
-          fallBackToLive();
-          kind = 'live';
+      if (kind === 'song') {
+          const q = await reserveQuota('song');
+          if (!q.ok) {
+              // Monthly song quota used up: fall back to the live model, with the Band and without the voice mode
+              toastMessage.show(`${q.message} Falling back to live model.`);
+              pdjMidi.setMessage('MONTHLY QUOTA USED UP: FALLBACK TO LIVE MODEL', 'error');
+              fallBackToLive();
+              kind = 'live';
+          }
       }
-      const quota = quotaStatus(kind);
-      if (!quota.ok) { quotaBlocked(quota.message); return; }
+      if (kind === 'live') {
+          const q = await reserveQuota('live');
+          if (!q.ok) { quotaBlocked(q.message); return; }
+      }
       if (liveMusicHelper.usesSongModel) {
           // A song with voices is rendered whole by Lyria 3.5 and cannot be conducted: the DJ steps down (button unselected)
           if (liveMusicHelper.conductorMode || leftSidebar.isConductorActive) {
@@ -549,6 +554,7 @@ function main() {
   liveMusicHelper.addEventListener('song-render-failed', ((e: Event) => {
       const { reason, blocked } = (e as CustomEvent<{ reason: string; blocked: boolean }>).detail;
       console.error('[Lyria 3.5] song render failed:', reason);
+      refundQuota('song'); // nothing was delivered: the song goes back to the quota
       if (blocked) {
           // The API key may not use Lyria 3.5 (free tier): record live instead, voices without words
           pdjMidi.setMessage('LYRIA 3.5 NOT AVAILABLE ON THIS API KEY (PAID TIER NEEDED): RECORDING LIVE, NO WORDS', 'error');

@@ -58,10 +58,32 @@ const isLocalHost = (): boolean => {
     try { return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname); } catch { return false; }
 };
 
+/**
+ * A refusal from the server is remembered in this browser until the period ends (calendar month in UTC for songs,
+ * the 7-day window for live takes): no more requests are sent, and the voice button stays forbidden.
+ * Clearing the browser storage forgets it, and the next request asks the server again.
+ */
+const DENIED_KEY = 'gamedj.quotaDenied.v1';
+const periodEnd = (kind: QuotaKind, now = Date.now()): number => {
+    if (kind === 'song') { const d = new Date(now); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); }
+    return (Math.floor(now / (7 * DAY_MS)) + 1) * 7 * DAY_MS;
+};
+function deniedUntil(kind: QuotaKind): number {
+    try { return Number(JSON.parse(localStorage.getItem(DENIED_KEY) || '{}')[kind]) || 0; } catch { return 0; }
+}
+function rememberDenied(kind: QuotaKind) {
+    try {
+        const all = JSON.parse(localStorage.getItem(DENIED_KEY) || '{}');
+        all[kind] = periodEnd(kind);
+        localStorage.setItem(DENIED_KEY, JSON.stringify(all));
+    } catch { /* storage unavailable: the server is asked again next time */ }
+}
+
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
-    if (isLocalHost()) return { ok: true, used: 0, limit: RULES[kind].limit, message: RULES[kind].message };
-    const used = timesFor(kind).length;
     const rule = RULES[kind];
+    if (isLocalHost()) return { ok: true, used: 0, limit: rule.limit, message: rule.message };
+    if (deniedUntil(kind) > Date.now()) return { ok: false, used: rule.limit, limit: rule.limit, message: rule.message };
+    const used = timesFor(kind).length;
     return { ok: used < rule.limit, used, limit: rule.limit, message: rule.message };
 }
 
@@ -75,3 +97,37 @@ export function recordUsage(kind: QuotaKind) {
         localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
     } catch { /* storage unavailable: no quota tracking */ }
 }
+
+/**
+ * Server-side quota (api/quota.ts): counts per signed session cookie AND per network, so clearing the browser storage
+ * does not reset it. Returns null when the server is not reachable / not configured (the local quota then applies).
+ */
+async function callServer(kind: QuotaKind, action: 'consume' | 'refund'): Promise<{ ok: boolean; message: string } | null> {
+    if (isLocalHost()) return null;
+    try {
+        const res = await fetch('/api/quota', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, action })
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return { ok: data.ok !== false, message: data.message || RULES[kind].message };
+    } catch { return null; }
+}
+
+/** Takes one song from the quota before a take starts. Server decision first, the local quota when there is no server. */
+export async function reserveQuota(kind: QuotaKind): Promise<{ ok: boolean; message: string }> {
+    // The browser's memory first: already refused or used up here -> no server request at all
+    const local = quotaStatus(kind);
+    if (!local.ok) return { ok: false, message: local.message };
+    const remote = await callServer(kind, 'consume');
+    if (remote) {
+        if (!remote.ok) rememberDenied(kind);
+        return remote;
+    }
+    return { ok: local.ok, message: local.message };
+}
+
+/** Gives the song back (the take failed before anything was delivered). */
+export async function refundQuota(kind: QuotaKind) { await callServer(kind, 'refund'); }
