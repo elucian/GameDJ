@@ -495,15 +495,14 @@ export class LeftSidebar extends LitElement {
       <button 
         class="record-btn ${isRecording || isWarmup ? 'active-recording' : ''}"
         @click=${this.onRecordClick} 
-        ?disabled=${isRecording || isWarmup}
+        ?disabled=${isRecording && !isWarmup}
         title="Record (Overwrite)">
         <span class="icon-span">
             <svg width="24" height="24" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="6" fill="currentColor"/>
             </svg>
         </span>
-      </button>
-    `;
+      </button>`;
   }
 
   private renderPlayPause() {

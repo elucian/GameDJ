@@ -743,6 +743,7 @@ export class RightSidebar extends LitElement {
       });
       this.auditAndCommit(newSettings);
       this.dispatchChannelsChanged();
+      this.dispatchEvent(new CustomEvent('tab-changed', { detail: tab, bubbles: true, composed: true }));
   }
 
   render() {

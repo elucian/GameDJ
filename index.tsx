@@ -436,6 +436,16 @@ function main() {
       deactivateDj();
       timeline.hasRecording = true;
       leftSidebar.hasRecording = true;
+
+      // Ensure all visible channels are marked active in timeline
+      timeline.activeChannels = {
+        lead: !!rightSidebar.settings.lead.visible,
+        alto: !!rightSidebar.settings.alto.visible,
+        harmonic: !!rightSidebar.settings.harmonic.visible,
+        bass: !!rightSidebar.settings.bass.visible,
+        rhythm: !!rightSidebar.settings.rhythm.visible
+      };
+
       if (liveMusicHelper.lyricsText) vocalDialog.vocalText = liveMusicHelper.lyricsText;
       pdjMidi.setMessage(`SONG READY: ${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`, 'info');
       liveMusicHelper.playRecording(0);
@@ -677,6 +687,10 @@ function main() {
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
       liveMusicHelper.setGenerationMode('VOCALIZATION');
+      
+      // Switch model to Lyria 3.5 for song generation
+      (liveMusicHelper as any).model = 'models/lyria-3.5';
+      
       rightSidebar.currentTab = 'Lyria';
       applyDialogVoices(e.detail.solos, e.detail.choir);
       (window as any).applyVoiceKnobSettings();
@@ -695,9 +709,16 @@ function main() {
       ensureVoiceChannels();
   };
 
-  // Each click on the DJ button is a request; planning takes a while (awaits), so an older request that is
-  // overtaken by a newer click (DJ switched off while planning) must stop instead of switching the DJ on again.
-  let djRequest = 0;
+  (rightSidebar as any).addEventListener('tab-changed', (e: CustomEvent<string>) => {
+      const tab = e.detail;
+      if (tab === 'Band') {
+          (liveMusicHelper as any).model = 'models/lyria-realtime-exp';
+          pdjMidi.setMessage('MODEL SWITCHED TO REALTIME', 'info');
+      } else if (tab === 'Lyria') {
+          (liveMusicHelper as any).model = 'models/lyria-3.5';
+          pdjMidi.setMessage('MODEL SWITCHED TO LYRIA 3.5', 'info');
+      }
+  });
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
       const active = (e as CustomEvent<boolean>).detail;
@@ -777,8 +798,15 @@ function main() {
   (leftSidebar as any).addEventListener('mode-changed', ((e: Event) => {
       cancelAutoLoop();
       const mode = (e as CustomEvent<MusicGenerationMode>).detail;
+      (window as any).primaryMode = mode; // Keep global in sync
       liveMusicHelper.setGenerationMode(mode);
-      pdjMidi.setMessage(`MODE: ${mode}`, "info");
+      
+      // When leaving vocalization, switch model back to realtime
+      if (mode !== 'VOCALIZATION') {
+          (liveMusicHelper as any).model = 'models/lyria-realtime-exp';
+      }
+
+      pdjMidi.setMessage(`MODE: ${mode}`, 'info');
 
       // Without the voice mode there are no voice instruments: the channels get the genre's recommended ones
       rightSidebar.voiceEnabled = mode === 'VOCALIZATION';
