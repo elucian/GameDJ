@@ -65,12 +65,18 @@ export class ToastMessage extends LitElement {
     </div>`;
   }
 
+  private hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Shows the message; it closes by itself after 5 seconds (a new message restarts the timer). */
   show(message: string) {
     this.showing = true;
     this.message = message;
+    clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => this.hide(), 5000);
   }
 
   hide() {
+    clearTimeout(this.hideTimer);
     this.showing = false;
   }
 

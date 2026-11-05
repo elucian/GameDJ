@@ -183,6 +183,21 @@ function main() {
       pdjMidi.setMessage(message.toUpperCase(), 'error');
   };
   const liveMusicHelper = new LiveMusicHelper(ai, model);
+  // Song quota used up: the voice dialog button is forbidden until the month ends
+  const syncVoiceBlocked = () => { leftSidebar.voiceBlocked = !quotaStatus('song').ok; };
+  syncVoiceBlocked();
+  // Fall back to the live model: Band tab selected, voice mode off (as when the voice dialog is cancelled)
+  const fallBackToLive = () => {
+      if (rightSidebar.currentTab !== 'Band') (rightSidebar as any).switchTab('Band');
+      liveMusicHelper.setGenerationMode('DIVERSITY');
+      leftSidebar.primaryMode = 'DIVERSITY';
+      rightSidebar.voiceEnabled = false;
+      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: false } }));
+      vocalDialog.show = false;
+      replaceVocalInstruments();
+      refreshPromptPanel();
+      syncVoiceBlocked();
+  };
   // The engine must know the knobs from the start: otherwise its map is empty until the user touches a knob, and
   // anything it broadcasts to the grid (the dice roll) wipes all knobs out.
   liveMusicHelper.setWeightedPrompts(initialPrompts);
@@ -454,7 +469,14 @@ function main() {
       }
       // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
       // as a whole song (instruments, singers and lyrics) by Lyria 3.5
-      const kind = liveMusicHelper.usesSongModel ? 'song' : 'live';
+      let kind: 'song' | 'live' = liveMusicHelper.usesSongModel ? 'song' : 'live';
+      if (kind === 'song' && !quotaStatus('song').ok) {
+          // Monthly song quota used up: fall back to the live model, with the Band and without the voice mode
+          toastMessage.show(`${quotaStatus('song').message} Falling back to live model.`);
+          pdjMidi.setMessage('MONTHLY QUOTA USED UP: FALLBACK TO LIVE MODEL', 'error');
+          fallBackToLive();
+          kind = 'live';
+      }
       const quota = quotaStatus(kind);
       if (!quota.ok) { quotaBlocked(quota.message); return; }
       if (liveMusicHelper.usesSongModel) {
@@ -502,6 +524,7 @@ function main() {
   liveMusicHelper.addEventListener('song-rendered', ((e: Event) => {
       const { duration } = (e as CustomEvent<{ duration: number }>).detail;
       recordUsage('song'); // a Lyria 3.5 song counts once it was really delivered
+      syncVoiceBlocked();
       // A rendered song cannot be conducted: the DJ hands over and the song plays from the start
       deactivateDj();
       // The exact length is known now: the slider takes the nearest step that holds it, the timeline the exact length

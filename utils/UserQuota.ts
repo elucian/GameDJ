@@ -17,13 +17,13 @@ const RULES: Record<QuotaKind, QuotaRule> = {
     // Lyria 3.5 songs: 3 per calendar month
     song: {
         limit: 3, label: 'Lyria 3.5 songs per month',
-        message: 'Free Quota limit reach 3 songs.',
+        message: 'Monthly free quota limit reached: 3 songs.',
         inWindow: (now, t) => { const d = new Date(t); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }
     },
     // Normal songs (Lyria RealTime): 5 per rolling week
     live: {
         limit: 5, label: 'Lyria RealTime songs per week',
-        message: 'Free Quota limit reach 5 songs/week.',
+        message: 'Weekly free quota limit reached: 5 songs.',
         inWindow: (now, t) => now.getTime() - t < 7 * DAY_MS && t <= now.getTime()
     }
 };
