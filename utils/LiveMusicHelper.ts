@@ -66,6 +66,8 @@ const GUIDANCE_FLOOR = 4.0;
 const VOICE_GUIDANCE_FLOOR = 4.5;
 // Lyria 3 song models (Interactions API), tried in order: an unknown model id falls back to the next one.
 const SONG_MODELS = ['lyria-3.5', 'lyria-3-pro-preview'];
+// The only model that streams live music (record, DJ, play). The song models above only render finished files.
+const REALTIME_MODEL = 'models/lyria-realtime-exp';
 // A full song takes a while to render
 const SONG_RENDER_TIMEOUT_MS = 300000;
 
@@ -2225,7 +2227,7 @@ Prompt: ${text}`
     );
 
     const connectPromise = this.ai.live.music.connect({ 
-      model: this.model, 
+      model: REALTIME_MODEL,
       callbacks: { 
         onmessage: async (e) => { 
           if (e.filteredPrompt?.text) this.guard.reportRejected(e.filteredPrompt.text);
@@ -2465,13 +2467,33 @@ Prompt: ${text}`
 
   private renderToken = 0;
 
+  /**
+   * Length of the song in seconds, from the lyrics, tempo and meter: every sung line takes about two bars (one more
+   * for long lines), sections are separated by two bars of music, plus a four bar intro and outro.
+   * Null when there are no real lyrics to measure (the length then stays the user's choice).
+   */
+  public estimateSongSeconds(): number | null {
+      if (this.lyricsVowelsOnly) return null;
+      const lines: string[] = []; let sections = 0;
+      this.lyricsText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(l => {
+          if (/^\[.+\]$/.test(l)) sections++; else lines.push(l);
+      });
+      if (lines.length === 0) return null;
+      if (sections === 0) sections = Math.ceil(lines.length / 4);
+      const bars = 8 + sections * 2 + lines.reduce((sum, l) => sum + (l.split(/\s+/).length > 9 ? 3 : 2), 0);
+      const [num, den] = this.meter.split('/').map(n => parseInt(n, 10));
+      const quarters = (num > 0 && den > 0 ? num : 4) * (4 / (num > 0 && den > 0 ? den : 4));
+      const barSeconds = quarters * 60 / Math.max(40, this.bpm);
+      return Math.max(20, Math.min(600, Math.round(bars * barSeconds)));
+  }
+
   /** The text prompt for Lyria 3.5: song description in labelled lines, then the lyrics with section tags. */
   public buildSongPrompt(): string {
       const keys = this.playingChannelKeys();
       const voiceKeys = keys.filter(k => isVocalInstrument(this.instruments[k].instrument));
       const instruments = keys.filter(k => !voiceKeys.includes(k)).map(k => this.instruments[k].instrument);
       const voices = voiceKeys.map(k => this.voicePrompt(this.instruments[k].instrument));
-      const minutes = Math.max(1, Math.round(this.maxDurationMinutes));
+      const minutes = Math.max(0.5, Math.round(this.maxDurationMinutes * 2) / 2);
       const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style} ${this.genre}`;
       const knobs = Array.from(this.prompts.values())
           .filter(p => p.weight > 0.3 && !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase()))

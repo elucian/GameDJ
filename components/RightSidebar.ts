@@ -7,7 +7,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
-import './MasterVolumePanel';
+import { DURATION_STEPS } from './MasterVolumePanel';
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
@@ -405,7 +405,7 @@ export class RightSidebar extends LitElement {
   
   @state() private channelsLocked = false;
   @state() private manifestLocked = false;
-  @state() private durationIndex = 2; 
+  @state() private durationIndex = 6; // 3m
   @property({ type: Number }) evolution = 0; 
   
   @property({ type: String }) currentTab: 'Band' | 'Lyria' = 'Band';
@@ -504,13 +504,14 @@ export class RightSidebar extends LitElement {
       this.auditAndCommit(newSettings);
   }
 
-  public setDuration(mins: number) {
-      if (this.manifestLocked) return;
-      const idx = FIBONACCI_SERIES.findIndex(m => m >= mins);
-      if (idx !== -1) {
-          this.durationIndex = idx;
-          (this as any).requestUpdate();
-      }
+  /** Puts the duration slider on the first step that holds `mins` (the longest step when it is longer than all). `force` ignores the lock. */
+  public setDuration(mins: number, force = false): number {
+      const idx = DURATION_STEPS.findIndex(s => s.value >= mins - 1e-6);
+      const i = idx === -1 ? DURATION_STEPS.length - 1 : idx;
+      if (this.manifestLocked && !force) return DURATION_STEPS[this.durationIndex].value;
+      this.durationIndex = i;
+      (this as any).requestUpdate();
+      return DURATION_STEPS[i].value;
   }
 
   public setEvolution(val: number) {
@@ -533,8 +534,8 @@ export class RightSidebar extends LitElement {
     this.evolution = 0;
     this.dispatch('evolution-changed', 0);
     if (!this.manifestLocked) {
-        this.durationIndex = 2; 
-        this.dispatch('duration-changed', FIBONACCI_SERIES[2]);
+        this.durationIndex = 6; 
+        this.dispatch('duration-changed', DURATION_STEPS[6].value);
     }
     this.resetWeights();
   }
@@ -810,7 +811,7 @@ export class RightSidebar extends LitElement {
             .seedLocked=${this.seedLocked}
             @seed-lock-changed=${(e: any) => this.dispatch('seed-lock-changed', e.detail)}
             @volume-changed=${(e: any) => { this.volume = e.detail; this.dispatch('volume-changed', this.volume); }}
-            @duration-changed=${(e: any) => { this.durationIndex = FIBONACCI_SERIES.indexOf(e.detail); this.dispatch('duration-changed', e.detail); }}
+            @duration-changed=${(e: any) => { this.durationIndex = DURATION_STEPS.findIndex(s => s.value === e.detail); this.dispatch('duration-changed', e.detail); }}
             @evolution-changed=${(e: any) => { this.evolution = e.detail; this.dispatch('evolution-changed', e.detail); }}
             @stereo-changed=${(e: any) => { this.isStereo = e.detail; this.dispatch('stereo-changed', e.detail); }}>
         </master-volume-panel>

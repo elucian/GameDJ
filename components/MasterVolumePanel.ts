@@ -7,7 +7,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
 
-const DURATION_STEPS = [
+export const DURATION_STEPS = [
     { label: '10s', value: 0.166 }, 
     { label: '30s', value: 0.5 }, 
     { label: '1m', value: 1 }, 
@@ -237,7 +237,7 @@ export class MasterVolumePanel extends LitElement {
 
   @property({ type: Number }) volume = 0.8;
   @property({ type: Number }) evolution = 0;
-  @property({ type: Number }) durationIndex = 2; // Default to 3m
+  @property({ type: Number }) durationIndex = 6; // Default to 3m
   @property({ type: Number }) audioLevelL = 0;
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;

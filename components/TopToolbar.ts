@@ -1448,7 +1448,7 @@ export class TopToolbar extends LitElement {
     return html`
       <div class="logo">
         <span class="brand-text">GameDJ</span>
-        <span class="version-badge">V27</span>
+        <span class="version-badge">V28</span>
       </div>
       <div class="divider"></div>
 

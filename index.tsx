@@ -15,6 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
+import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
@@ -96,7 +97,14 @@ function main() {
       pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
   });
 
+  // Apply puts the DJ on deck (the button stays selected); Cancel leaves it off (the button is unselected)
+  (djPresetDialog as any).addEventListener('dj-dialog-applied', () => {
+      leftSidebar.isConductorActive = true;
+      (leftSidebar as any).dispatchEvent(new CustomEvent('dj-changed', { detail: true }));
+  });
+
   (djPresetDialog as any).addEventListener('dj-dialog-cancelled', () => {
+      leftSidebar.isConductorActive = false;
       pdjMidi.setMessage(`DJ CONFIG CANCELLED`, "info");
   });
 
@@ -113,6 +121,7 @@ function main() {
     }
     vocalDialog.vocalText = lyrics;
     liveMusicHelper.setLyrics(lyrics, lang, false);
+    updateSongDuration();
     refreshPromptPanel();
     pdjMidi.setMessage(`LYRICS READY: ${lang.toUpperCase()}`, 'info');
   });
@@ -145,6 +154,7 @@ function main() {
     // Lyrics typed or edited by the user: sung as real words in the dialog's language (Auto keeps the DJ's / genre's)
     const lang = vocalDialog.language;
     if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, lang !== 'Auto' ? lang : undefined, false);
+    updateSongDuration();
     refreshPromptPanel();
   });
 
@@ -299,6 +309,7 @@ function main() {
   (topToolbar as any).addEventListener('meter-changed', ((e: Event) => {
       cancelAutoLoop();
       liveMusicHelper.setGlobalSettings({ meter: (e as CustomEvent<string>).detail });
+      updateSongDuration();
   }));
   (topToolbar as any).addEventListener('style-matrix-update', ((e: Event) => {
       cancelAutoLoop();
@@ -323,6 +334,16 @@ function main() {
       const vol = (e as CustomEvent<number>).detail;
       liveMusicHelper.setVolume(vol);
   }));
+
+  // A song with voices (Lyria 3.5) is as long as its lyrics, tempo and meter make it: the duration slider follows
+  // that estimate until the rendered song tells the exact length.
+  const updateSongDuration = () => {
+      if (!liveMusicHelper.usesSongModel) return;
+      const est = liveMusicHelper.estimateSongSeconds();
+      if (est === null) return;
+      const mins = rightSidebar.setDuration(est / 60);
+      liveMusicHelper.setMaxDuration(mins); timeline.maxDuration = mins * 60;
+  };
 
   (topToolbar as any).addEventListener('duration-changed-manually', ((e: Event) => {
       cancelAutoLoop();
@@ -429,6 +450,7 @@ function main() {
           if (vocalDialog.vocalText.trim() && vocalDialog.vocalText !== liveMusicHelper.lyricsText) {
               liveMusicHelper.setLyrics(vocalDialog.vocalText, lang !== 'Auto' ? lang : undefined, false);
           } else if (lang !== 'Auto') liveMusicHelper.lyricsLanguage = lang;
+          updateSongDuration();
           liveMusicHelper.renderSong();
           return;
       }
@@ -460,6 +482,9 @@ function main() {
       const { duration } = (e as CustomEvent<{ duration: number }>).detail;
       // A rendered song cannot be conducted: the DJ hands over and the song plays from the start
       deactivateDj();
+      // The exact length is known now: the slider takes the nearest step that holds it, the timeline the exact length
+      rightSidebar.setDuration(duration / 60, true);
+      liveMusicHelper.setMaxDuration(duration / 60); timeline.maxDuration = duration;
       timeline.hasRecording = true;
       leftSidebar.hasRecording = true;
 
@@ -713,10 +738,7 @@ function main() {
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
       liveMusicHelper.setGenerationMode('VOCALIZATION');
-      
-      // Switch model to Lyria 3.5 for song generation
-      (liveMusicHelper as any).model = 'models/lyria-3.5';
-      
+
       rightSidebar.currentTab = 'Lyria';
       applyDialogVoices(e.detail.solos, e.detail.choir);
       (window as any).applyVoiceKnobSettings();
@@ -736,14 +758,9 @@ function main() {
   };
 
   (rightSidebar as any).addEventListener('tab-changed', (e: CustomEvent<string>) => {
-      const tab = e.detail;
-      if (tab === 'Band') {
-          (liveMusicHelper as any).model = 'models/lyria-realtime-exp';
-          pdjMidi.setMessage('MODEL SWITCHED TO REALTIME', 'info');
-      } else if (tab === 'Lyria') {
-          (liveMusicHelper as any).model = 'models/lyria-3.5';
-          pdjMidi.setMessage('MODEL SWITCHED TO LYRIA 3.5', 'info');
-      }
+      // The tab only changes the prompts (orchestra / voices or band). Live takes always stream from the realtime
+      // model; Lyria 3.5 is a song model that renderSong() calls on its own, it cannot stream (the take is silent).
+      pdjMidi.setMessage(e.detail === 'Lyria' ? 'LYRIA TAB: ORCHESTRA CHANNELS' : 'BAND TAB: BAND CHANNELS', 'info');
   });
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
@@ -819,11 +836,6 @@ function main() {
       (window as any).primaryMode = mode; // Keep global in sync
       liveMusicHelper.setGenerationMode(mode);
       
-      // When leaving vocalization, switch model back to realtime
-      if (mode !== 'VOCALIZATION') {
-          (liveMusicHelper as any).model = 'models/lyria-realtime-exp';
-      }
-
       pdjMidi.setMessage(`MODE: ${mode}`, 'info');
 
       // Without the voice mode there are no voice instruments: the channels get the genre's recommended ones
@@ -852,6 +864,7 @@ function main() {
   // Tempo never reached the engine before: forward toolbar tempo changes (user or DJ)
   (topToolbar as any).addEventListener('bpm-changed', ((e: Event) => {
       liveMusicHelper.setGlobalSettings({ bpm: (e as CustomEvent<number>).detail });
+      updateSongDuration();
   }));
 
   // While the DJ conducts a live recording it also works the master controls (volume, evolution) — even though

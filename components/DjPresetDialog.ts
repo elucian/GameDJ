@@ -311,6 +311,8 @@ export class DjPresetDialog extends LitElement {
     this.saveToStorage();
     this.emitConfig();
     this.show = false;
+    // The DJ button stays selected: the app switches the DJ on
+    this.dispatchEvent(new CustomEvent('dj-dialog-applied', { bubbles: true, composed: true }));
   }
 
   private emitConfig() {
