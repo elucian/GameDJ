@@ -53,7 +53,13 @@ function timesFor(kind: QuotaKind, now = new Date()): number[] {
     return list.filter(t => RULES[kind].inWindow(now, t));
 }
 
+/** Development on this machine is never limited. */
+const isLocalHost = (): boolean => {
+    try { return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname); } catch { return false; }
+};
+
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
+    if (isLocalHost()) return { ok: true, used: 0, limit: RULES[kind].limit, message: RULES[kind].message };
     const used = timesFor(kind).length;
     const rule = RULES[kind];
     return { ok: used < rule.limit, used, limit: rule.limit, message: rule.message };
