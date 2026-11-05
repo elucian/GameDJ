@@ -442,6 +442,12 @@ export class LeftSidebar extends LitElement {
   @property({ type: String }) primaryMode: MusicGenerationMode = 'QUALITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
 
+  protected updated(changed: Map<string, unknown>) {
+    if (changed.has('isConductorActive')) {
+      window.dispatchEvent(new CustomEvent('dj-active-changed', { detail: { active: this.isConductorActive } }));
+    }
+  }
+
   private onPresetsClick() {
     this.dispatchEvent(new CustomEvent('toggle-dj-preset-dialog', { bubbles: true, composed: true }));
   }

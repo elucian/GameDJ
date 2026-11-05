@@ -95,7 +95,7 @@ function main() {
           });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
       }
-      pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
+      pdjMidi.setMessage(`DJ ${String(name).toUpperCase()} SELECTED`, "info");
   });
 
   // Apply puts the DJ on deck (the button stays selected); Cancel leaves it off (the button is unselected)
@@ -845,7 +845,7 @@ function main() {
               liveMusicHelper.setEvolution(evo);
 
               liveMusicHelper.generatePerformancePlan(0);
-              pdjMidi.setMessage(`DJ PLANNED: BAND, ${mood.toUpperCase()}, EVO ${evo > 0 ? '+' : ''}${evo}`, "info");
+              pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} SELECTED`, "info");
           } else if (isLive) {
               djEngagingCountdown = true;
               let count = 5;
@@ -862,7 +862,6 @@ function main() {
                 } else {
                     clearInterval(timer);
                     djEngagingCountdown = false;
-                    pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", 'info');
                 }
               }, 1000);
           }

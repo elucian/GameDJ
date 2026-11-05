@@ -1037,12 +1037,19 @@ export class TopToolbar extends LitElement {
   static styles = css`
     :host { display: flex; align-items: center; justify-content: space-between; height: 100%; background: var(--surface-color); border-bottom: 1px solid var(--border-color); padding: 0; box-sizing: border-box; color: var(--text-color); user-select: none; gap: 0; font-family: 'Google Sans', sans-serif; width: 100%; overflow: hidden; transition: background-color 0.3s ease, border-color 0.3s ease; }
     .logo { font-weight: bold; font-size: 16px; color: var(--accent-color); display: flex; align-items: center; gap: 5px; padding: 0 8px; flex-shrink: 0; transition: padding 0.2s; }
+    .logo-stack { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; align-self: stretch; flex-shrink: 0; padding: 0 8px 3px; box-sizing: border-box; }
+    .logo-stack .logo { flex: 1; }
+    .logo-stack .logo { padding: 0; }
+    .dj-name { font-size: 12.5px; font-weight: 700; color: #c0c4c8; white-space: nowrap; line-height: 1.1; text-align: center; }
+    .dj-name .dj-tag { color: #ff8c00; }
+    :host-context(body.light-theme) .dj-name { color: #4a4a4a; }
+    :host-context(body.light-theme) .dj-name .dj-tag { color: #7a4a1e; }
     .brand-text { display: block; }
     @media (max-width: 1024px) {
       .brand-text { display: none; }
       .logo { padding: 0 6px; }
     }
-    .logo span.version-badge { background: var(--accent-color); color: #000; padding: 2px 5px; border-radius: 4px; font-size: 11.5px; font-weight: 800; }
+    .logo span.version-badge { background: transparent; color: var(--accent-color); border: 1px solid var(--accent-color); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; font-weight: 800; }
     .divider { width: 1px; height: 100%; background: var(--border-color); flex-shrink: 0; }
     .control-group { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; justify-content: center; padding: 0 5px; margin-bottom: 3px; box-sizing: border-box; }
     .control-group.fixed { flex: 0 0 auto; }
@@ -1105,6 +1112,24 @@ export class TopToolbar extends LitElement {
 
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
   @property({ type: Boolean }) hasRecording = false;
+  /** Name of the DJ on deck, shown under the logo while the DJ is active */
+  @state() private djName = '';
+  @state() private djActive = false;
+  private onDjConfig = ((e: CustomEvent) => { this.djName = e.detail?.name || ''; }) as EventListener;
+  private onDjActive = ((e: CustomEvent) => {
+      this.djActive = !!e.detail?.active;
+      if (!this.djName) this.djName = (window as any).liveMusicHelper?.djPersonalityInfo?.name || '';
+  }) as EventListener;
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('send-dj-config', this.onDjConfig);
+    window.addEventListener('dj-active-changed', this.onDjActive);
+  }
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('send-dj-config', this.onDjConfig);
+    window.removeEventListener('dj-active-changed', this.onDjActive);
+  }
   @state() public bpm = 110;
   @state() public key = 'C Minor';
   @state() public mode: 'Natural' | 'Minor' = 'Minor';
@@ -1446,9 +1471,12 @@ export class TopToolbar extends LitElement {
     const meters = genreData?.styles[this.musicStyle]?.meters || ['4/4'];
 
     return html`
-      <div class="logo">
-        <span class="brand-text">GameDJ</span>
-        <span class="version-badge">V28</span>
+      <div class="logo-stack">
+        <div class="logo">
+          <span class="brand-text">GameDJ</span>
+          <span class="version-badge">V28</span>
+        </div>
+        ${this.djActive && this.djName ? html`<div class="dj-name"><span class="dj-tag">Active:</span> ${this.djName}</div>` : ''}
       </div>
       <div class="divider"></div>
 
