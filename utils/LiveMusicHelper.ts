@@ -268,17 +268,49 @@ export interface DjPersonality {
     eagerness: number;
     maxKnobs?: number;
     channels: Record<ChannelKey, boolean>;
+    /** 0-100: solos, duets and trios instead of the full band. */
+    diversity?: number;
+    /** 0-100: bigger ensembles, ornamentation and complexity knobs. */
+    complexity?: number;
+    /** 0-100: evolution slider and dynamics / brightness / groove knobs. */
+    energy?: number;
+    /** 0-100: space, texture, organic colour. */
+    atmosphere?: number;
+    /** Seconds the band is warmed up slowly after the DJ takes over. */
+    warmup?: number;
+}
+
+/** How a DJ personality leans on each knob (added to the genre value, in knob units; 50 = neutral). */
+export function djKnobBias(p: DjPersonality | null | undefined, knob: string): number {
+    if (!p) return 0;
+    const lean = (v: number | undefined) => ((v ?? 50) - 50) / 50; // -1..+1
+    const groups: Record<string, [number, number | undefined]> = {
+        Complexity: [0.5, p.complexity], Ornamentation: [0.5, p.complexity], Variation: [0.4, p.diversity], Glide: [0.25, p.diversity],
+        Dynamics: [0.4, p.energy], Brightness: [0.35, p.energy], Groove: [0.35, p.energy], Attack: [0.3, p.energy], Density: [0.3, p.energy],
+        Organic: [0.35, p.atmosphere], Space: [0.4, p.atmosphere], Atmosphere: [0.45, p.atmosphere], Texture: [0.35, p.atmosphere], Width: [0.3, p.atmosphere]
+    };
+    const g = groups[knob];
+    return g ? g[0] * lean(g[1]) : 0;
+}
+
+/** Evolution the DJ aims for: its energy sets the base (-1..+5), diversity adds some randomness. */
+export function djEvolutionFor(p: DjPersonality | null | undefined): number {
+    if (!p) return Math.floor(Math.random() * 7) - 1;
+    const base = -1 + ((p.energy ?? 50) / 100) * 6;
+    const jitter = (Math.random() - 0.5) * 2 * ((p.diversity ?? 50) / 100) * 1.5;
+    return Math.max(-2, Math.min(7, Math.round(base + jitter)));
 }
 
 /**
  * DJ "manifesto": decides which channels stay in the manifest. The DJ may switch channels off completely
  * to work with a smaller ensemble (3-5 channels). Always keeps one melodic voice.
  */
-export function chooseDjManifest(genre: string, allowed?: Partial<Record<ChannelKey, boolean>>): ChannelKey[] {
+export function chooseDjManifest(genre: string, allowed?: Partial<Record<ChannelKey, boolean>>, complexity = 50): ChannelKey[] {
     const all: ChannelKey[] = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'];
     const pool = all.filter(k => allowed?.[k] !== false);
     if (pool.length <= 3) return pool;
-    const roll = Math.random();
+    // Complex DJs lean to bigger ensembles, simple ones to small ones
+    const roll = Math.max(0, Math.min(1, Math.random() - ((complexity - 50) / 100) * 0.6));
     const size = Math.min(pool.length, roll < 0.35 ? 5 : roll < 0.7 ? 4 : 3);
     const shuffle = <T>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
     const melodic = shuffle(pool.filter(k => k === 'lead' || k === 'alto'));
@@ -691,6 +723,7 @@ export class LiveMusicHelper extends EventTarget {
 
   public setDjPersonality(personality: DjPersonality | null) { this.djPersonality = personality; }
   public get djPersonalityChannels() { return this.djPersonality?.channels; }
+  public get djPersonalityInfo() { return this.djPersonality; }
 
   public notifyUserInteraction(id: string) {
       this.userInteractionCooldowns.set(id, Date.now()); 
@@ -1371,7 +1404,9 @@ Prompt: ${text}`
       const blockDuration = Math.max(15, Math.min(30, remainingTime / 4)); 
       
       while (currentTime < totalSec - 10) {
-          const typeRoll = Math.random();
+          // Low diversity: the DJ stays with the big ensembles instead of solos, duets and trios
+          const diversity = (this.djPersonality?.diversity ?? 50) / 100;
+          const typeRoll = Math.random() < (1 - diversity) * 0.6 ? 0.6 + Math.random() * 0.4 : Math.random();
           let name = "Improv Mix";
           let type = 'main';
           
@@ -1662,7 +1697,7 @@ Prompt: ${text}`
           const adj = styleAdj[knob] || 0;
           const lo = Math.max(0, min + Math.min(0, adj));
           const hi = Math.min(2, max + Math.max(0, adj));
-          return Math.max(lo, Math.min(override ? 2 : hi, defaultVal + adj + (stageMod[knob] || 0)));
+          return Math.max(lo, Math.min(override ? 2 : hi, defaultVal + adj + (stageMod[knob] || 0) + djKnobBias(this.djPersonality, knob)));
       };
       const conflicts = (a: string, b: string) =>
           CONFLICTING_KNOBS.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
@@ -1679,7 +1714,7 @@ Prompt: ${text}`
       // 1. Genre anchors: the two highest genre defaults ('Guidance' is generic, not a musical colour)
       Object.entries(profile)
           .filter(([knob]) => knob !== 'Guidance')
-          .sort((a, b) => (b[1][2] + (styleAdj[b[0]] || 0)) - (a[1][2] + (styleAdj[a[0]] || 0)))
+          .sort((a, b) => (b[1][2] + (styleAdj[b[0]] || 0) + djKnobBias(this.djPersonality, b[0])) - (a[1][2] + (styleAdj[a[0]] || 0) + djKnobBias(this.djPersonality, a[0])))
           .slice(0, 2)
           .forEach(([knob]) => tryAdd(knob));
 
@@ -1916,7 +1951,10 @@ Prompt: ${text}`
       const interactionCooldownMs = 10000 - (this.evolutionValue * 500);
       // Dynamic base step based on evolution. Higher evolution = faster cuts.
       const baseStep = 0.05 + (this.evolutionValue > 5 ? 0.05 : 0);
-      const step = baseStep * (1.0 + (this.evolutionValue / 10.0));
+      // Warm-up: right after the DJ takes over the knobs move slowly, then the DJ settles into its normal pace
+      const warmupSec = this.djPersonality?.warmup ?? 0;
+      const warm = warmupSec > 0 ? Math.max(0.3, Math.min(1, 0.3 + 0.7 * ((currentTimeMs - this.conductorActivationTime) / 1000 / warmupSec))) : 1;
+      const step = baseStep * (1.0 + (this.evolutionValue / 10.0)) * warm;
       // Knobs leaving the mix are pulled out faster so new ones can enter without breaking the knob cap
       const retireStep = Math.max(step, 0.15);
 

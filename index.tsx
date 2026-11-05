@@ -15,7 +15,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 
@@ -87,7 +87,10 @@ function main() {
       // The preset's summary text is for the log only: it is not music, so it never goes to Lyria as a prompt
       const { name, config } = e.detail;
       if (config) {
-          liveMusicHelper.setDjPersonality({ name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6 });
+          liveMusicHelper.setDjPersonality({
+              name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6,
+              diversity: config.diversity, complexity: config.complexity, energy: config.energy, atmosphere: config.atmosphere, warmup: config.warmup
+          });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
       }
       pdjMidi.setMessage(`DJ CONFIG APPLIED: ${name}`, "info");
@@ -747,20 +750,6 @@ function main() {
       const active = (e as CustomEvent<boolean>).detail;
       (window as any).isConductorActive = active;
       
-      // If DJ is activated, ensure we are not in VOCALIZATION mode (switch to QUALITY)
-      if (active && liveMusicHelper.generationMode === 'VOCALIZATION') {
-          liveMusicHelper.setGenerationMode('QUALITY');
-          leftSidebar.primaryMode = 'QUALITY';
-          pdjMidi.setMessage('MODE SWITCHED TO QUALITY', 'info');
-      }
-
-      // Automatically deactivate DJ if switching to Lyria channels (vocal instrument active)
-      if (active && liveMusicHelper.isVocalInstrumentActive()) {
-          deactivateDj();
-          pdjMidi.setMessage('DJ DEACTIVATED: VOICE CHANNELS ACTIVE', 'info');
-          return;
-      }
-
       const myRequest = ++djRequest;
       const superseded = () => myRequest !== djRequest;
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
@@ -778,14 +767,18 @@ function main() {
               }
 
               if (!rsLocks.manifest && !rsLocks.channels) {
-                  const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels);
+                  const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels, liveMusicHelper.djPersonalityInfo?.complexity);
                   rightSidebar.applyDjManifest(keep);
               }
 
+              // The voice mode stays on when the user chose it: the DJ conducts with the voices (as the dice do)
+              replaceVocalInstruments();
+              placeVoices();
               rightSidebar.finalizeDiceChannels();
 
               const mood = topToolbar.djPickMood();
-              const evo = Math.floor(Math.random() * 7) - 1; // -1..+5
+              // The DJ's character sets the evolution slider
+              const evo = djEvolutionFor(liveMusicHelper.djPersonalityInfo);
               rightSidebar.setEvolution(evo);
               liveMusicHelper.setEvolution(evo);
 
@@ -1029,14 +1022,6 @@ function main() {
       cancelAutoLoop();
       const detail = (e as CustomEvent<InstrumentSet>).detail;
       
-      // Auto-deactivate DJ if a vocal instrument is activated in Lyria mode
-      if (rightSidebar.currentTab === 'Lyria' && (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument))) {
-          if (liveMusicHelper.conductorMode) {
-              deactivateDj();
-              pdjMidi.setMessage('DJ DEACTIVATED: VOICE CHANNELS ACTIVE', 'info');
-          }
-      }
-
       // The prompts name each channel by its role, which differs between the Band and Lyria tabs
       liveMusicHelper.isLiraMode = rightSidebar.currentTab === 'Lyria';
       liveMusicHelper.setInstruments(detail);
