@@ -676,7 +676,10 @@ function main() {
 
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
+      liveMusicHelper.setGenerationMode('VOCALIZATION');
+      rightSidebar.currentTab = 'Lyria';
       applyDialogVoices(e.detail.solos, e.detail.choir);
+      (window as any).applyVoiceKnobSettings();
   });
 
   // Dice and DJ planning in voice mode: locked voice settings put exactly the dialog's voices on stage (and no
@@ -703,16 +706,24 @@ function main() {
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
+          // If in VOCALIZATION mode, automatically switch to QUALITY
+          if (liveMusicHelper.generationMode === 'VOCALIZATION') {
+              liveMusicHelper.setGenerationMode('QUALITY');
+              leftSidebar.primaryMode = 'QUALITY';
+              pdjMidi.setMessage('MODE SWITCHED TO QUALITY', 'info');
+          }
+
           const rsLocks = (rightSidebar as any).locks;
+          // DJ always uses BAND tab (Band channels)
+          rightSidebar.currentTab = 'Band';
+          
           // Before the baton is raised (nothing playing/recording) the DJ plans everything:
           // Lyria or Band, instruments, manifest, master mood and variations (evolution).
           // Once music is running the DJ only conducts: no tab, instrument or manifest changes.
           const canPlan = liveMusicHelper.playbackState === 'stopped';
           if (canPlan) {
               if (!rsLocks.channels) {
-                  const tab = chooseDjTab(topToolbar.genre);
-                  rightSidebar.currentTab = tab;
-                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, tab === 'Lyria');
+                  await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, false);
                   if (superseded()) return;
               }
 
@@ -724,43 +735,16 @@ function main() {
                   rightSidebar.applyDjManifest(keep);
               }
 
-              // The DJ follows the primary mode: voices only when it is the voice mode, never the other way round
-              replaceVocalInstruments();
-              placeVoices();
+              // Voice channels are not assigned in DJ mode
               rightSidebar.finalizeDiceChannels();
-              // Unlocked: the DJ may change the voice settings (they follow the channels it picked)
-              if (!vocalDialog.locked && !rsLocks.channels && liveMusicHelper.generationMode === 'VOCALIZATION' && djConfigureVoices()) {
-                  pdjMidi.setMessage("DJ SET THE VOICE OPTIONS", "info");
-              }
 
               const mood = topToolbar.djPickMood();
               const evo = Math.floor(Math.random() * 7) - 1; // -1..+5
               rightSidebar.setEvolution(evo);
               liveMusicHelper.setEvolution(evo);
 
-              // Voices on stage: the DJ writes lyrics. Unlocked, it picks the language for the genre and the dialog
-              // follows it. Locked, it keeps the dialog's language and only writes lyrics when there are none yet.
-              const voiceLocked = vocalDialog.locked;
-              const haveLyrics = !!(liveMusicHelper.lyricsText.trim() || vocalDialog.vocalText.trim());
-              if (liveMusicHelper.isVocalInstrumentActive() && voiceLocked && haveLyrics) {
-                  // Your lyrics and language stay; make sure the engine sings those (also when not applied yet)
-                  const lang = vocalDialog.language;
-                  const text = vocalDialog.vocalText.trim() || liveMusicHelper.lyricsText;
-                  liveMusicHelper.setLyrics(text, lang !== 'Auto' ? lang : undefined, liveMusicHelper.lyricsVowelsOnly && text === liveMusicHelper.lyricsText);
-                  pdjMidi.setMessage("VOICE LOCKED: DJ KEEPS YOUR LYRICS", "info");
-              } else if (liveMusicHelper.isVocalInstrumentActive()) {
-                  pdjMidi.setMessage("DJ WRITING LYRICS...", "info");
-                  const lang = vocalDialog.language;
-                  const { text, language, vowels } = await liveMusicHelper.djPrepareLyrics(topToolbar.musicStyle, mood, voiceLocked && lang !== 'Auto' ? lang : undefined);
-                  if (superseded()) return;
-                  vocalDialog.vocalText = text;
-                  if (!voiceLocked) vocalDialog.setLanguage(language);
-                  refreshPromptPanel();
-                  pdjMidi.setMessage(vowels ? "DJ LYRICS: VOCALISE (VOWELS)" : `DJ LYRICS READY: ${language.toUpperCase()}`, "info");
-              }
-
               liveMusicHelper.generatePerformancePlan(0);
-              pdjMidi.setMessage(`DJ PLANNED: ${rightSidebar.currentTab.toUpperCase()}, ${mood.toUpperCase()}, EVO ${evo > 0 ? '+' : ''}${evo}`, "info");
+              pdjMidi.setMessage(`DJ PLANNED: BAND, ${mood.toUpperCase()}, EVO ${evo > 0 ? '+' : ''}${evo}`, "info");
           } else if (isLive) {
               djEngagingCountdown = true;
               let count = 5;
@@ -916,9 +900,10 @@ function main() {
       
       // 4. Update Instruments and Manifest based on Style Matrix for current tab
       const rsLocks = (rightSidebar as any).locks;
-      if (!rsLocks.channels) {
-          rightSidebar.currentTab = chooseDjTab(topToolbar.genre);
-      }
+      // Dice roll will not change the TAB
+      // if (!rsLocks.channels) {
+      //     rightSidebar.currentTab = chooseDjTab(topToolbar.genre);
+      // }
       const isLyria = rightSidebar.currentTab === 'Lyria';
       
       // Pass genre/style explicitly (via topToolbar property) to randomizeInstruments

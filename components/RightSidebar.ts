@@ -38,8 +38,10 @@ export class RightSidebar extends LitElement {
       }
       if (this.currentTab === 'Lyria') return base;
       // Band also offers the voice instruments (solo / duet / quartet, choirs) on the alto and harmonic channels
-      const voices = (VOICE_CHANNEL_POOLS[channel] || []).filter(v => !base.includes(v));
-      return [...base, ...voices];
+      // REMOVED: Band no longer offers voice instruments, only Lyria tab can have them.
+      // const voices = (VOICE_CHANNEL_POOLS[channel] || []).filter(v => !base.includes(v));
+      // return [...base, ...voices];
+      return base;
   }
 
   private getBaseRecommended(channel: keyof InstrumentSet): string[] {
