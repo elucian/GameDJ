@@ -426,9 +426,19 @@ function main() {
       lastPromptText = `[LYRIA 3.5 SONG] ${prompt.replace(/\s*\n\s*/g, ' / ')}`;
       refreshPromptPanel();
       pdjMidi.setMessage('LYRIA 3.5: RENDERING SONG WITH VOICES...', 'info');
+      
+      // Force UI into recording state so channels show and progress
+      leftSidebar.playbackState = 'recording';
+      timeline.playbackState = 'recording';
+      timeline.resetHistory(); // Start capturing history
   }));
   liveMusicHelper.addEventListener('song-render-progress', ((e: Event) => {
-      pdjMidi.setMessage(`LYRIA 3.5: RENDERING SONG... ${(e as CustomEvent<{ seconds: number }>).detail.seconds}S`, 'info');
+      const detail = (e as CustomEvent<{ seconds: number, percent: number }>).detail;
+      pdjMidi.setMessage(`LYRIA 3.5: RENDERING SONG... ${detail.seconds}S`, 'info');
+      timeline.recordedDuration = detail.percent;
+      // Update elapsed time for the timeline to move
+      timeline.elapsedSeconds = (detail.percent / 100) * timeline.maxDuration;
+      leftSidebar.elapsedSeconds = timeline.elapsedSeconds;
   }));
   liveMusicHelper.addEventListener('song-rendered', ((e: Event) => {
       const { duration } = (e as CustomEvent<{ duration: number }>).detail;

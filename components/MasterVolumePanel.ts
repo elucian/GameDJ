@@ -7,7 +7,16 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
 
-const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34];
+const DURATION_STEPS = [
+    { label: '10s', value: 0.166 }, 
+    { label: '30s', value: 0.5 }, 
+    { label: '1m', value: 1 }, 
+    { label: '1.5m', value: 1.5 }, 
+    { label: '2m', value: 2 }, 
+    { label: '2.5m', value: 2.5 }, 
+    { label: '3m', value: 3 }, 
+    { label: '5m', value: 5 }
+];
 
 @customElement('master-volume-panel')
 export class MasterVolumePanel extends LitElement {
@@ -297,7 +306,7 @@ export class MasterVolumePanel extends LitElement {
       if (idx !== this.durationIndex) {
           uiSounds.playTick();
           this.durationIndex = idx;
-          const mins = FIBONACCI_SERIES[idx];
+          const mins = DURATION_STEPS[idx].value;
           (this as any).dispatchEvent(new CustomEvent('duration-changed', { detail: mins }));
           (this as any).requestUpdate();
       }
@@ -330,20 +339,20 @@ export class MasterVolumePanel extends LitElement {
           <div class="column">
             <div class="label-row">
               <div class="volume-label">DUR.</div>
-              <div class="value-display">${FIBONACCI_SERIES[this.durationIndex]}m</div>
+              <div class="value-display">${DURATION_STEPS[this.durationIndex].label}</div>
             </div>
             <div class="slider-row ${this.isLocked ? 'blocked' : ''}">
               <input 
                 type="range" 
-                min="0" max="${FIBONACCI_SERIES.length - 1}" step="1" 
+                min="0" max="${DURATION_STEPS.length - 1}" step="1" 
                 .value=${this.durationIndex} 
                 @input=${this.onDurationChange}
                 tabindex=${this.isLocked ? '-1' : '0'}
               />
             </div>
             <div class="range-markers">
-               <span class="metric-text">1m</span>
-               <span class="metric-text">55m</span>
+               <span class="metric-text">10s</span>
+               <span class="metric-text">5m</span>
             </div>
           </div>
 

@@ -490,16 +490,17 @@ export class LeftSidebar extends LitElement {
 
   private renderRecordButton() {
     const isRecording = this.playbackState === 'recording';
-    const isWarmup = this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
+    const isSongRendering = this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
+    const active = isRecording || isSongRendering;
     return html`
       <button 
-        class="record-btn ${isRecording || isWarmup ? 'active-recording' : ''}"
+        class="record-btn ${active ? 'active-recording' : ''}"
         @click=${this.onRecordClick} 
-        ?disabled=${isRecording && !isWarmup}
+        ?disabled=${isRecording && !isSongRendering}
         title="Record (Overwrite)">
         <span class="icon-span">
             <svg width="24" height="24" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="6" fill="currentColor"/>
+              <circle cx="12" cy="12" r="${isSongRendering ? 6 : 6}" fill="currentColor"/>
             </svg>
         </span>
       </button>`;
