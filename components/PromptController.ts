@@ -54,6 +54,7 @@ export class PromptController extends LitElement {
       flex: 1;
       min-height: 0;
       gap: 3px;
+      container-type: size; /* the knob sizes itself from this box (cqw/cqh) */
     }
 
     .fader-panel {
@@ -97,10 +98,11 @@ export class PromptController extends LitElement {
       z-index: 2;
     }
 
+    /* Always a circle: the largest square that fits between the two side strips and the cell height */
     weight-knob {
-      flex: 1;
-      min-width: 0;
-      max-height: 100%;
+      flex: none;
+      width: max(12px, min(100cqh, calc(100cqw - 34px)));
+      height: auto;
       aspect-ratio: 1 / 1;
       display: block;
     }

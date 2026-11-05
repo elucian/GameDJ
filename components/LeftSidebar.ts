@@ -146,35 +146,43 @@ export class LeftSidebar extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100%;
+      container-type: size; /* lets children size from the sidebar height (cqh) */
       background: var(--surface-color);
       border-right: 1px solid var(--border-color);
       align-items: center;
-      padding: 10px 0 12px 0; 
+      padding: 10px 0;
       box-sizing: border-box;
-      gap: 12px;
-      overflow-y: auto;
+      overflow-y: auto; /* last resort: scroll once everything is at minimum size */
+      overflow-x: hidden;
       scrollbar-width: none;
       transition: background-color 0.3s ease, border-color 0.3s ease;
+      justify-content: flex-start;
     }
-    :host::-webkit-scrollbar {
-      display: none;
+    :host::-webkit-scrollbar { display: none; }
+
+    /* Shrink order as the window gets shorter (13 buttons, 12 in-group gaps, 2 group gaps):
+       1) the gaps between groups shrink down to the in-group gap (--g)
+       2) --g shrinks from 12px to 3px (spacers follow, always >= --g)
+       3) the buttons shrink from 36px to 26px
+       4) scrolling */
+    .button-group, .spacer-group {
+      --g: clamp(3px, calc((100cqh - 468px) / 14), 12px);
+      --s: clamp(26px, calc((100cqh - 14 * var(--g)) / 13), 36px);
     }
-    
+
     .button-group {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: var(--g);
       width: 100%;
-      padding: 4px 0;
+      padding: 0;
+      flex-shrink: 0;
     }
 
-    .group-divider {
-      width: 60%;
-      height: 1px;
-      background: var(--border-color);
-      margin: 4px 0;
-      opacity: 0.5;
+    .spacer-group {
+      flex: 1 0 var(--g);
+      min-height: var(--g);
     }
 
     button {
@@ -182,8 +190,8 @@ export class LeftSidebar extends LitElement {
       border: 1px solid #111;
       cursor: pointer;
       padding: 0;
-      width: 36px;
-      height: 36px;
+      width: var(--s, 36px);
+      height: var(--s, 36px);
       border-radius: 50%;
       transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
       display: flex;
@@ -270,8 +278,9 @@ export class LeftSidebar extends LitElement {
 
     .rotary-container {
       position: relative;
-      width: 48px;
-      height: 48px;
+      width: var(--s, 36px);
+      height: var(--s, 36px);
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -281,8 +290,8 @@ export class LeftSidebar extends LitElement {
       background: #222;
       border: 2px solid #444;
       color: #fff;
-      width: 32px;
-      height: 32px;
+      width: 100%;
+      height: 100%;
       position: relative;
       z-index: 10;
       transition: none;
@@ -373,9 +382,9 @@ export class LeftSidebar extends LitElement {
       box-shadow: 0 0 8px #ff1100, 0 0 2px rgba(255, 0, 0, 0.8) !important;
     }
 
-    .dot-0 { transform: translate(-14.14px, -14.14px); }
-    .dot-1 { transform: translate(0, -20px); }
-    .dot-2 { transform: translate(14.14px, -14.14px); }
+    .dot-0 { transform: translate(calc(var(--s, 36px) * -0.3536 - 2.1px), calc(var(--s, 36px) * -0.3536 - 2.1px)); }
+    .dot-1 { transform: translate(0, calc(var(--s, 36px) * -0.5 - 3px)); }
+    .dot-2 { transform: translate(calc(var(--s, 36px) * 0.3536 + 2.1px), calc(var(--s, 36px) * -0.3536 - 2.1px)); }
 
     @keyframes inner-circle-blink {
       0%, 100% { fill: #000; opacity: 1; }
@@ -542,7 +551,7 @@ export class LeftSidebar extends LitElement {
     }
   }
 
-  render() {
+    render() {
     const isStopped = this.playbackState === 'stopped';
     const isRecording = this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
 
@@ -575,7 +584,7 @@ export class LeftSidebar extends LitElement {
         </button>
       </div>
 
-      <div class="group-divider"></div>
+      <div class="spacer-group"></div>
 
       <div class="button-group">
         <button class="stop-btn" @click=${this.onStopClick} ?disabled=${isStopped && !this.isRewinding} title="Stop">
@@ -591,7 +600,7 @@ export class LeftSidebar extends LitElement {
         ${this.renderRecordButton()}
       </div>
 
-      <div class="group-divider"></div>
+      <div class="spacer-group"></div>
 
       <div class="button-group">
         <div class="rotary-container">
@@ -617,12 +626,11 @@ export class LeftSidebar extends LitElement {
             </div>
           </button>
         </div>
-        
-        <button class="download-btn" @click=${this.onDownloadClick} ?disabled=${!this.hasRecording || isRecording} title="Download Audio">
-            <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M19,9h-4V3H9v6H5l7,7L19,9z M5,18v2h14v-2H5z" fill="currentColor"/></svg></span>
+
+        <button class="download-btn" @click=${this.onDownloadClick} title="Download Recording">
+          <span class="icon-span"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
         </button>
       </div>
-
     `;
   }
 }
