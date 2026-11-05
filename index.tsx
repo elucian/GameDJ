@@ -67,6 +67,7 @@ function main() {
   pdjMidi.setPrompts(initialPrompts);
   pdjMidi.interactionEnabled = true; 
   document.body.appendChild(topToolbar as any);
+  (window as any).topToolbar = topToolbar; // Expose for dialog access
   document.body.appendChild(leftSidebar as any);
   document.body.appendChild(djPresetDialog as any);
   document.body.appendChild(vocalDialog as any);
@@ -159,6 +160,9 @@ function main() {
   const toastMessage = new ToastMessage();
   document.body.appendChild(toastMessage as any);
   const liveMusicHelper = new LiveMusicHelper(ai, model);
+  // The engine must know the knobs from the start: otherwise its map is empty until the user touches a knob, and
+  // anything it broadcasts to the grid (the dice roll) wipes all knobs out.
+  liveMusicHelper.setWeightedPrompts(initialPrompts);
   
   // Resume AudioContext on first interaction
   document.addEventListener('click', () => {
@@ -166,7 +170,8 @@ function main() {
           liveMusicHelper.audioContext.resume();
       }
   }, { once: true });
-  liveMusicHelper.setWeightedPrompts(initialPrompts);
+  // Attach liveMusicHelper to window for global access
+  (window as any).liveMusicHelper = liveMusicHelper;
   
   liveMusicHelper.setMaxDuration(3); 
   timeline.maxDuration = 180; 
@@ -177,6 +182,8 @@ function main() {
 
   let djEngagingCountdown = false;
   let warmupInterval: number | null = null;
+  // Counts DJ activations so a stale async DJ setup can detect that a newer request superseded it
+  let djRequest = 0;
 
   const deactivateDj = () => {
     leftSidebar.isConductorActive = false;
@@ -335,7 +342,11 @@ function main() {
       liveMusicHelper.setFades(fadeIn, fadeOut);
   }));
 
+  // The auto-loop countdown only follows a recording that ran to its end by itself. After a manual stop (or reset)
+  // the music stays stopped.
+  let autoLoopAllowed = false;
   liveMusicHelper.addEventListener('recording-finished-auto', () => {
+      autoLoopAllowed = true;
       deactivateDj();
       const isLooping = liveMusicHelper.isLooping;
       if (isLooping) pdjMidi.setMessage("LOOP REPLAY IN 5S...", "info");
@@ -346,7 +357,9 @@ function main() {
       deactivateDj();
       timeline.hasRecording = true; 
       leftSidebar.hasRecording = true;
-      startAutoLoopGracePeriod();
+      if (autoLoopAllowed) startAutoLoopGracePeriod();
+      else pdjMidi.setMessage("RECORDING READY", "info");
+      autoLoopAllowed = false;
   });
 
   liveMusicHelper.addEventListener('recording-cleared', () => {
@@ -732,25 +745,31 @@ function main() {
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
       const active = (e as CustomEvent<boolean>).detail;
+      (window as any).isConductorActive = active;
+      
+      // If DJ is activated, ensure we are not in VOCALIZATION mode (switch to QUALITY)
+      if (active && liveMusicHelper.generationMode === 'VOCALIZATION') {
+          liveMusicHelper.setGenerationMode('QUALITY');
+          leftSidebar.primaryMode = 'QUALITY';
+          pdjMidi.setMessage('MODE SWITCHED TO QUALITY', 'info');
+      }
+
+      // Automatically deactivate DJ if switching to Lyria channels (vocal instrument active)
+      if (active && liveMusicHelper.isVocalInstrumentActive()) {
+          deactivateDj();
+          pdjMidi.setMessage('DJ DEACTIVATED: VOICE CHANNELS ACTIVE', 'info');
+          return;
+      }
+
       const myRequest = ++djRequest;
       const superseded = () => myRequest !== djRequest;
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
-          // If in VOCALIZATION mode, automatically switch to QUALITY
-          if (liveMusicHelper.generationMode === 'VOCALIZATION') {
-              liveMusicHelper.setGenerationMode('QUALITY');
-              leftSidebar.primaryMode = 'QUALITY';
-              pdjMidi.setMessage('MODE SWITCHED TO QUALITY', 'info');
-          }
-
           const rsLocks = (rightSidebar as any).locks;
           // DJ always uses BAND tab (Band channels)
           rightSidebar.currentTab = 'Band';
           
-          // Before the baton is raised (nothing playing/recording) the DJ plans everything:
-          // Lyria or Band, instruments, manifest, master mood and variations (evolution).
-          // Once music is running the DJ only conducts: no tab, instrument or manifest changes.
           const canPlan = liveMusicHelper.playbackState === 'stopped';
           if (canPlan) {
               if (!rsLocks.channels) {
@@ -758,15 +777,11 @@ function main() {
                   if (superseded()) return;
               }
 
-              // Manifesto: the DJ may switch some channels off completely and work with a smaller ensemble.
-              // With the channels locked the DJ keeps every channel in the manifest: it can still switch them on and off
-              // while recording (solo, duet, trio, quartet, full orchestra) and set their weights, but not remove them.
               if (!rsLocks.manifest && !rsLocks.channels) {
                   const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels);
                   rightSidebar.applyDjManifest(keep);
               }
 
-              // Voice channels are not assigned in DJ mode
               rightSidebar.finalizeDiceChannels();
 
               const mood = topToolbar.djPickMood();
@@ -779,7 +794,7 @@ function main() {
           } else if (isLive) {
               djEngagingCountdown = true;
               let count = 5;
-              pdjMidi.setMessage(`DJ ENGAGING IN ${count}S...`, "info");
+              pdjMidi.setMessage(`DJ ENGAGING IN ${count}S...`, 'info');
               const timer = setInterval(() => {
                 if (!liveMusicHelper.conductorMode) {
                    clearInterval(timer);
@@ -788,16 +803,16 @@ function main() {
                 }
                 count--;
                 if (count > 0) {
-                    pdjMidi.setMessage(`DJ ENGAGING IN ${count}S...`, "info");
+                    pdjMidi.setMessage(`DJ ENGAGING IN ${count}S...`, 'info');
                 } else {
                     clearInterval(timer);
                     djEngagingCountdown = false;
-                    pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", "info");
+                    pdjMidi.setMessage("DJ CONDUCTOR ACTIVE", 'info');
                 }
               }, 1000);
           }
       } else {
-          pdjMidi.setMessage("DJ DEACTIVATED", "info");
+          pdjMidi.setMessage("DJ DEACTIVATED", 'info');
           djEngagingCountdown = false;
       }
       
@@ -950,8 +965,11 @@ function main() {
       // Dice roll enables all channels (the DJ may thin them out later with its manifesto)
       rightSidebar.enableAllChannels();
 
-      // Reset knobs to zero — dice roll gives a clean slate
-      liveMusicHelper.resetKnobsToZero();
+      // Knobs stay visible and take the values that suit the new genre and style (authentic sound)
+      // ONLY if we are not actively conducting or using the voice mode that needs them
+      if (!liveMusicHelper.conductorMode && liveMusicHelper.generationMode !== 'VOCALIZATION') {
+          liveMusicHelper.applyGenreKnobs();
+      }
       
       // Voice master mode off: the dice never leave voice instruments behind
       replaceVocalInstruments();
@@ -1010,10 +1028,21 @@ function main() {
   (rightSidebar as any).addEventListener('channels-changed', ((e: Event) => {
       cancelAutoLoop();
       const detail = (e as CustomEvent<InstrumentSet>).detail;
+      
+      // Auto-deactivate DJ if a vocal instrument is activated in Lyria mode
+      if (rightSidebar.currentTab === 'Lyria' && (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument))) {
+          if (liveMusicHelper.conductorMode) {
+              deactivateDj();
+              pdjMidi.setMessage('DJ DEACTIVATED: VOICE CHANNELS ACTIVE', 'info');
+          }
+      }
+
       // The prompts name each channel by its role, which differs between the Band and Lyria tabs
       liveMusicHelper.isLiraMode = rightSidebar.currentTab === 'Lyria';
       liveMusicHelper.setInstruments(detail);
       syncVoiceDialog();
+      
+      // ... rest of logic
       
       const vocalInManifest = (Object.values(detail) as ChannelState[]).some(ch => {
           if (ch.visible === false) return false;

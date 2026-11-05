@@ -1136,6 +1136,31 @@ Prompt: ${text}`
       this.scheduleRefresh();
   }
 
+  /**
+   * Dice roll: instead of clearing the knobs, set them to what the genre and style on the main bar call for.
+   * Guidance and the real Lyria config knobs (Density, Brightness, Variation) get the genre default; the genre's
+   * signature knobs (same choice the DJ makes for a "main" section) get their genre value; the rest sit at the
+   * minimum position (0: first light off).
+   */
+  public applyGenreKnobs() {
+      const profile = this.genreProfile();
+      const styleAdj = LiveMusicHelper.STYLE_KNOB_ADJUST[this.style] || {};
+      const clamp = (v: number) => Math.max(0, Math.min(2, v));
+      const target = new Map<string, number>();
+      for (const knob of ['Guidance', 'Density', 'Brightness', 'Variation']) {
+          const def = profile[knob]?.[2];
+          if (def !== undefined) target.set(knob, clamp(def + (styleAdj[knob] || 0)));
+      }
+      this.getKnobTargetsForStage('main').forEach(t => target.set(t.parameterName, clamp(t.targetValue)));
+      this.prompts.forEach(p => {
+          const w = target.get(p.text) ?? 0;
+          p.weight = w;
+          p.volume = w / 2;
+      });
+      this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts }));
+      this.scheduleRefresh();
+  }
+
   private getNarrativeStructure(genre: string): { name: string, type: string, durationPct: number }[] {
       const templates: { name: string, type: string, durationPct: number }[][] = [];
       

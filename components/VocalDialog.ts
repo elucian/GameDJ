@@ -45,7 +45,7 @@ export class VocalDialog extends LitElement {
       gap: 16px;
       box-shadow: 0 0 30px rgba(0,0,0,0.8);
       border-radius: 20px;
-      width: 320px;
+      width: 352px; /* 10% wider than 320px */
       position: relative;
     }
     h3 { margin: 0 0 5px 0; color: var(--text-color); font-size: 16px; }
@@ -101,13 +101,14 @@ export class VocalDialog extends LitElement {
       background: var(--bg-color); color: var(--text-muted); font-size: 12px; letter-spacing: 1px;
     }
     .tab-btn.active { border-color: var(--accent-color); color: var(--accent-color); }
-    .lyrics-tools { display: flex; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+    .lyrics-tools { display: flex; gap: 8px; align-items: stretch; margin-bottom: 4px; }
     .lyrics-tools select {
       flex: 1; min-width: 0; padding: 6px; border-radius: 6px; background: var(--bg-color);
       color: var(--text-color); border: 1px solid var(--border-color); font-size: 12px;
     }
-    .generate-btn { flex: 1; padding: 6px 10px; background: var(--accent-color); color: #000; }
-    .generate-btn[disabled] { cursor: not-allowed; }
+    .generate-btn, .copy-btn { flex: 1; padding: 6px 10px; background: #0b4c0b; color: #fff; cursor: pointer; border: none; border-radius: 6px; font-size: 12px; }
+    .generate-btn:hover, .copy-btn:hover { background: #1e601e; }
+    .generate-btn[disabled], .copy-btn[disabled] { cursor: not-allowed; background: #333; }
     .slider-container { margin: 0 0 12px 0; }
     input[type=range] { 
       width: 100%; 
@@ -152,7 +153,13 @@ export class VocalDialog extends LitElement {
     .close-x-btn:hover { background: var(--accent-color); color: #000; }
     .lock-btn { right: 40px; font-size: 12px; }
     .lock-btn.active { border-color: var(--accent-color); background: var(--accent-color); color: #000; }
-
+    .random-dice-btn {
+      width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-color);
+      background: var(--bg-color); color: var(--text-color); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .random-dice-btn:hover { background: var(--accent-color); color: #000; }
+    
     .apply-btn { background: #1e601e; color: #fff; }
     .cancel-btn { background: transparent; border: 1px solid var(--border-color); color: var(--text-color); }
     .apply-btn:hover, .cancel-btn:hover { background: var(--accent-color); color: #000; }
@@ -163,11 +170,19 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
-            <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" @click=${() => this.toggleLock()}
+            <button class="close-x-btn" style="right: 160px" @click=${this.randomizeFormation} title="Randomize Formation">🎲</button>
+            <button class="close-x-btn" style="right: 130px" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
+            <button class="close-x-btn" style="right: 100px" @click=${this.saveSongFile} title="Download Settings">⬇</button>
+            <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" style="right: 70px" @click=${() => this.toggleLock()}
                     title=${this.locked ? 'Voice settings locked: the DJ keeps your voices and language, and writes lyrics only when there are none' : 'Lock the voice settings so the DJ cannot change them'}>${this.locked ? '🔒' : '🔓'}</button>
+            <input type="file" id="uploadInput" style="display:none" @change=${this.loadSongFile} accept=".json">
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
             <h3>Voice Configuration</h3>
-            
+            <div class="slider-container">
+              <label class="label">SONG TITLE</label>
+              <input type="text" .value=${this.songName} @input=${(e: any) => this.songName = e.target.value} style="width:100%; box-sizing:border-box; padding:4px;">
+            </div>
+
             ${this.renderSolo()}
 
             <div class="tabs">
@@ -186,9 +201,68 @@ export class VocalDialog extends LitElement {
     `;
   }
 
+  private cancelSelection() {
+      this.activeSoloVoices = { Soprano: false, Alto: false, Tenor: false, Baritone: false };
+      this.selectedChoir = 'None';
+      this.vocalText = '';
+      this.songName = '';
+      window.dispatchEvent(new CustomEvent('vocal-state-changed', { 
+          detail: { active: false }
+      }));
+      this.dispatchEvent(new CustomEvent('vocal-dialog-cancelled', { 
+          bubbles: true, 
+          composed: true 
+      }));
+      this.show = false;
+  }
+
+  private async randomizeFormation() {
+      // Randomize individual voices (the grid items)
+      const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
+      // Ensure at least one voice is selected
+      let anySelected = false;
+      voices.forEach(v => {
+          this.activeSoloVoices[v] = Math.random() > 0.5;
+          if (this.activeSoloVoices[v]) anySelected = true;
+      });
+      if (!anySelected) this.activeSoloVoices[voices[Math.floor(Math.random() * voices.length)]] = true;
+      
+      // Randomize choir
+      this.selectedChoir = this.choirOptions[Math.floor(Math.random() * this.choirOptions.length)];
+      
+      // Generate a new song title based on genre
+      const title = await this.generateTitleTheme(this.genre, this.vocalText || 'new song');
+      this.songName = title;
+      
+      this.requestUpdate();
+  }
+
+  private async generateTitleTheme(genre: string, lyrics: string): Promise<string> {
+      this.generating = true;
+      try {
+          // Use the liveMusicHelper properly
+          const helper = (window as any).liveMusicHelper || (this.getRootNode() as any)?.liveMusicHelper;
+          if (!helper) {
+              console.error("LiveMusicHelper not found for title generation");
+              this.generating = false;
+              return 'Untitled';
+          }
+          const prompt = `Style: ${genre}. Lyrics: "${lyrics.substring(0, 100)}...".\n\nGenerate a catchy song title for this. Output only the title.`;
+          const result = await helper.generateLyrics(genre, 'Auto', 1, 1, prompt);
+          this.generating = false;
+          return result.trim().replace(/^TITLE:\s*/i, '');
+      } catch (e) {
+          console.error("Title generation failed:", e);
+          this.generating = false;
+          return 'Untitled';
+      }
+  }
+
   private renderSolo() {
     return html`
-      <span class="label">SOLO</span>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <span class="label">FORMATION</span>
+      </div>
       <div class="voice-grid">
           ${Object.keys(this.activeSoloVoices).map(voice => html`
               <div class="checkbox-item ${this.activeSoloVoices[voice as keyof typeof this.activeSoloVoices] ? 'active' : ''}"
@@ -216,7 +290,8 @@ export class VocalDialog extends LitElement {
           <select .value=${this.lyricsLang} @change=${(e: any) => this.lyricsLang = e.target.value} title="Language of the lyrics">
               ${this.languages.map(l => html`<option value=${l} ?selected=${l === this.lyricsLang}>${l === 'Auto' ? 'Auto (by genre)' : l}</option>`)}
           </select>
-          <button class="generate-btn" ?disabled=${this.generating} @click=${() => this.requestGeneration()}>${this.generating ? 'Writing...' : 'Generate Lyrics'}</button>
+          <button class="generate-btn" ?disabled=${this.generating} @click=${() => this.requestGeneration()}>${this.generating ? 'Writing...' : 'Generate'}</button>
+          <button class="copy-btn" ?disabled=${!this.vocalText.trim()} @click=${this.copyLyrics}>Copy</button>
       </div>
       <textarea rows="7" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
                 placeholder="Write your own lyrics or generate them. Lyria treats them as a hint for the language and mood of the vocals."
@@ -260,17 +335,52 @@ export class VocalDialog extends LitElement {
       this.applySelection(true);
   }
 
-  private cancelSelection() {
-      this.activeSoloVoices = { Soprano: false, Alto: false, Tenor: false, Baritone: false };
-      this.selectedChoir = 'None';
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { 
-          detail: { active: false }
-      }));
-      this.dispatchEvent(new CustomEvent('vocal-dialog-cancelled', { 
-          bubbles: true, 
-          composed: true 
-      }));
-      this.show = false;
+  private triggerUpload() {
+    this.shadowRoot?.getElementById('uploadInput')?.click();
+  }
+
+  private saveSongFile() {
+      const data = JSON.stringify({
+          solos: this.getVoices().solos,
+          choir: this.getVoices().choir,
+          vocalText: this.vocalText,
+          lyricsLang: this.lyricsLang,
+          genre: this.genre,
+          style: (window as any).topToolbar?.musicStyle || 'Synth-Pop',
+          songName: this.songName
+      });
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${this.songName.replace(/\s+/g, '_') || 'voice_settings'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+  }
+
+  private loadSongFile(e: Event) {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const data = JSON.parse(event.target?.result as string);
+          this.setVoices(data.solos, data.choir);
+          this.vocalText = data.vocalText;
+          this.lyricsLang = data.lyricsLang;
+          this.genre = data.genre;
+          this.songName = data.songName;
+          if (data.style && (window as any).topToolbar) {
+              (window as any).topToolbar.musicStyle = data.style;
+          }
+          this.requestUpdate();
+      };
+      reader.readAsText(file);
+  }
+
+  private copyLyrics() {
+      navigator.clipboard.writeText(this.vocalText).then(() => {
+          this.dispatchEvent(new CustomEvent('toast', { detail: 'Lyrics copied to clipboard', bubbles: true, composed: true }));
+      });
   }
 
   private applySelection(fromDj = false) {

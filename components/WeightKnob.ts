@@ -288,7 +288,8 @@ export class WeightKnob extends LitElement {
     
     // Explicitly clamp value to ensure pointer never overturns visually
     const clampedValue = Math.max(0, Math.min(2, this.value));
-    const rot = minRot + (clampedValue / 2) * (maxRot - minRot);
+    // The pointer sits on a detent, and the dot it points at is the last one lit
+    const rot = minRot + (this.detent(clampedValue) / 9) * (maxRot - minRot);
 
     const rotationStyle = styleMap({
       transform: `translate(40px, 40px) rotate(${rot}rad)`,
@@ -350,15 +351,22 @@ export class WeightKnob extends LitElement {
     `;
   }
 
+  /** Nearest of the 10 positions (0..9). 0 = off (no light); any value above 0 is at least position 1 (two lights). */
+  private detent(value: number): number {
+    if (value <= 0.02) return 0;
+    return Math.max(1, Math.min(9, Math.round((value / 2) * 9)));
+  }
+
   private renderDots(minRot: number, maxRot: number) {
     const dots = [];
+    const pos = this.detent(Math.max(0, Math.min(2, this.value)));
     const radius = 46; 
     for (let i = 0; i < 10; i++) {
       const val = (i / 9) * 2;
       const angle = minRot + (val / 2) * (maxRot - minRot);
       const x = 50 + radius * Math.cos(angle);
       const y = 50 + radius * Math.sin(angle);
-      const isActive = this.value > 0 && val <= this.value + 0.01;
+      const isActive = pos > 0 && i <= pos;
       dots.push(html`
         <div 
           class="dot ${isActive ? 'active' : ''}" 
