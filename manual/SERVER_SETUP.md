@@ -19,7 +19,7 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 ### When a song is counted, and when it is given back
 
 - The quota is taken when **Record** is pressed (server first), never at download.
-- If the take is stopped (**Stop** or **Reset**) within **30 seconds of its sound starting**, the song is given back: the visitor did not like it. A live take's sound starts when it leaves the warm-up; a Lyria 3.5 song's when the rendered song begins to play. Stopping while the song is still rendering also gives it back. After 30 seconds the song stays counted.
+- If the take is stopped (**Stop** or **Reset**) within **15 seconds of its sound starting**, the song is given back: the visitor did not like it, up to **5 times a day** per visitor (`refunds:<session id>:<day>`; the 6th early stop stays counted). A live take's sound starts when it leaves the warm-up; a Lyria 3.5 song's when the rendered song begins to play. Stopping while the song is still rendering also gives it back. After 15 seconds the song stays counted.
 - A failed song render is always given back. A counter never goes below zero on a refund.
 
 ## 1. Environment variables
@@ -115,7 +115,7 @@ To reset a visitor while testing, delete the keys in the Upstash console (Data B
 
 ## Ko-fi: "Unlock N songs"
 
-Buyers get extra songs by buying a Ko-fi shop item. The extra songs are used after the free monthly songs are gone, and they do not expire.
+Buyers get extra songs by buying a Ko-fi shop item. The extra songs are used after the free monthly songs are gone, and they do not expire. Once the free 5 live takes of a week are used, a bought song also pays for live takes: **1 bought song = 3 live takes** (the first take opens a song and the other 2 are kept as `takes:<session id>`; a refunded paid take goes back to them).
 
 ### Setting up Ko-fi
 

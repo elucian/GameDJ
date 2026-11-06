@@ -51,8 +51,8 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (req.method === 'GET') {
-      const [c] = await redis([['GET', creditsKey]]);
-      res.status(200).json({ credits: Math.max(0, Number(c) || 0) });
+      const [c, t] = await redis([['GET', creditsKey], ['GET', `takes:${sid}`]]);
+      res.status(200).json({ credits: Math.max(0, Number(c) || 0), takes: Math.max(0, Number(t) || 0) });
       return;
     }
     if (req.method !== 'POST') { res.status(405).end(); return; }

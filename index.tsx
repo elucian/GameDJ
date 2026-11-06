@@ -16,7 +16,7 @@ import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, EARLY_GIVEBACKS_PER_DAY, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
@@ -513,20 +513,23 @@ function main() {
       liveMusicHelper.notifyUserInteraction((e as CustomEvent<string>).detail);
   }));
   
-  // A take stopped (Stop or Reset) within 30 seconds of its sound starting was not liked: the song goes back to the
-  // quota. After 30 seconds it stays counted. The sound starts when a live take leaves its warm-up (recording) or
+  // A take stopped (Stop or Reset) within 15 seconds of its sound starting was not liked: the song goes back to the
+  // quota (up to 5 times a day). After 15 seconds it stays counted. The sound starts when a live take leaves its warm-up (recording) or
   // when a rendered song begins to play.
-  const TAKE_GRACE_MS = 30000;
+  const TAKE_GRACE_MS = 15000;
   type Take = { kind: 'song' | 'live'; soundAt: number | null; localRecorded: boolean };
   let take = null as Take | null;
-  const giveBackTake = () => {
+  const giveBackTake = async () => {
       const t = take; take = null;
       if (!t) return;
       if (t.soundAt !== null && Date.now() - t.soundAt > TAKE_GRACE_MS) return;
-      refundQuota(t.kind);
+      if (!(await giveBackEarly(t.kind))) {
+          pdjMidi.setMessage(`GIVE-BACK LIMIT: ${EARLY_GIVEBACKS_PER_DAY} A DAY. THIS TAKE STAYS COUNTED`, 'error');
+          return;
+      }
       if (t.localRecorded) unrecordUsage(t.kind);
       syncVoiceBlocked();
-      pdjMidi.setMessage(t.kind === 'song' ? 'STOPPED WITHIN 30S: SONG GIVEN BACK' : 'STOPPED WITHIN 30S: TAKE GIVEN BACK', 'info');
+      pdjMidi.setMessage(t.kind === 'song' ? 'STOPPED WITHIN 15S: SONG GIVEN BACK' : 'STOPPED WITHIN 15S: TAKE GIVEN BACK', 'info');
   };
 
   (leftSidebar as any).addEventListener('record', async () => {

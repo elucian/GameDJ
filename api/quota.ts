@@ -39,6 +39,10 @@ const env = process.env;
 const REDIS_URL = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || env.REDIS_KV_REST_API_URL || '';
 // Needs the read-write token, never the READ_ONLY one
 const REDIS_TOKEN = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || env.REDIS_KV_REST_API_TOKEN || '';
+/** Early stops (Stop / Reset within the grace time) that are given back per visitor per day */
+const MAX_EARLY_REFUNDS = 5;
+/** Live takes one bought song is worth once the free weekly takes are used */
+const LIVE_PER_SONG = 3;
 const IP_MULT = Math.max(1, Number(process.env.IP_LIMIT_MULTIPLIER) || 3);
 const COOKIE = 'gdj_sid';
 
@@ -117,7 +121,15 @@ export default async function handler(req: any, res: any) {
     const k = keys(kind);
 
     const creditsKey = `credits:${sid}`;
+    const takesKey = `takes:${sid}`; // live takes left from bought songs (1 bought song = LIVE_PER_SONG takes)
     if (body.action === 'refund') {
+      // A take stopped early is given back at most MAX_EARLY_REFUNDS times a day (a failed render is not counted here)
+      if (body.early === true) {
+        const rk = `refunds:${sid}:${now.toISOString().slice(0, 10)}`;
+        const [c] = await redis([['INCR', rk]]);
+        if (Number(c) === 1) await redis([['EXPIRE', rk, 172800]]);
+        if (Number(c) > MAX_EARLY_REFUNDS) { res.status(200).json({ ok: false, limited: true }); return; }
+      }
       const [u, n] = await redis([['DECR', k.user], ['DECR', k.net]]);
       // A counter never goes below zero (a refund without a take must not create free songs)
       const fix: (string | number)[][] = [];
@@ -126,6 +138,7 @@ export default async function handler(req: any, res: any) {
       if (fix.length) await redis(fix);
       // A song above the free limit was paid with a bought credit: give that one back
       if (kind === 'song' && Number(u) >= rule.limit && Number(u) >= 0) await redis([['INCR', creditsKey]]);
+      if (kind === 'live' && Number(u) >= rule.limit && Number(u) >= 0) await redis([['INCR', takesKey]]); // a paid take goes back
       res.status(200).json({ ok: true });
       return;
     }
@@ -147,6 +160,23 @@ export default async function handler(req: any, res: any) {
           return;
         }
         await redis([['INCR', creditsKey]]); // there was none: put the counter back to 0
+      }
+      // Live takes beyond the free ones: first the takes left from a bought song, else a bought song is opened
+      // (it covers LIVE_PER_SONG takes: this one now, the rest are kept)
+      if (kind === 'live') {
+        const [t] = await redis([['DECR', takesKey]]);
+        if (Number(t) >= 0) {
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, takes: Number(t), message: rule.message });
+          return;
+        }
+        await redis([['INCR', takesKey]]);
+        const [left] = await redis([['DECR', creditsKey]]);
+        if (Number(left) >= 0) {
+          await redis([['INCRBY', takesKey, LIVE_PER_SONG - 1]]);
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), takes: LIVE_PER_SONG - 1, message: rule.message });
+          return;
+        }
+        await redis([['INCR', creditsKey]]);
       }
       await redis([['DECR', k.user], ['DECR', k.net]]);
       res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, credits: 0, message: rule.message });

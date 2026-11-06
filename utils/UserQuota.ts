@@ -34,6 +34,15 @@ export function creditsLeft(): number {
 function rememberCredits(n: number) {
     try { localStorage.setItem(CREDITS_KEY, String(Math.max(0, Math.floor(n)))); } catch { /* storage unavailable */ }
 }
+/** Live takes left from bought songs; one bought song is worth LIVE_PER_SONG takes (the server decides, this is for the display). */
+const TAKES_KEY = 'gamedj.takes.v1';
+const LIVE_PER_SONG = 3;
+function takesLeft(): number {
+    try { return Math.max(0, Math.floor(Number(localStorage.getItem(TAKES_KEY))) || 0); } catch { return 0; }
+}
+function rememberTakes(n: number) {
+    try { localStorage.setItem(TAKES_KEY, String(Math.max(0, Math.floor(n)))); } catch { /* storage unavailable */ }
+}
 
 const messageFor = (kind: QuotaKind) => kind === 'song'
     ? `Monthly free quota limit reached: ${limitFor('song')} songs.`
@@ -116,8 +125,8 @@ function rememberDenied(kind: QuotaKind) {
 
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
     const base = limitFor(kind), message = messageFor(kind);
-    // Bought songs raise the song limit
-    const limit = kind === 'song' ? base + creditsLeft() : base;
+    // Bought songs raise the song limit, and also the live take limit (1 song = 3 takes)
+    const limit = kind === 'song' ? base + creditsLeft() : base + takesLeft() + creditsLeft() * LIVE_PER_SONG;
     if (isLocalHost()) return { ok: true, used: 0, limit, message };
     if (deniedUntil(kind) > Date.now()) return { ok: false, used: limit, limit, message };
     const used = timesFor(kind).length;
@@ -151,18 +160,19 @@ export function recordUsage(kind: QuotaKind) {
  * Server-side quota (api/quota.ts): counts per signed session cookie AND per network, so clearing the browser storage
  * does not reset it. Returns null when the server is not reachable / not configured (the local quota then applies).
  */
-async function callServer(kind: QuotaKind, action: 'consume' | 'refund'): Promise<{ ok: boolean; message: string } | null> {
+async function callServer(kind: QuotaKind, action: 'consume' | 'refund', early = false): Promise<{ ok: boolean; message: string } | null> {
     if (isLocalHost()) return null;
     try {
         const res = await fetch('/api/quota', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kind, action })
+            body: JSON.stringify({ kind, action, early })
         });
         if (!res.ok) return null;
         const data = await res.json();
         if (Number.isInteger(data.limit) && data.limit >= 1) rememberLimit(kind, data.limit);
-        if (kind === 'song' && typeof data.credits === 'number') rememberCredits(data.credits);
+        if (typeof data.credits === 'number') rememberCredits(data.credits);
+        if (typeof data.takes === 'number') rememberTakes(data.takes);
         return { ok: data.ok !== false, message: data.message || messageFor(kind) };
     } catch { return null; }
 }
@@ -183,6 +193,32 @@ export async function reserveQuota(kind: QuotaKind): Promise<{ ok: boolean; mess
 
 /** Gives the song back (the take failed before anything was delivered). */
 export async function refundQuota(kind: QuotaKind) { await callServer(kind, 'refund'); }
+
+/** Early stops that may be given back per day (the server counts them too). */
+export const EARLY_GIVEBACKS_PER_DAY = 5;
+const GIVEBACK_KEY = 'gamedj.givebacks.v1';
+function givebacksToday(): { day: string; n: number } {
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+        const v = JSON.parse(localStorage.getItem(GIVEBACK_KEY) || '{}');
+        if (v.day === day) return { day, n: Number(v.n) || 0 };
+    } catch { /* none yet */ }
+    return { day, n: 0 };
+}
+
+/**
+ * A take stopped early (within the grace time) is given back, up to EARLY_GIVEBACKS_PER_DAY times a day.
+ * The server decides; without a server this browser's own daily count applies. Returns false when the limit is reached.
+ */
+export async function giveBackEarly(kind: QuotaKind): Promise<boolean> {
+    if (isLocalHost()) return true;
+    const remote = await callServer(kind, 'refund', true);
+    if (remote) return remote.ok;
+    const today = givebacksToday();
+    if (today.n >= EARLY_GIVEBACKS_PER_DAY) return false;
+    try { localStorage.setItem(GIVEBACK_KEY, JSON.stringify({ day: today.day, n: today.n + 1 })); } catch { /* storage unavailable */ }
+    return true;
+}
 
 /** The visitor pressed Support: the next Ko-fi purchase within 30 minutes is credited to them. Fire and forget. */
 const PENDING_KEY = 'gamedj.supportPending.v1';
@@ -214,9 +250,11 @@ export async function refreshCredits(): Promise<number | null> {
     try {
         const res = await fetch('/api/support', { credentials: 'same-origin' });
         if (!res.ok) return null;
-        const credits = Number((await res.json()).credits) || 0;
+        const body = await res.json();
+        const credits = Number(body.credits) || 0;
         rememberCredits(credits);
-        if (credits > 0) clearDenied('song');
+        rememberTakes(Number(body.takes) || 0);
+        if (credits > 0 || Number(body.takes) > 0) { clearDenied('song'); clearDenied('live'); }
         return credits;
     } catch { return null; }
 }
@@ -231,7 +269,7 @@ export async function claimSupport(email: string): Promise<{ claimed: number; cr
         if (!res.ok) return null;
         const data = await res.json();
         rememberCredits(Number(data.credits) || 0);
-        if (Number(data.credits) > 0) clearDenied('song');
+        if (Number(data.credits) > 0) { clearDenied('song'); clearDenied('live'); }
         if (data.status === 'claimed' || data.status === 'already') setSupportEmail(email.trim());
         return { claimed: Number(data.claimed) || 0, credits: Number(data.credits) || 0, status: data.status === 'claimed' || data.status === 'already' ? data.status : 'none' };
     } catch { return null; }
