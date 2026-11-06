@@ -111,3 +111,14 @@ Buyers get extra songs (used after the free monthly songs) by buying a Ko-fi sho
 4. Test: use the test button on Ko-fi's webhook page, or buy a cheap variant. Ko-fi's real payload field names (item and variant names) are matched loosely; if a purchase is not credited, look at the function log in Vercel and adjust `creditsOf` in `api/kofi.ts`.
 
 Credits are stored in Redis as `credits:<session id>`; transactions as `kofi:tx:<id>` (processed once); e-mails only as salted hashes.
+
+### Seeing what Ko-fi really sends (capture)
+
+`api/kofi.ts` keeps the last 10 verified webhooks for 24 hours, with the token, e-mail, name, message, address, Discord fields and URL blanked (`[redacted]`); the items, amounts and field names stay.
+
+1. Set `KOFI_DEBUG_KEY` (any long random string; one is in `private/.env`) in Vercel and redeploy.
+2. Press Ko-fi's test button (or make a purchase).
+3. Open `https://<your-domain>/api/kofi?debug=<KOFI_DEBUG_KEY>` in the browser: you see the real payloads, newest first. Without the key (or with the variable unset) the address answers 404.
+4. Webhooks with a wrong token are not stored; the Vercel log shows `[kofi] rejected` with the field names only.
+
+Remove `KOFI_DEBUG_KEY` from Vercel when you are done to switch the viewer off.
