@@ -9,7 +9,7 @@
  * Counters live in Redis (Upstash / Vercel KV REST API), one key per visitor and period, with an expiry.
  * Raw IPs are never stored, only salted hashes.
  *
- * Env: QUOTA_SECRET (long random string), UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+ * Env: SONG_LIMIT (default 3 per month), LIVE_LIMIT (default 5 per week), QUOTA_SECRET (long random string), UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
  *      (or KV_REST_API_URL + KV_REST_API_TOKEN from Vercel KV), IP_LIMIT_MULTIPLIER (optional).
  *
  * POST {kind:'song'|'live', action:'consume'|'refund'} -> {ok, used, limit, message}
@@ -18,11 +18,19 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 type Kind = 'song' | 'live';
+/** A whole number >= 1 from the environment, else the default (so unset variables keep the original limits). */
+const limitFrom = (name: string, fallback: number) => {
+  const n = Math.floor(Number(process.env[name]));
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+};
+const SONG_LIMIT = limitFrom('SONG_LIMIT', 3);
+const LIVE_LIMIT = limitFrom('LIVE_LIMIT', 5);
+
 const RULES: Record<Kind, { limit: number; message: string; windowKey: (d: Date) => string; ttl: number }> = {
-  // Lyria 3.5 songs: 3 per calendar month
-  song: { limit: 3, message: 'Monthly free quota limit reached: 3 songs.', windowKey: d => `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`, ttl: 35 * 86400 },
-  // Normal songs (Lyria RealTime): 5 per 7-day period
-  live: { limit: 5, message: 'Weekly free quota limit reached: 5 songs.', windowKey: d => `w${Math.floor(d.getTime() / (7 * 86400000))}`, ttl: 8 * 86400 }
+  // Lyria 3.5 songs: SONG_LIMIT per calendar month (default 3)
+  song: { limit: SONG_LIMIT, message: `Monthly free quota limit reached: ${SONG_LIMIT} songs.`, windowKey: d => `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`, ttl: 35 * 86400 },
+  // Normal songs (Lyria RealTime): LIVE_LIMIT per 7-day period (default 5)
+  live: { limit: LIVE_LIMIT, message: `Weekly free quota limit reached: ${LIVE_LIMIT} songs.`, windowKey: d => `w${Math.floor(d.getTime() / (7 * 86400000))}`, ttl: 8 * 86400 }
 };
 
 const SECRET = process.env.QUOTA_SECRET || '';

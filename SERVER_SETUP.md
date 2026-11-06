@@ -25,6 +25,8 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 | `UPSTASH_REDIS_REST_URL` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `IP_LIMIT_MULTIPLIER` | optional, default `3` | `api/quota.ts` |
+| `SONG_LIMIT` | optional, default `3` (Lyria 3.5 songs per visitor per month) | `api/quota.ts` |
+| `LIVE_LIMIT` | optional, default `5` (live takes per visitor per 7 days) | `api/quota.ts` |
 
 `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Vercel KV names) work in place of the two Upstash names.
 
@@ -33,6 +35,8 @@ Generate a secret:
 ```
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
+
+`SONG_LIMIT` / `LIVE_LIMIT` are whole numbers; when unset or invalid the defaults apply. The server sends the limit and the message text to the browser with every answer, and the browser remembers it, so changing a variable and redeploying is enough (browsers pick the new value on their next take).
 
 Keep the same `QUOTA_SECRET` in production for good: changing it invalidates every visitor's cookie and network hash (everyone gets a fresh quota).
 

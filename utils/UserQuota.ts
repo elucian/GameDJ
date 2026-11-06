@@ -11,6 +11,25 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type QuotaKind = 'song' | 'live';
 
+/** The limits the server answered with (SONG_LIMIT / LIVE_LIMIT there); the built-in 3 and 5 apply until it answered. */
+const LIMITS_KEY = 'gamedj.quotaLimits.v1';
+function rememberLimit(kind: QuotaKind, limit: number) {
+    try {
+        const all = JSON.parse(localStorage.getItem(LIMITS_KEY) || '{}');
+        if (all[kind] !== limit) { all[kind] = limit; localStorage.setItem(LIMITS_KEY, JSON.stringify(all)); }
+    } catch { /* storage unavailable */ }
+}
+function limitFor(kind: QuotaKind): number {
+    try {
+        const n = Number(JSON.parse(localStorage.getItem(LIMITS_KEY) || '{}')[kind]);
+        if (Number.isInteger(n) && n >= 1) return n;
+    } catch { /* default */ }
+    return RULES[kind].limit;
+}
+const messageFor = (kind: QuotaKind) => kind === 'song'
+    ? `Monthly free quota limit reached: ${limitFor('song')} songs.`
+    : `Weekly free quota limit reached: ${limitFor('live')} songs.`;
+
 interface QuotaRule { limit: number; label: string; message: string; inWindow: (now: Date, t: number) => boolean }
 
 const RULES: Record<QuotaKind, QuotaRule> = {
@@ -80,11 +99,11 @@ function rememberDenied(kind: QuotaKind) {
 }
 
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
-    const rule = RULES[kind];
-    if (isLocalHost()) return { ok: true, used: 0, limit: rule.limit, message: rule.message };
-    if (deniedUntil(kind) > Date.now()) return { ok: false, used: rule.limit, limit: rule.limit, message: rule.message };
+    const limit = limitFor(kind), message = messageFor(kind);
+    if (isLocalHost()) return { ok: true, used: 0, limit, message };
+    if (deniedUntil(kind) > Date.now()) return { ok: false, used: limit, limit, message };
     const used = timesFor(kind).length;
-    return { ok: used < rule.limit, used, limit: rule.limit, message: rule.message };
+    return { ok: used < limit, used, limit, message };
 }
 
 /** Counts one song against the quota (call it when the song really started or finished). */
@@ -112,15 +131,17 @@ async function callServer(kind: QuotaKind, action: 'consume' | 'refund'): Promis
         });
         if (!res.ok) return null;
         const data = await res.json();
-        return { ok: data.ok !== false, message: data.message || RULES[kind].message };
+        if (Number.isInteger(data.limit) && data.limit >= 1) rememberLimit(kind, data.limit);
+        return { ok: data.ok !== false, message: data.message || messageFor(kind) };
     } catch { return null; }
 }
 
 /** Takes one song from the quota before a take starts. Server decision first, the local quota when there is no server. */
 export async function reserveQuota(kind: QuotaKind): Promise<{ ok: boolean; message: string }> {
-    // The browser's memory first: already refused or used up here -> no server request at all
     const local = quotaStatus(kind);
-    if (!local.ok) return { ok: false, message: local.message };
+    // A refusal the browser remembers: no server request at all
+    if (deniedUntil(kind) > Date.now() && !isLocalHost()) return { ok: false, message: local.message };
+    // The server decides (its limits may differ from the built-in ones); the local count only applies without a server
     const remote = await callServer(kind, 'consume');
     if (remote) {
         if (!remote.ok) rememberDenied(kind);
