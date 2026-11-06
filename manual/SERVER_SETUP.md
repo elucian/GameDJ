@@ -26,10 +26,12 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `IP_LIMIT_MULTIPLIER` | optional, default `3` | `api/quota.ts` |
 | `KOFI_VERIFICATION_TOKEN` | Ko-fi: More > API > Webhooks (the token shown there) | `api/kofi.ts` |
+| `KOFI_DEBUG_KEY` | optional: any long random string; turns on the capture viewer (see below) | `api/kofi.ts` |
+| `KOFI_PACKS` | optional: `code=songs,code=songs` for variants not named "Unlock N songs" | `api/kofi.ts` |
 | `SONG_LIMIT` | optional, default `3` (Lyria 3.5 songs per visitor per month) | `api/quota.ts` |
 | `LIVE_LIMIT` | optional, default `5` (live takes per visitor per 7 days) | `api/quota.ts` |
 
-`KV_REST_API_URL` / `KV_REST_API_TOKEN` (Vercel KV names) work in place of the two Upstash names.
+`KV_REST_API_URL` / `KV_REST_API_TOKEN` (Vercel KV names) and `REDIS_KV_REST_API_URL` / `REDIS_KV_REST_API_TOKEN` (what the Vercel Marketplace adds when the store prefix is `REDIS`) work in place of the two Upstash names. Use the read-write token, never `..._READ_ONLY_TOKEN`.
 
 Generate a secret:
 
@@ -95,30 +97,57 @@ To reset a visitor while testing, delete the keys in the Upstash console (Data B
 
 ## 6. Files
 
-- `api/quota.ts` - the quota function
-- `utils/UserQuota.ts` - client: local quota, `reserveQuota`, `refundQuota`, and the remembered server refusal
-- `vercel.json` - build config (static site + function)
+- `api/quota.ts` - free quota: consume / refund per take (and use of bought songs)
+- `api/support.ts` - Support: purchase intent, claim by e-mail, bought-songs count
+- `api/kofi.ts` - Ko-fi webhook and the capture viewer
+- `utils/UserQuota.ts` - client: local quota, `reserveQuota`, `refundQuota`, remembered refusal, bought songs, Support helpers
+- `components/SupportDialog.ts`, `components/ThanksDialog.ts`, `components/AboutDialog.ts` - the dialogs
+- `tools/kofi-webhook-test.mjs` - sends a simulated Ko-fi shop order
+- `vercel.json` - build config (Vite site; `api/*.ts` become functions)
 - `vite.config.ts` - reads `private/.env`, then the root `.env*`
 - `private/.env` - your local secrets (never committed)
 
 ## Ko-fi: "Unlock N songs"
 
-Buyers get extra songs (used after the free monthly songs) by buying a Ko-fi shop item whose name or variant says `Unlock N songs`, for example `Unlock 10 songs`, `Unlock 25 songs`, `Unlock 50 songs` (N is read from the name; quantity multiplies).
+Buyers get extra songs by buying a Ko-fi shop item. The extra songs are used after the free monthly songs are gone, and they do not expire.
 
-1. On Ko-fi, create the item with those variants. For each variant set the custom URL to `https://<your-domain>/thanks` (any query string is fine).
-2. Ko-fi: More > API > Webhooks: set the webhook URL to `https://<your-domain>/api/kofi` and copy the verification token into `KOFI_VERIFICATION_TOKEN` (private/.env and Vercel). Redeploy.
-3. How a purchase finds its buyer: pressing the Ko-fi button in the app registers an "intent" for 30 minutes. The webhook credits the newest visitor with an open intent. If nobody has one, the credits wait under a hash of the buyer's Ko-fi e-mail, and the buyer claims them on the `/thanks` page by typing that e-mail.
-4. Test: use the test button on Ko-fi's webhook page, or buy a cheap variant. Ko-fi's real payload field names (item and variant names) are matched loosely; if a purchase is not credited, look at the function log in Vercel and adjust `creditsOf` in `api/kofi.ts`.
+### Setting up Ko-fi
 
-Credits are stored in Redis as `credits:<session id>`; transactions as `kofi:tx:<id>` (processed once); e-mails only as salted hashes.
+1. In your Ko-fi shop, create one item with variants named exactly like `Unlock 10 songs`, `Unlock 25 songs`, `Unlock 50 songs`. The number N is read from the **variant name** (`variation_name`); the quantity multiplies it. Ko-fi sends no item name, only the variant name and the item's `direct_link_code`.
+2. For each variant set the custom URL to `https://<your-domain>/thanks`.
+3. Publish the item.
+4. More > API > Webhooks: set the webhook URL to `https://<your-domain>/api/kofi` and copy the verification token into `KOFI_VERIFICATION_TOKEN` (private/.env and Vercel). Redeploy after adding variables.
+
+### How a purchase finds its buyer
+
+1. The Ko-fi button in the app opens the **Support** dialog, which asks for the e-mail the buyer will use on Ko-fi (remembered for next time), then opens the shop item. The server stores a hash of that e-mail linked to the visitor for 2 hours, and also registers the visitor as the newest "intent" for 30 minutes.
+2. When Ko-fi calls the webhook: (a) the visitor with that e-mail gets the songs; else (b) the newest visitor with an open intent; else (c) the songs are kept under the e-mail hash.
+3. The buyer lands on `/thanks`. The dialog shows the songs, waits up to about 30 seconds for Ko-fi, and if they are not in this browser it claims them automatically with the remembered e-mail. A second claim answers "Already claimed" and closes the dialog.
+4. The app also checks for new songs when the window gets focus after the Support button was pressed, and whenever the About dialog opens.
+
+Stored in Redis: `credits:<session id>`, `kofi:tx:<id>` (a transaction is processed once), `kofi:un:<e-mail hash>` (waiting for a claim), `kofi:claimed:<e-mail hash>`, `kofi:ie:<e-mail hash>` and `kofi:intents`. E-mails are only stored as salted hashes.
+
+### Testing
+
+- Ko-fi's test button sends placeholder variants (`Blue`, `Large`); they are ignored on purpose.
+- Make a **100% discount code** on Ko-fi and buy the cheapest variant yourself. Delete the code afterwards.
+- Simulate a purchase from your machine: `node tools/kofi-webhook-test.mjs --variant "Unlock 25 songs" --email you@example.com` (reads the token from `private/.env`; see the header of the script for more options, including `--bad-token` and a repeated `--tx`).
+- If a purchase is not credited: look at the Vercel function log for lines starting with `[kofi]` (they show the variant names that arrived, never e-mail or address), or use the capture viewer.
 
 ### Seeing what Ko-fi really sends (capture)
 
 `api/kofi.ts` keeps the last 10 verified webhooks for 24 hours, with the token, e-mail, name, message, address, Discord fields and URL blanked (`[redacted]`); the items, amounts and field names stay.
 
-1. Set `KOFI_DEBUG_KEY` (any long random string; one is in `private/.env`) in Vercel and redeploy.
-2. Press Ko-fi's test button (or make a purchase).
-3. Open `https://<your-domain>/api/kofi?debug=<KOFI_DEBUG_KEY>` in the browser: you see the real payloads, newest first. Without the key (or with the variable unset) the address answers 404.
+1. Set `KOFI_DEBUG_KEY` (any long random string) in Vercel and redeploy.
+2. Make a purchase or press Ko-fi's test button.
+3. Open `https://<your-domain>/api/kofi?debug=<KOFI_DEBUG_KEY>`: the payloads appear, newest first. Without the key (or with the variable unset) the address answers 404.
 4. Webhooks with a wrong token are not stored; the Vercel log shows `[kofi] rejected` with the field names only.
 
-Remove `KOFI_DEBUG_KEY` from Vercel when you are done to switch the viewer off.
+**Remove `KOFI_DEBUG_KEY` from Vercel when you are done** to switch the viewer off.
+
+## Known limits
+
+- The Gemini key is in the browser bundle, so the quota only limits honest use until Gemini calls go through the server (see section 5).
+- Claiming by e-mail has no attempt limit: anyone who knows a buyer's Ko-fi e-mail can claim that purchase first.
+- A refund on Ko-fi does not take the songs back.
+- Matching by "newest intent" can credit the wrong visitor if two people buy in the same 30 minutes without giving an e-mail.
