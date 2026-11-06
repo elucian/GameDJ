@@ -211,7 +211,7 @@ export class MasterVolumePanel extends LitElement {
       border-radius: 1px;
       display: flex;
       flex-direction: row;
-      justify-content: flex-start;
+      justify-content: flex-start; /* LEDs start on a whole pixel; a centred row started on a fraction and blurred some LEDs */
       align-items: stretch;
       box-shadow: inset 0 1px 3px rgba(0,0,0,1);
       border: 1px solid #111;
@@ -219,7 +219,7 @@ export class MasterVolumePanel extends LitElement {
       overflow: hidden;
       padding: 1px;
       box-sizing: border-box;
-      gap: 3px;
+      gap: 3px; /* space between the LEDs */
       transition: height 0.2s ease;
     }
 
@@ -228,18 +228,39 @@ export class MasterVolumePanel extends LitElement {
     }
 
     .led-segment {
-      width: 3px;
-      flex-shrink: 0;
+      width: 5px; /* whole pixels */
+      flex: 0 0 5px;
+      min-width: 5px;
+      max-width: 5px;
+      transform: translateZ(0); /* its own layer: the glow of one LED cannot change its neighbours' size */
       background: #0a0a0a;
       transition: background 0.05s;
-      border-radius: 0.5px;
+      border-radius: 0;
     }
 
     .led-segment.active {
       background: var(--led-color, #3dffab);
-      box-shadow: 0 0 8px var(--led-color), 0 0 3px var(--led-color);
+      /* A wide glow filled the gap and made the spacing look uneven: keep it inside the LED */
+      box-shadow: 0 0 2px var(--led-color);
     }
   `;
+
+  @state() private meterWidth = 0;
+  private meterObserver?: ResizeObserver;
+  private observedMeter: Element | null = null;
+
+  /** Keeps the LED count in step with the meter's width */
+  private observeMeter() {
+    const box = this.renderRoot.querySelector('.meters-container');
+    if (box && box !== this.observedMeter) {
+      this.meterObserver?.disconnect();
+      this.meterObserver = new ResizeObserver(entries => { this.meterWidth = Math.floor(entries[0].contentRect.width); });
+      this.meterObserver.observe(box);
+      this.observedMeter = box;
+    }
+  }
+
+  disconnectedCallback() { super.disconnectedCallback(); this.meterObserver?.disconnect(); this.observedMeter = null; }
 
   @property({ type: Number }) volume = 0.8;
   @property({ type: Number }) bpm = 110;
@@ -260,6 +281,7 @@ export class MasterVolumePanel extends LitElement {
   @state() private smoothedLevelR = 0;
 
   protected updated(changedProperties: Map<string, unknown>): void {
+    this.observeMeter();
     if (changedProperties.has('audioLevelL') || changedProperties.has('volume')) {
       const targetLevel = this.audioLevelL * this.volume;
       if (this.audioLevelL === 0) this.smoothedLevelL = 0;
@@ -332,7 +354,8 @@ export class MasterVolumePanel extends LitElement {
   }
 
   private renderLeds(level: number) {
-    const numSegments = 50; 
+    // Enough LEDs to fill the meter: each is 5px wide with a 3px gap (8px per LED); the last one may be cut off
+    const numSegments = this.meterWidth > 0 ? Math.max(12, Math.ceil((this.meterWidth - 4) / 8)) : 32;
     const segments = [];
     for (let i = 0; i < numSegments; i++) {
         const threshold = i / numSegments;
