@@ -39,10 +39,15 @@ const env = process.env;
 const REDIS_URL = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || env.REDIS_KV_REST_API_URL || '';
 // Needs the read-write token, never the READ_ONLY one
 const REDIS_TOKEN = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || env.REDIS_KV_REST_API_TOKEN || '';
-/** Early stops (Stop / Reset within the grace time) that are given back per visitor per day */
+/** Early stops (Stop / Reset within the grace time) given back: per visitor a day, per visitor a week, per network a day */
 const MAX_EARLY_REFUNDS = 5;
-/** Live takes one bought song is worth once the free weekly takes are used */
-const LIVE_PER_SONG = 3;
+const MAX_EARLY_REFUNDS_WEEK = 15;
+const MAX_EARLY_REFUNDS_NET_DAY = 10;
+/**
+ * Live takes one bought song is worth once the free weekly takes are used (LIVE_PER_SONG, default 3).
+ * 0: bought songs do not pay for live takes (the live model is free: only LIVE_LIMIT applies).
+ */
+const LIVE_PER_SONG = (() => { const n = Math.floor(Number(process.env.LIVE_PER_SONG)); return Number.isFinite(n) && n >= 0 ? n : 3; })();
 const IP_MULT = Math.max(1, Number(process.env.IP_LIMIT_MULTIPLIER) || 3);
 const COOKIE = 'gdj_sid';
 
@@ -125,10 +130,19 @@ export default async function handler(req: any, res: any) {
     if (body.action === 'refund') {
       // A take stopped early is given back at most MAX_EARLY_REFUNDS times a day (a failed render is not counted here)
       if (body.early === true) {
-        const rk = `refunds:${sid}:${now.toISOString().slice(0, 10)}`;
-        const [c] = await redis([['INCR', rk]]);
-        if (Number(c) === 1) await redis([['EXPIRE', rk, 172800]]);
-        if (Number(c) > MAX_EARLY_REFUNDS) { res.status(200).json({ ok: false, limited: true }); return; }
+        // Three limits, so changing the browser does not help: per visitor a day, per visitor a week, per network a day
+        const day = now.toISOString().slice(0, 10);
+        const week = Math.floor(now.getTime() / (7 * 86400000));
+        const keysE = [`refunds:${sid}:${day}`, `refunds:w${week}:${sid}`, `refunds:n:${net}:${day}`];
+        const limitsE = [MAX_EARLY_REFUNDS, MAX_EARLY_REFUNDS_WEEK, MAX_EARLY_REFUNDS_NET_DAY];
+        const counts = (await redis(keysE.map(k => ['INCR', k]))).map(Number);
+        const first = keysE.flatMap((k, i) => (counts[i] === 1 ? [['EXPIRE', k, i === 1 ? 8 * 86400 : 2 * 86400] as (string | number)[]] : []));
+        if (first.length) await redis(first);
+        if (counts.some((c, i) => c > limitsE[i])) {
+          await redis(keysE.map(k => ['DECR', k])); // a refused give-back is not counted
+          res.status(200).json({ ok: false, limited: true });
+          return;
+        }
       }
       const [u, n] = await redis([['DECR', k.user], ['DECR', k.net]]);
       // A counter never goes below zero (a refund without a take must not create free songs)
@@ -163,26 +177,26 @@ export default async function handler(req: any, res: any) {
       }
       // Live takes beyond the free ones: first the takes left from a bought song, else a bought song is opened
       // (it covers LIVE_PER_SONG takes: this one now, the rest are kept)
-      if (kind === 'live') {
+      if (kind === 'live' && LIVE_PER_SONG > 0) {
         const [t] = await redis([['DECR', takesKey]]);
         if (Number(t) >= 0) {
-          res.status(200).json({ ok: true, used: u, limit: rule.limit, takes: Number(t), message: rule.message });
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, takes: Number(t), livePerSong: LIVE_PER_SONG, message: rule.message });
           return;
         }
         await redis([['INCR', takesKey]]);
         const [left] = await redis([['DECR', creditsKey]]);
         if (Number(left) >= 0) {
           await redis([['INCRBY', takesKey, LIVE_PER_SONG - 1]]);
-          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), takes: LIVE_PER_SONG - 1, message: rule.message });
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), takes: LIVE_PER_SONG - 1, livePerSong: LIVE_PER_SONG, message: rule.message });
           return;
         }
         await redis([['INCR', creditsKey]]);
       }
       await redis([['DECR', k.user], ['DECR', k.net]]);
-      res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, credits: 0, message: rule.message });
+      res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, credits: 0, livePerSong: LIVE_PER_SONG, message: rule.message });
       return;
     }
-    res.status(200).json({ ok: true, used: u, limit: rule.limit, message: rule.message });
+    res.status(200).json({ ok: true, used: u, limit: rule.limit, livePerSong: LIVE_PER_SONG, message: rule.message });
   } catch {
     res.status(503).json({ error: 'quota backend unavailable' });
   }

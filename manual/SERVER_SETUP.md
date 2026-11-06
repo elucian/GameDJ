@@ -18,8 +18,10 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 
 ### When a song is counted, and when it is given back
 
+- If the live session cannot start (the `-exp` model answers 429 busy / over its free limit, or 404 model gone, or the session breaks before the sound starts), the take is **not counted** and the message says why.
+
 - The quota is taken when **Record** is pressed (server first), never at download.
-- If the take is stopped (**Stop** or **Reset**) within **15 seconds of its sound starting**, the song is given back: the visitor did not like it, up to **5 times a day** per visitor (`refunds:<session id>:<day>`; the 6th early stop stays counted). A live take's sound starts when it leaves the warm-up; a Lyria 3.5 song's when the rendered song begins to play. Stopping while the song is still rendering also gives it back. After 15 seconds the song stays counted.
+- If the take is stopped (**Stop** or **Reset**) within **15 seconds of its sound starting**, the song is given back: the visitor did not like it, with three limits that apply together (`refunds:*` keys): **5 a day and 15 a week per visitor**, and **10 a day per network** (IPv4 /24, IPv6 /48), so changing browser does not help. Beyond a limit the take stays counted and the refused give-back is not counted. A live take's sound starts when it leaves the warm-up; a Lyria 3.5 song's when the rendered song begins to play. Stopping while the song is still rendering also gives it back. After 15 seconds the song stays counted.
 - A failed song render is always given back. A counter never goes below zero on a refund.
 
 ## 1. Environment variables
@@ -35,6 +37,7 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 | `KOFI_DEBUG_KEY` | optional: any long random string; turns on the capture viewer (see below) | `api/kofi.ts` |
 | `KOFI_PACKS` | optional: `code=songs,code=songs` for variants not named "Unlock N songs" | `api/kofi.ts` |
 | `SONG_LIMIT` | optional, default `3` (Lyria 3.5 songs per visitor per month) | `api/quota.ts` |
+| `LIVE_PER_SONG` | optional, default `3`: live takes one bought song pays for after the free weekly takes. `0` = bought songs do not pay for live takes (use this while `lyria-realtime-exp` is free) | `api/quota.ts`, `api/support.ts` |
 | `LIVE_LIMIT` | optional, default `5` (live takes per visitor per 7 days) | `api/quota.ts` |
 
 `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Vercel KV names) and `REDIS_KV_REST_API_URL` / `REDIS_KV_REST_API_TOKEN` (what the Vercel Marketplace adds when the store prefix is `REDIS`) work in place of the two Upstash names. Use the read-write token, never `..._READ_ONLY_TOKEN`.

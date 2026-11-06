@@ -16,7 +16,7 @@ import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, EARLY_GIVEBACKS_PER_DAY, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
@@ -519,12 +519,23 @@ function main() {
   const TAKE_GRACE_MS = 15000;
   type Take = { kind: 'song' | 'live'; soundAt: number | null; localRecorded: boolean };
   let take = null as Take | null;
+  /** The live take could not start (Lyria RealTime busy, over its limit, or gone): nothing was delivered, so it is not charged. */
+  const failTake = (message: string) => {
+      const t = take; take = null;
+      if (t) {
+          refundQuota(t.kind);
+          if (t.localRecorded) unrecordUsage(t.kind);
+          syncVoiceBlocked();
+      }
+      pdjMidi.setMessage(message, 'error');
+      toastMessage.show(message);
+  };
   const giveBackTake = async () => {
       const t = take; take = null;
       if (!t) return;
       if (t.soundAt !== null && Date.now() - t.soundAt > TAKE_GRACE_MS) return;
       if (!(await giveBackEarly(t.kind))) {
-          pdjMidi.setMessage(`GIVE-BACK LIMIT: ${EARLY_GIVEBACKS_PER_DAY} A DAY. THIS TAKE STAYS COUNTED`, 'error');
+          pdjMidi.setMessage('GIVE-BACK LIMIT REACHED. THIS TAKE STAYS COUNTED', 'error');
           return;
       }
       if (t.localRecorded) unrecordUsage(t.kind);
@@ -591,7 +602,15 @@ function main() {
       replaceVocalInstruments();
       recordUsage('live');
       if (take) take.localRecorded = true;
-      liveMusicHelper.record();
+      try {
+          await liveMusicHelper.record();
+      } catch (err) {
+          // The -exp model may answer 429 (quota exceeded / busy) or 404 (deprecated): say so, and do not charge the take
+          const msg = err instanceof Error ? err.message : String(err);
+          failTake(/429|quota|rate|exhaust|busy/i.test(msg) ? 'LYRIA REALTIME IS BUSY OR OVER ITS FREE LIMIT. TRY AGAIN LATER (NOT COUNTED)'
+              : /404|not found|deprecat|no longer/i.test(msg) ? 'LYRIA REALTIME MODEL IS NOT AVAILABLE NOW (NOT COUNTED)'
+              : `LIVE TAKE COULD NOT START: ${msg.slice(0, 60).toUpperCase()} (NOT COUNTED)`);
+      }
   });
 
   liveMusicHelper.addEventListener('song-render-started', ((e: Event) => {
@@ -1307,6 +1326,13 @@ function main() {
         }
     }
   }));
+
+  // An API error before the take became audible (the session broke while starting): not counted
+  (liveMusicHelper as any).addEventListener('dj-vocal-message', ((e: CustomEvent) => {
+      if (take && take.kind === 'live' && take.soundAt === null && e.detail?.type === 'error' && /^API Error/.test(String(e.detail?.text))) {
+          failTake('LYRIA REALTIME STOPPED BEFORE THE TAKE STARTED (NOT COUNTED)');
+      }
+  }) as EventListener);
 
   (liveMusicHelper as any).addEventListener('dj-vocal-message', ((e: CustomEvent) => {
     const { message, stage } = e.detail || {};

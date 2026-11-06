@@ -36,7 +36,18 @@ function rememberCredits(n: number) {
 }
 /** Live takes left from bought songs; one bought song is worth LIVE_PER_SONG takes (the server decides, this is for the display). */
 const TAKES_KEY = 'gamedj.takes.v1';
-const LIVE_PER_SONG = 3;
+/** The server's LIVE_PER_SONG (default 3; 0 = bought songs do not pay for live takes) */
+const LIVE_PER_SONG_KEY = 'gamedj.livePerSong.v1';
+function livePerSong(): number {
+    try {
+        const v = localStorage.getItem(LIVE_PER_SONG_KEY);
+        const n = v === null ? 3 : Math.floor(Number(v));
+        return Number.isFinite(n) && n >= 0 ? n : 3;
+    } catch { return 3; }
+}
+function rememberLivePerSong(n: number) {
+    try { localStorage.setItem(LIVE_PER_SONG_KEY, String(Math.max(0, Math.floor(n)))); } catch { /* storage unavailable */ }
+}
 function takesLeft(): number {
     try { return Math.max(0, Math.floor(Number(localStorage.getItem(TAKES_KEY))) || 0); } catch { return 0; }
 }
@@ -126,7 +137,7 @@ function rememberDenied(kind: QuotaKind) {
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
     const base = limitFor(kind), message = messageFor(kind);
     // Bought songs raise the song limit, and also the live take limit (1 song = 3 takes)
-    const limit = kind === 'song' ? base + creditsLeft() : base + takesLeft() + creditsLeft() * LIVE_PER_SONG;
+    const limit = kind === 'song' ? base + creditsLeft() : base + (livePerSong() > 0 ? takesLeft() + creditsLeft() * livePerSong() : 0);
     if (isLocalHost()) return { ok: true, used: 0, limit, message };
     if (deniedUntil(kind) > Date.now()) return { ok: false, used: limit, limit, message };
     const used = timesFor(kind).length;
@@ -173,6 +184,7 @@ async function callServer(kind: QuotaKind, action: 'consume' | 'refund', early =
         if (Number.isInteger(data.limit) && data.limit >= 1) rememberLimit(kind, data.limit);
         if (typeof data.credits === 'number') rememberCredits(data.credits);
         if (typeof data.takes === 'number') rememberTakes(data.takes);
+        if (typeof data.livePerSong === 'number') rememberLivePerSong(data.livePerSong);
         return { ok: data.ok !== false, message: data.message || messageFor(kind) };
     } catch { return null; }
 }
@@ -254,6 +266,7 @@ export async function refreshCredits(): Promise<number | null> {
         const credits = Number(body.credits) || 0;
         rememberCredits(credits);
         rememberTakes(Number(body.takes) || 0);
+        if (typeof body.livePerSong === 'number') rememberLivePerSong(body.livePerSong);
         if (credits > 0 || Number(body.takes) > 0) { clearDenied('song'); clearDenied('live'); }
         return credits;
     } catch { return null; }

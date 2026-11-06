@@ -14,6 +14,7 @@ const env = process.env;
 const REDIS_URL = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || env.REDIS_KV_REST_API_URL || '';
 const REDIS_TOKEN = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || env.REDIS_KV_REST_API_TOKEN || '';
 const COOKIE = 'gdj_sid';
+const LIVE_PER_SONG = (() => { const n = Math.floor(Number(process.env.LIVE_PER_SONG)); return Number.isFinite(n) && n >= 0 ? n : 3; })();
 const INTENT_WINDOW_MS = 30 * 60 * 1000;
 
 const hmac = (data: string) => createHmac('sha256', SECRET).update(data).digest('hex');
@@ -52,7 +53,7 @@ export default async function handler(req: any, res: any) {
   try {
     if (req.method === 'GET') {
       const [c, t] = await redis([['GET', creditsKey], ['GET', `takes:${sid}`]]);
-      res.status(200).json({ credits: Math.max(0, Number(c) || 0), takes: Math.max(0, Number(t) || 0) });
+      res.status(200).json({ credits: Math.max(0, Number(c) || 0), takes: Math.max(0, Number(t) || 0), livePerSong: LIVE_PER_SONG });
       return;
     }
     if (req.method !== 'POST') { res.status(405).end(); return; }
