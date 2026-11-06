@@ -20,6 +20,10 @@ import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
+import { inject, track } from '@vercel/analytics';
+
+// Vercel Web Analytics: page views only (it does nothing on localhost)
+inject();
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 const model = 'models/lyria-realtime-exp';
@@ -576,7 +580,12 @@ function main() {
   (leftSidebar as any).addEventListener('loop-changed', (e: any) => { cancelAutoLoop(); liveMusicHelper.setLoop(e.detail); });
   (leftSidebar as any).addEventListener('play-recording', () => { cancelAutoLoop(); liveMusicHelper.playRecording(); });
   (leftSidebar as any).addEventListener('back-to-start', () => { cancelAutoLoop(); liveMusicHelper.startRewind(); });
-  (leftSidebar as any).addEventListener('download', (e: any) => { cancelAutoLoop(); liveMusicHelper.download(e.detail, vocalDialog.songName); });
+  (leftSidebar as any).addEventListener('download', (e: any) => {
+    cancelAutoLoop();
+    // Download counter in Vercel Web Analytics (custom event, no personal data), only when there is something to save
+    if (leftSidebar.hasRecording) track('download', { format: String(e.detail) });
+    liveMusicHelper.download(e.detail, vocalDialog.songName);
+  });
   (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
