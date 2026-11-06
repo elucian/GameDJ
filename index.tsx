@@ -615,7 +615,7 @@ function main() {
       if (liveMusicHelper.generationMode !== 'VOCALIZATION' || rightSidebar.locks.channels) return;
       const hasVoice = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
       if (hasVoice) return;
-      const kinds = ['Solo Voice', 'Duet Voices', 'Quartet Voices'];
+      const kinds = ['Solo Male', 'Solo Female', 'Duet Mix', 'Quartet Mix'];
       const ch: keyof InstrumentSet = rightSidebar.currentTab === 'Lyria' ? LYRIA_VOICE_CHANNELS.solo : 'alto';
       rightSidebar.setVoiceInstruments({ [ch]: [kinds[Math.floor(Math.random() * kinds.length)]] });
   };
@@ -737,7 +737,7 @@ function main() {
           else if (n.includes('choir') || n.includes('cappella') || n.includes('ensemble')) choir = 'Mixed';
           else {
               soloCount = Math.max(soloCount, 1);
-              if (n.includes('female') || n.includes('soprano') || n.includes('girl')) hints.push('Soprano', 'Alto');
+              if (n.includes('female') || n.includes('soprano') || n.includes('girl') || n.includes('child')) hints.push('Soprano', 'Alto');
               else if (n.includes('male') || n.includes('tenor') || n.includes('rapper') || n.includes('mc ')) hints.push('Tenor', 'Baritone');
           }
       });
@@ -779,9 +779,10 @@ function main() {
       const choirCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.choir : 'harmonic';
       const pick: Partial<Record<keyof InstrumentSet, string[]>> = {};
       if (choir !== 'None') pick[choirCh] = CHOIR_CANDIDATES[choir] || [];
-      if (solos.length === 1) pick[soloCh] = ['Solo Voice'];
-      else if (solos.length === 2) pick[soloCh] = ['Duet Voices'];
-      else if (solos.length >= 3) pick[soloCh] = ['Quartet Voices'];
+      const isFemale = (v: string) => v === 'Soprano' || v === 'Alto';
+      if (solos.length === 1) pick[soloCh] = [isFemale(solos[0]) ? 'Solo Female' : 'Solo Male'];
+      else if (solos.length === 2) pick[soloCh] = [solos.every(isFemale) ? 'Duet Female' : solos.some(isFemale) ? 'Duet Mix' : 'Duet Male'];
+      else if (solos.length >= 3) pick[soloCh] = ['Quartet Mix'];
       if (!pick[soloCh] && !pick[choirCh]) return [];
       // Picking voices makes the voice the primary mode: without VOCALIZATION no voice reaches Lyria
       // (and the channels would not even offer voice instruments)
@@ -924,10 +925,37 @@ function main() {
   (topToolbar as any).addEventListener('bpm-changed', ((e: Event) => {
       liveMusicHelper.setGlobalSettings({ bpm: (e as CustomEvent<number>).detail });
       updateSongDuration();
+      syncBars();
   }));
 
-  // While the DJ conducts a live recording it also works the master controls (volume, evolution) — even though
-  // they are disabled for the user — and varies tempo, key and rhythm. It never touches manifest or instruments.
+  // === Tempo slider (manifest panel) and the Bars box (top bar) ===
+  // Quarter-note beats in one bar: 4/4 -> 4, 3/4 -> 3, 6/8 -> 3, free time -> 4
+  const beatsPerBar = (meter: string) => {
+      const m = /^(\d+)\/(\d+)$/.exec(meter);
+      return m ? (Number(m[1]) * 4) / Number(m[2]) : 4;
+  };
+  const barSeconds = () => beatsPerBar(topToolbar.meter) * 60 / Math.max(20, topToolbar.bpm);
+  /** The Bars box shows the song length (DUR slider) in bars at the current tempo and meter. */
+  const syncBars = () => { topToolbar.bars = Math.max(1, Math.round(rightSidebar.durationMinutes * 60 / barSeconds())); };
+  topToolbar.addEventListener('tempo-state', ((e: Event) => {
+      const d = (e as CustomEvent<{ bpm: number; min: number; max: number; locked: boolean }>).detail;
+      rightSidebar.bpm = d.bpm; rightSidebar.bpmMin = d.min; rightSidebar.bpmMax = d.max;
+  }) as EventListener);
+  (rightSidebar as any).addEventListener('bpm-input', ((e: Event) => { cancelAutoLoop(); topToolbar.setBpm((e as CustomEvent<number>).detail); }));
+  (topToolbar as any).addEventListener('meter-changed', () => syncBars());
+  (rightSidebar as any).addEventListener('duration-changed', () => syncBars());
+  setTimeout(() => { topToolbar.emitTempoState(); syncBars(); }, 0);
+
+  // While the DJ conducts a live recording it also works the master controls (volume, evolution) and the volume of
+  // each track — even though they are disabled for the user — and varies tempo, key and rhythm. It never touches
+  // manifest or instruments.
+  type Mix = [number, number, number, number, number]; // lead, alto, harmonic, bass, rhythm
+  const STAGE_MIX: Record<string, Mix> = {
+      acapella: [1, 0.5, 0.4, 0.2, 0],     intro: [0.6, 0.6, 0.9, 0.5, 0.4],  verse: [0.9, 0.7, 0.8, 0.8, 0.7],
+      main: [0.9, 0.9, 0.9, 0.9, 0.9],     build: [0.8, 0.8, 0.8, 0.9, 0.9],  chorus: [1, 0.9, 0.9, 1, 1],
+      climax: [1, 1, 1, 1, 1],             breakdown: [0.8, 0.6, 0.8, 0.5, 0.3], solo: [1, 0.5, 0.7, 0.8, 0.8],
+      outro: [0.6, 0.5, 0.8, 0.4, 0.3]
+  };
   const STAGE_VOLUME: Record<string, number> = { acapella: 0.7, intro: 0.5, outro: 0.5, breakdown: 0.6, build: 0.7, chorus: 0.9, climax: 0.9 };
   const STAGE_EVOLUTION: Record<string, number> = { acapella: 1, intro: -3, outro: -4, breakdown: 0, build: 2, verse: 1, main: 2, chorus: 5, climax: 6, solo: 3 };
   const djStageControls = (type: string | undefined, index: number) => {
@@ -939,6 +967,13 @@ function main() {
       const evo = Math.max(-10, Math.min(10, (STAGE_EVOLUTION[t] ?? 1) + Math.round(Math.random() * 2 - 1)));
       rightSidebar.setEvolution(evo);
       liveMusicHelper.setEvolution(evo);
+
+      // The DJ mixes the tracks too: each stage has its balance, with a little variation
+      const mix = STAGE_MIX[t] ?? [0.85, 0.85, 0.85, 0.85, 0.85];
+      const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
+      const vols: Partial<Record<keyof InstrumentSet, number>> = {};
+      keys.forEach((k, i) => { vols[k] = Math.max(0, Math.min(1, mix[i] + (Math.random() * 0.16 - 0.08))); });
+      rightSidebar.setChannelVolumes(vols);
 
       if (index > 0 && Math.random() < 0.5) {
           const change = topToolbar.djVary();
@@ -1012,7 +1047,14 @@ function main() {
       rightSidebar.genre = topToolbar.genre;
       rightSidebar.musicStyle = topToolbar.musicStyle;
 
-      // 3. Use Current Evolution (Do not Randomize, just respect it)
+      // 3. Duration and evolution are rolled too, unless the manifest is locked (then the current ones are kept)
+      if (!(rightSidebar as any).locks.manifest) {
+          const steps = DURATION_STEPS;
+          const mins = rightSidebar.setDuration(steps[Math.floor(Math.random() * steps.length)].value);
+          liveMusicHelper.setMaxDuration(mins); timeline.maxDuration = mins * 60;
+          rightSidebar.setEvolution(Math.floor(Math.random() * 13) - 6); // -6..+6
+          syncBars();
+      }
       const currentEvo = rightSidebar.evolution;
       liveMusicHelper.setEvolution(currentEvo);
       
@@ -1027,7 +1069,7 @@ function main() {
       // Pass genre/style explicitly (via topToolbar property) to randomizeInstruments
       await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: rsLocks.channels }, rightSidebar.settings, isLyria);
       
-      // Dice roll enables all channels (the DJ may thin them out later with its manifesto)
+      // Dice roll switches on a number of tracks that suits the genre (the DJ may thin them out later with its manifesto)
       rightSidebar.enableAllChannels();
 
       // Knobs stay visible and take the values that suit the new genre and style (authentic sound)
@@ -1096,7 +1138,13 @@ function main() {
       
       // The prompts name each channel by its role, which differs between the Band and Lyria tabs
       liveMusicHelper.isLiraMode = rightSidebar.currentTab === 'Lyria';
-      liveMusicHelper.setInstruments(detail);
+      // Each track's volume scales the weight the engine gets (Lyria mixes one stream: no separate gain per instrument)
+      const scaled = {} as InstrumentSet;
+      (Object.keys(detail) as Array<keyof InstrumentSet>).forEach(k => {
+          const ch = detail[k];
+          scaled[k] = { ...ch, weight: ch.weight * (ch.volume ?? 1) };
+      });
+      liveMusicHelper.setInstruments(scaled);
       syncVoiceDialog();
       
       // ... rest of logic

@@ -27,6 +27,8 @@ export interface ChannelState {
   active: boolean;
   weight: number; 
   visible?: boolean; 
+  /** Channel volume 0..1 (default 1): scales the weight sent to the engine */
+  volume?: number;
 }
 
 export interface InstrumentSet {

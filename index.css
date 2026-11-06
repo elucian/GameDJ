@@ -17,13 +17,13 @@
   --inner-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
   --outer-shadow: 0 4px 8px rgba(0,0,0,0.4);
 
-  /* Vibrant distinct colors for both modes */
-  --ch-lead: #00ff88;
-  --ch-alto: #bb88ff;
-  --ch-harmonic: #00ccff;
-  --ch-bass: #ff8c00; 
-  --ch-rhythm: #cc0000;
-  --ch-vocal: #ff00ff;
+  /* Channel colors (light green is reserved for titles, LEDs and the accent): pastels on the dark theme */
+  --ch-lead: #ff8f8f;
+  --ch-alto: #c9a8ff;
+  --ch-harmonic: #8fd3ff;
+  --ch-bass: #ffb97a;
+  --ch-rhythm: #ffe082;
+  --ch-vocal: #f2a6f2;
   --master-label-color: #c0c0c0;
 }
 
@@ -45,13 +45,13 @@ body.light-theme {
   --inner-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
   --outer-shadow: 0 4px 8px rgba(0,0,0,0.05);
 
-  /* Keep them vibrant in light mode too */
-  --ch-lead: #00d26a;
-  --ch-alto: #9b59b6;
-  --ch-harmonic: #00a3cc;
-  --ch-bass: #e67e00;
-  --ch-rhythm: #c00000;
-  --ch-vocal: #d100d1;
+  /* Darker versions on the light theme for contrast */
+  --ch-lead: #a82020;
+  --ch-alto: #6a3fb5;
+  --ch-harmonic: #0a6f9c;
+  --ch-bass: #b35a00;
+  --ch-rhythm: #9a7400;
+  --ch-vocal: #9c1f9c;
   --master-label-color: #444444;
 }
 

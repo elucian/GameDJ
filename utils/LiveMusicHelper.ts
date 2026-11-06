@@ -109,6 +109,7 @@ export const VOCAL_STRINGS = [
   'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Soloist',
   'Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble',
   'Male Rapper', 'Female Rapper', 'MC Vocals', 'Duet Voices', 'Quartet Voices',
+  'Duet Male', 'Duet Female', 'Duet Mix', 'Quartet Mix', 'Solo Child', 'Duet Children',
   'Soprano Voice', 'Coral Voices', 'Coral Bass', 'Solo Voice', 'Vocal Chops', 
   'Male Monastic Choir', 'Powerhouse Soloist', 'Bright Female Vocals', 
   'Processed Vocals', 'Children\'s Choir', 'Gospel Vocals', 'Distant Female Voice', 
@@ -482,9 +483,13 @@ export class LiveMusicHelper extends EventTarget {
           const parts = (solos.length >= 3 ? solos : ['Soprano', 'Alto', 'Tenor', 'Baritone']).map(v => v.toLowerCase());
           text = `vocal quartet singing in close harmony, ${parts.join(', ')}`;
       } else if (n.includes('duet')) {
-          const pair = solos.length >= 2 ? solos.slice(0, 2) : [pickOne(['Soprano', 'Alto']), pickOne(['Tenor', 'Baritone'])];
+          const pair = n.includes('child') ? ['Girl', 'Boy']
+              : n.includes('female') ? ['Soprano', 'Alto']
+              : n.includes('male') ? ['Tenor', 'Baritone']
+              : solos.length >= 2 ? solos.slice(0, 2) : [pickOne(['Soprano', 'Alto']), pickOne(['Tenor', 'Baritone'])];
           text = `vocal duet, ${pair.map(v => persona(v).replace(' lead vocal', '')).join(' and ')}, harmonies`;
       } else if (/choir|chant|cappella|ensemble|coral/.test(n)) text = describeVoice(instrument);
+      else if (n.includes('child')) text = persona(pickOne(['Girl', 'Boy']));
       else if (n.includes('girl')) text = persona('Girl');
       else if (n.includes('boy')) text = persona('Boy');
       else if (n.includes('female') || n.includes('soprano')) text = persona(solos[0] === 'Alto' ? 'Alto' : pickOne(['Soprano', 'Alto']));

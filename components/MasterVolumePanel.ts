@@ -7,16 +7,11 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
 
-export const DURATION_STEPS = [
-    { label: '10s', value: 0.166 }, 
-    { label: '30s', value: 0.5 }, 
-    { label: '1m', value: 1 }, 
-    { label: '1.5m', value: 1.5 }, 
-    { label: '2m', value: 2 }, 
-    { label: '2.5m', value: 2.5 }, 
-    { label: '3m', value: 3 }, 
-    { label: '5m', value: 5 }
-];
+/** 13 stops: 12 equal intervals of 10 seconds from 1:00 to 3:00 (values in minutes) */
+export const DURATION_STEPS = Array.from({ length: 13 }, (_, i) => {
+    const secs = 60 + i * 10;
+    return { label: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, value: secs / 60 };
+});
 
 @customElement('master-volume-panel')
 export class MasterVolumePanel extends LitElement {
@@ -191,6 +186,17 @@ export class MasterVolumePanel extends LitElement {
       z-index: 5;
     }
 
+    /* Stacked sliders: label on the left, slider in the middle, value on the right */
+    .srow {
+      display: grid;
+      grid-template-columns: 38px 1fr 34px;
+      align-items: center;
+      gap: 8px;
+      height: 24px;
+    }
+    .srow .value-display { text-align: right; font-size: 11.5px; }
+    .tools-row { display: flex; align-items: center; justify-content: space-between; height: 18px; margin: 4px 0 6px; }
+
     .meters-container {
       display: flex;
       flex-direction: column;
@@ -200,7 +206,7 @@ export class MasterVolumePanel extends LitElement {
 
     .vu-meter {
       width: 100%;
-      height: 11px; 
+      height: 22px; 
       background: #050505;
       border-radius: 1px;
       display: flex;
@@ -218,7 +224,7 @@ export class MasterVolumePanel extends LitElement {
     }
 
     .vu-meter.mono-expanded {
-      height: 24px; 
+      height: 48px; 
     }
 
     .led-segment {
@@ -236,8 +242,13 @@ export class MasterVolumePanel extends LitElement {
   `;
 
   @property({ type: Number }) volume = 0.8;
+  @property({ type: Number }) bpm = 110;
+  @property({ type: Number }) bpmMin = 40;
+  @property({ type: Number }) bpmMax = 200;
+  /** 'manifest': TMP, DUR, EVOL and the seed. 'volume': master volume, stereo switch and the VU meters. */
+  @property({ type: String }) mode: 'manifest' | 'volume' = 'manifest';
   @property({ type: Number }) evolution = 0;
-  @property({ type: Number }) durationIndex = 6; // Default to 3m
+  @property({ type: Number }) durationIndex = 12; // Default to 3:00
   @property({ type: Number }) audioLevelL = 0;
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
@@ -287,6 +298,14 @@ export class MasterVolumePanel extends LitElement {
     }
   }
 
+  private onBpmInput(e: Event) {
+    const val = parseInt((e.target as HTMLInputElement).value, 10);
+    if (val === this.bpm) return;
+    uiSounds.playTick();
+    this.bpm = val;
+    (this as any).dispatchEvent(new CustomEvent('bpm-input', { detail: val }));
+  }
+
   private onEvolutionChange(e: Event) {
     if (this.isLocked) return;
     const input = e.target as HTMLInputElement;
@@ -333,79 +352,59 @@ export class MasterVolumePanel extends LitElement {
     const visualLevelL = Math.min(this.smoothedLevelL * 7.0, maxLevel); 
     const visualLevelR = Math.min(this.smoothedLevelR * 7.0, maxLevel); 
 
+    if (this.mode === 'volume') {
+      return html`
+        <div class="control-wrapper">
+          <div class="srow" title="Master volume">
+            <div class="volume-label">VOL</div>
+            <input type="range" min="0" max="100" step="1" .value=${String(Math.round(this.volume * 100))} @input=${this.onVolumeChange} />
+            <div class="value-display">${Math.round(this.volume * 100)}</div>
+          </div>
+          <div class="tools-row">
+            <span></span>
+            <div class="stereo-toggle ${this.isStereo ? 'on' : ''} ${this.isLocked ? 'disabled' : ''}" @click=${this.toggleStereo}>
+              <span class="toggle-text ${!this.isStereo ? 'active' : ''}">MONO</span>
+              <div class="switch-track">
+                <div class="switch-thumb"></div>
+              </div>
+              <span class="toggle-text ${this.isStereo ? 'active' : ''}">STEREO</span>
+            </div>
+          </div>
+          <div class="meters-container">
+            <div class="vu-meter ${!this.isStereo ? 'mono-expanded' : ''}">
+              ${this.renderLeds(this.isStereo ? visualLevelL : (visualLevelL + visualLevelR) / 2)}
+            </div>
+            ${this.isStereo ? html`
+              <div class="vu-meter">
+                ${this.renderLeds(visualLevelR)}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
     return html`
       <div class="control-wrapper">
-        <div class="side-by-side">
-          <div class="column">
-            <div class="label-row">
-              <div class="volume-label">DUR.</div>
-              <div class="value-display">${DURATION_STEPS[this.durationIndex].label}</div>
-            </div>
-            <div class="slider-row ${this.isLocked ? 'blocked' : ''}">
-              <input 
-                type="range" 
-                min="0" max="${DURATION_STEPS.length - 1}" step="1" 
-                .value=${this.durationIndex} 
-                @input=${this.onDurationChange}
-                tabindex=${this.isLocked ? '-1' : '0'}
-              />
-            </div>
-            <div class="range-markers">
-               <span class="metric-text">10s</span>
-               <span class="metric-text">5m</span>
-            </div>
-          </div>
-
-          <div class="column">
-            <div class="label-row">
-              <div class="volume-label">EVO.</div>
-              <div class="value-display">${this.evolution > 0 ? '+' : ''}${this.evolution}</div>
-            </div>
-            <div class="slider-row ${this.isLocked ? 'blocked' : ''}">
-              <input 
-                type="range" 
-                min="-10" max="10" step="1" 
-                .value=${this.evolution} 
-                @input=${this.onEvolutionChange}
-                tabindex=${this.isLocked ? '-1' : '0'}
-              />
-            </div>
-            <div class="range-markers">
-               <span class="metric-text">-10</span>
-               <span class="metric-text">+10</span>
-            </div>
-          </div>
+        <div class="srow" title="Tempo (BPM)">
+          <div class="volume-label">TMP</div>
+          <input type="range" .min=${String(this.bpmMin)} .max=${String(this.bpmMax)} step="1" .value=${String(this.bpm)} @input=${this.onBpmInput} />
+          <div class="value-display">${this.bpm}</div>
         </div>
-
-        <div class="label-row">
-          <div class="volume-label">VOLUME</div>
+        <div class="srow ${this.isLocked ? 'blocked' : ''}" title="Duration">
+          <div class="volume-label">DUR</div>
+          <input type="range" min="0" max="${DURATION_STEPS.length - 1}" step="1" .value=${String(this.durationIndex)}
+            @input=${this.onDurationChange} tabindex=${this.isLocked ? '-1' : '0'} />
+          <div class="value-display">${DURATION_STEPS[this.durationIndex].label}</div>
+        </div>
+        <div class="srow ${this.isLocked ? 'blocked' : ''}" title="Evolution">
+          <div class="volume-label">EVL</div>
+          <input type="range" min="-10" max="10" step="1" .value=${String(this.evolution)}
+            @input=${this.onEvolutionChange} tabindex=${this.isLocked ? '-1' : '0'} />
+          <div class="value-display">${this.evolution > 0 ? '+' : ''}${this.evolution}</div>
+        </div>
+        <div class="tools-row">
+          <span></span>
           <div class="seed-chip ${this.seedLocked ? 'locked' : ''}" title="Lock the seed to repeat the same take on the next recording" @click=${this.toggleSeedLock}>SEED ${this.seedLocked ? '🔒 ' + this.seed : 'AUTO'}</div>
-          <div class="stereo-toggle ${this.isStereo ? 'on' : ''} ${this.isLocked ? 'disabled' : ''}" @click=${this.toggleStereo}>
-            <span class="toggle-text ${!this.isStereo ? 'active' : ''}">MONO</span>
-            <div class="switch-track">
-              <div class="switch-thumb"></div>
-            </div>
-            <span class="toggle-text ${this.isStereo ? 'active' : ''}">STEREO</span>
-          </div>
-        </div>
-        <div class="slider-row">
-          <input 
-            type="range" 
-            min="0" max="100" step="1" 
-            .value=${Math.round(this.volume * 100)} 
-            @input=${this.onVolumeChange}
-          />
-        </div>
-
-        <div class="meters-container">
-          <div class="vu-meter ${!this.isStereo ? 'mono-expanded' : ''}">
-            ${this.renderLeds(this.isStereo ? visualLevelL : (visualLevelL + visualLevelR) / 2)}
-          </div>
-          ${this.isStereo ? html`
-            <div class="vu-meter">
-              ${this.renderLeds(visualLevelR)}
-            </div>
-          ` : ''}
         </div>
       </div>
     `;

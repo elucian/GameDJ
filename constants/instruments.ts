@@ -58,6 +58,9 @@ export const LYRIA_GENRE_POOLS: Record<string, Partial<Record<ChannelName, strin
   'Hawaiian': { lead: ['Solo Voice', 'Steel Guitar', 'Ukulele', 'Flute'], alto: ['Ukulele', 'Slack Key Guitar', 'Acoustic Guitar', 'Harp', 'Female Choir', 'Mixed Choir'], harmonic: ['Chamber Strings', 'Harp & Strings', 'String Orchestra'], bass: ['Low Brass', 'French Horns'], rhythm: ['Orchestral Percussion', 'Timpani & Drums'] }
 };
 
+/** The voices a LEAD VOICE track can sing with. */
+export const LEAD_VOICE_OPTIONS = ['Solo Male', 'Solo Female', 'Duet Male', 'Duet Female', 'Duet Mix', 'Quartet Mix', 'Solo Child', 'Duet Children'];
+
 /** Lyria tab: the channel that carries solo voices (VOICE/LEAD) and the one that carries choirs (VOICE/HARMONY). */
 export const LYRIA_VOICE_CHANNELS = { solo: 'lead', choir: 'alto' } as const;
 
