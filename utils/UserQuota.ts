@@ -171,6 +171,10 @@ export function recordUsage(kind: QuotaKind) {
  * Server-side quota (api/quota.ts): counts per signed session cookie AND per network, so clearing the browser storage
  * does not reset it. Returns null when the server is not reachable / not configured (the local quota then applies).
  */
+/** The one-time ticket the server gave for the song just taken from the quota (api/song.ts needs it). */
+let songTicket = '';
+export function takeSongTicket(): string { const t = songTicket; songTicket = ''; return t; }
+
 async function callServer(kind: QuotaKind, action: 'consume' | 'refund', early = false): Promise<{ ok: boolean; message: string } | null> {
     if (isLocalHost()) return null;
     try {
@@ -182,6 +186,7 @@ async function callServer(kind: QuotaKind, action: 'consume' | 'refund', early =
         if (!res.ok) return null;
         const data = await res.json();
         if (Number.isInteger(data.limit) && data.limit >= 1) rememberLimit(kind, data.limit);
+        if (action === 'consume' && kind === 'song' && data.ok !== false && typeof data.ticket === 'string') songTicket = data.ticket;
         if (typeof data.credits === 'number') rememberCredits(data.credits);
         if (typeof data.takes === 'number') rememberTakes(data.takes);
         if (typeof data.livePerSong === 'number') rememberLivePerSong(data.livePerSong);

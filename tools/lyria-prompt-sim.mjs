@@ -3,7 +3,7 @@
 //   npm run sim:prompts                 built-in corpus (the kinds of prompts GameDJ sends)
 //   npm run sim:prompts -- my.json      your own list: ["prompt one", "prompt two", ...]
 //
-// Sends every prompt alone to a real Lyria session (uses GEMINI_API_KEY from private/.env, never printed) and lists the
+// Sends every prompt alone to a real Lyria session (uses GEMINI_LIVE_KEY from private/.env, never printed) and lists the
 // ones the server reports back as filtered. The verdict is matched by the prompt text, because the filtered
 // notice arrives a few seconds after the prompt was sent. Results are also written to tools/lyria-prompt-sim.out.json.
 // The filter is a classifier: the same prompt can pass one time and fail the next, so treat "filtered" as a risk.
@@ -11,8 +11,8 @@ import fs from "node:fs";
 import { GoogleGenAI } from "@google/genai";
 
 const env = fs.readFileSync(new URL("../private/.env", import.meta.url), "utf8");
-const key = /GEMINI_API_KEY=(.+)/.exec(env)?.[1]?.trim();
-if (!key) throw new Error("GEMINI_API_KEY not found in private/.env");
+const key = /GEMINI_LIVE_KEY=(.+)/.exec(env)?.[1]?.trim();
+if (!key) throw new Error("GEMINI_LIVE_KEY not found in private/.env");
 
 const SUFFIX = " IMPORTANT: Only use these instruments: lead Piano, bass Electric Bass.";
 const builtIn = [

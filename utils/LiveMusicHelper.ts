@@ -9,6 +9,7 @@ import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
 import { PromptGuard } from './PromptGuard';
 import { uiSounds } from './UISounds';
+import { takeSongTicket } from './UserQuota';
 
 type ChannelKey = keyof InstrumentSet;
 type Formation = 'solo' | 'duet' | 'trio' | 'quartet' | 'full';
@@ -2525,6 +2526,25 @@ Prompt: ${text}`
       return [...lines.filter(Boolean), words].join('\n');
   }
 
+  /** Asks the server to render the song (Lyria 3.5, then Lyria 3 Pro) and returns the interaction. */
+  private static async fetchSong(prompt: string): Promise<any> {
+      const devSecret = (import.meta as any).env?.VITE_DEV_SONG_SECRET as string | undefined;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), SONG_RENDER_TIMEOUT_MS);
+      try {
+          const res = await fetch('/api/song', {
+              method: 'POST', credentials: 'same-origin', signal: ctrl.signal,
+              headers: { 'Content-Type': 'application/json', ...(devSecret ? { 'x-dev-secret': devSecret } : {}) },
+              body: JSON.stringify({ prompt, ticket: takeSongTicket() })
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(`${res.status} ${data?.error || 'the song server did not answer'}`);
+          return data;
+      } finally {
+          clearTimeout(timer);
+      }
+  }
+
   /** Pulls the audio (base64 + mime type) and the text parts out of a Lyria 3 interaction, whatever the response shape. */
   private static readSongResponse(interaction: any): { audio: string | null; mime: string; text: string } {
       const blocks: any[] = [];
@@ -2554,20 +2574,9 @@ Prompt: ${text}`
           this.dispatchEvent(new CustomEvent('song-render-progress', { detail: { seconds: Math.round((Date.now() - started) / 1000) } }));
       }, 5000);
       try {
-          let interaction: any = null;
-          let lastError: unknown = null;
-          for (const model of SONG_MODELS) {
-              try {
-                  interaction = await (this.ai as any).interactions.create({ model, input: prompt }, { timeout: SONG_RENDER_TIMEOUT_MS });
-                  break;
-              } catch (e) {
-                  lastError = e;
-                  // Only an unknown model moves on to the next one; anything else (safety, quota) is final
-                  if (!/not.?found|404|unsupported|invalid.*model/i.test(String((e as any)?.message || e))) break;
-              }
-          }
+          // The paid key lives on the server (api/song.ts): it renders the song when it gets the quota ticket
+          const interaction = await LiveMusicHelper.fetchSong(prompt);
           if (token !== this.renderToken) return false; // stopped or overtaken while rendering
-          if (!interaction) throw lastError ?? new Error('No response from Lyria');
           const { audio, mime, text } = LiveMusicHelper.readSongResponse(interaction);
           if (!audio) throw new Error(text ? `Lyria returned no audio: ${text.slice(0, 160)}` : 'Lyria returned no audio');
           const bytes = decode(audio);

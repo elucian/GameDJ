@@ -28,7 +28,9 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 
 | Name | Where it comes from | Used by |
 |---|---|---|
-| `GEMINI_API_KEY` | Google AI Studio | Vite build (compiled into the app) |
+| `GEMINI_LIVE_KEY` | Google AI Studio key from a project **without billing** (free tier), restricted to your domain and the Generative Language API | Vite build: it is compiled into the app on purpose (Lyria RealTime live takes, lyrics, prompt rewrite) |
+| `GEMINI_SONG_KEY` | key from the **paid project** (billing on, budget cap set); mark it Sensitive in Vercel, never prefix it `VITE_` | `api/song.ts` only (Lyria 3.5 songs) |
+| `DEV_SONG_SECRET` | any long random string (set in Vercel and `private/.env`) | local development only: lets `npm run dev` render songs without a quota ticket |
 | `QUOTA_SECRET` | any long random string (see below) | `api/quota.ts` |
 | `UPSTASH_REDIS_REST_URL` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash / Vercel Marketplace | `api/quota.ts` |
@@ -52,9 +54,17 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 Keep the same `QUOTA_SECRET` in production for good: changing it invalidates every visitor's cookie and network hash (everyone gets a fresh quota).
 
+### The two Gemini keys
+
+- Anything compiled into the browser is public, so the browser only gets the **free** key (`GEMINI_LIVE_KEY`). Its project has no billing: if it leaks, the worst case is someone using up its free rate limit, never a bill.
+- The **paid** key (`GEMINI_SONG_KEY`) stays on the server. Songs are rendered by `api/song.ts`, which needs a one-time **ticket**; `api/quota.ts` issues the ticket only when it takes a song from the quota. Without a ticket nothing is rendered, so the quota cannot be skipped for songs. When Redis is down, songs are refused (they fail closed).
+- `api/song.ts` runs for up to 5 minutes (`vercel.json`, `maxDuration: 300`). Check your Vercel plan allows that.
+- Local development: `npm run dev` proxies `/api/*` to the deployed site (`DEV_API_TARGET`, default `https://game-dj.vercel.app`) and sends `DEV_SONG_SECRET`, so local songs work without spending quota.
+- Rotate the old key: delete the old `GEMINI_API_KEY` from Vercel and from Google Cloud once this version is deployed and a song works.
+
 ## 2. Local setup
 
-1. Put the values in `private/.env` (already created; fill in `GEMINI_API_KEY` and, if you want to test the server, the Redis values).
+1. Put the values in `private/.env` (already created; fill in `GEMINI_LIVE_KEY` and, if you want to test the server, the Redis values).
 2. Run `npm install` then `npm run dev` (http://localhost:3000). The quota is unlimited on localhost and `api/` is not served by Vite.
 3. To test the real endpoint locally:
    ```
@@ -77,7 +87,7 @@ The page never asks the server on load. The server is asked only when a take sta
 2. **Storage -> Create / Connect -> Upstash Redis** (Marketplace). Pick the same region as the project. This adds the Redis variables to the project.
 3. **Settings -> Environment Variables**, for Production (and Preview if you test there), add:
    - `QUOTA_SECRET` (copy from `private/.env`)
-   - `GEMINI_API_KEY`
+   - `GEMINI_LIVE_KEY` and `GEMINI_SONG_KEY` (Sensitive) and `DEV_SONG_SECRET`
    - `IP_LIMIT_MULTIPLIER` (optional)
 4. Redeploy (Deployments -> ... -> Redeploy) so the new variables are picked up.
 
@@ -102,7 +112,7 @@ To reset a visitor while testing, delete the keys in the Upstash console (Data B
   - Lyria 3.5 songs (`generateContent`): proxy through a function that checks the quota and holds the key.
   - Lyria RealTime (WebSocket, cannot run in a Vercel Function): issue short-lived Gemini ephemeral tokens (`ai.authTokens`) after the quota check. Confirm Lyria RealTime accepts them first.
   - Until then: restrict the key in Google Cloud (HTTP referrer = your domain, API = Generative Language only), set a billing budget alert, and rotate the key if it leaked.
-- Rotating `GEMINI_API_KEY`: create the new key, update `private/.env` and the Vercel variable, redeploy, delete the old key.
+- Rotating a Gemini key (`GEMINI_LIVE_KEY` or `GEMINI_SONG_KEY`): create the new key, update `private/.env` and the Vercel variable, redeploy, delete the old key.
 
 ## 6. Files
 

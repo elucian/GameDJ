@@ -4,7 +4,7 @@ GameDJ is a live AI music workstation built on Google's Lyria. You choose a genr
 
 ## 1. Getting started
 
-1. `npm install`, put your `GEMINI_API_KEY` in `.env.local`, then `npm run dev` (see the [README](../README.md)).
+1. `npm install`, put your `GEMINI_LIVE_KEY` in `private/.env`, then `npm run dev` (see the [README](../README.md)).
 2. Click anywhere once so the browser allows audio.
 3. Press **Record** in the left sidebar. Music generates live, and you can press **Play** to hear the recording back.
 

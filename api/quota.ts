@@ -15,7 +15,7 @@
  * POST {kind:'song'|'live', action:'consume'|'refund'} -> {ok, used, limit, message}
  * GET  -> {song:{used,limit,ok}, live:{used,limit,ok}}
  */
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
 type Kind = 'song' | 'live';
 /** A whole number >= 1 from the environment, else the default (so unset variables keep the original limits). */
@@ -126,6 +126,12 @@ export default async function handler(req: any, res: any) {
     const k = keys(kind);
 
     const creditsKey = `credits:${sid}`;
+    /** A song needs a one-time ticket for api/song.ts: it proves the song was taken from the quota. */
+    const newTicket = async () => {
+      const id = randomBytes(16).toString('hex');
+      await redis([['SET', `songticket:${id}`, sid, 'EX', 900]]);
+      return id;
+    };
     const takesKey = `takes:${sid}`; // live takes left from bought songs (1 bought song = LIVE_PER_SONG takes)
     if (body.action === 'refund') {
       // A take stopped early is given back at most MAX_EARLY_REFUNDS times a day (a failed render is not counted here)
@@ -170,7 +176,7 @@ export default async function handler(req: any, res: any) {
       if (kind === 'song') {
         const [left] = await redis([['DECR', creditsKey]]);
         if (Number(left) >= 0) {
-          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), message: rule.message });
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), ticket: await newTicket(), message: rule.message });
           return;
         }
         await redis([['INCR', creditsKey]]); // there was none: put the counter back to 0
@@ -196,7 +202,7 @@ export default async function handler(req: any, res: any) {
       res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, credits: 0, livePerSong: LIVE_PER_SONG, message: rule.message });
       return;
     }
-    res.status(200).json({ ok: true, used: u, limit: rule.limit, livePerSong: LIVE_PER_SONG, message: rule.message });
+    res.status(200).json({ ok: true, used: u, limit: rule.limit, livePerSong: LIVE_PER_SONG, ...(kind === 'song' ? { ticket: await newTicket() } : {}), message: rule.message });
   } catch {
     res.status(503).json({ error: 'quota backend unavailable' });
   }

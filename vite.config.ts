@@ -9,10 +9,16 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // Local development calls the deployed api/* functions (quota, Ko-fi, songs) through this proxy
+        proxy: { '/api': { target: env.DEV_API_TARGET || 'https://game-dj.vercel.app', changeOrigin: true, cookieDomainRewrite: '' } },
       },
       plugins: [],
       define: {
-        'import.meta.env.VITE_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        // The free key (a project without billing) is the only key in the browser: it serves Lyria RealTime and the
+        // cheap text calls. The paid song key (GEMINI_SONG_KEY) stays on the server.
+        'import.meta.env.VITE_API_KEY': JSON.stringify(env.GEMINI_LIVE_KEY),
+        // Dev server only: lets local songs skip the quota ticket (never part of a production build)
+        'import.meta.env.VITE_DEV_SONG_SECRET': JSON.stringify(mode === 'development' ? env.DEV_SONG_SECRET || '' : ''),
       },
       resolve: {
         alias: {
