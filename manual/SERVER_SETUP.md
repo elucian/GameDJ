@@ -16,6 +16,12 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 - Raw IPs are never stored, only salted hashes.
 - If the server is missing or down, the browser falls back to its own local quota. `localhost` is always unlimited.
 
+### When a song is counted, and when it is given back
+
+- The quota is taken when **Record** is pressed (server first), never at download.
+- If the take is stopped (**Stop** or **Reset**) within **30 seconds of its sound starting**, the song is given back: the visitor did not like it. A live take's sound starts when it leaves the warm-up; a Lyria 3.5 song's when the rendered song begins to play. Stopping while the song is still rendering also gives it back. After 30 seconds the song stays counted.
+- A failed song render is always given back. A counter never goes below zero on a refund.
+
 ## 1. Environment variables
 
 | Name | Where it comes from | Used by |

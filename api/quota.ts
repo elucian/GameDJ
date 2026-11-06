@@ -118,9 +118,14 @@ export default async function handler(req: any, res: any) {
 
     const creditsKey = `credits:${sid}`;
     if (body.action === 'refund') {
-      const [u] = await redis([['DECR', k.user], ['DECR', k.net]]);
+      const [u, n] = await redis([['DECR', k.user], ['DECR', k.net]]);
+      // A counter never goes below zero (a refund without a take must not create free songs)
+      const fix: (string | number)[][] = [];
+      if (Number(u) < 0) fix.push(['INCR', k.user]);
+      if (Number(n) < 0) fix.push(['INCR', k.net]);
+      if (fix.length) await redis(fix);
       // A song above the free limit was paid with a bought credit: give that one back
-      if (kind === 'song' && Number(u) >= rule.limit) await redis([['INCR', creditsKey]]);
+      if (kind === 'song' && Number(u) >= rule.limit && Number(u) >= 0) await redis([['INCR', creditsKey]]);
       res.status(200).json({ ok: true });
       return;
     }

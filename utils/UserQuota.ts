@@ -124,6 +124,18 @@ export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit
     return { ok: used < limit, used, limit, message };
 }
 
+/** Takes the latest counted song of this kind back (a take stopped within the grace time). */
+export function unrecordUsage(kind: QuotaKind) {
+    try {
+        const usage = readUsage();
+        const id = getUserId();
+        const list = usage[id]?.[kind] || [];
+        if (!list.length) return;
+        usage[id] = { ...usage[id], [kind]: list.slice(0, -1) };
+        localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+    } catch { /* storage unavailable */ }
+}
+
 /** Counts one song against the quota (call it when the song really started or finished). */
 export function recordUsage(kind: QuotaKind) {
     try {

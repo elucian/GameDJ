@@ -16,7 +16,7 @@ import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
@@ -513,6 +513,22 @@ function main() {
       liveMusicHelper.notifyUserInteraction((e as CustomEvent<string>).detail);
   }));
   
+  // A take stopped (Stop or Reset) within 30 seconds of its sound starting was not liked: the song goes back to the
+  // quota. After 30 seconds it stays counted. The sound starts when a live take leaves its warm-up (recording) or
+  // when a rendered song begins to play.
+  const TAKE_GRACE_MS = 30000;
+  type Take = { kind: 'song' | 'live'; soundAt: number | null; localRecorded: boolean };
+  let take = null as Take | null;
+  const giveBackTake = () => {
+      const t = take; take = null;
+      if (!t) return;
+      if (t.soundAt !== null && Date.now() - t.soundAt > TAKE_GRACE_MS) return;
+      refundQuota(t.kind);
+      if (t.localRecorded) unrecordUsage(t.kind);
+      syncVoiceBlocked();
+      pdjMidi.setMessage(t.kind === 'song' ? 'STOPPED WITHIN 30S: SONG GIVEN BACK' : 'STOPPED WITHIN 30S: TAKE GIVEN BACK', 'info');
+  };
+
   (leftSidebar as any).addEventListener('record', async () => {
       cancelAutoLoop();
       const genre = topToolbar.genre;
@@ -552,6 +568,7 @@ function main() {
           const q = await reserveQuota('live');
           if (!q.ok) { quotaBlocked(q.message); return; }
       }
+      take = { kind, soundAt: null, localRecorded: false };
       if (liveMusicHelper.usesSongModel) {
           // A song with voices is rendered whole by Lyria 3.5 and cannot be conducted: the DJ steps down (button unselected)
           if (liveMusicHelper.conductorMode || leftSidebar.isConductorActive) {
@@ -570,6 +587,7 @@ function main() {
       // A live take cannot sing words: voice instruments left on the channels would only babble
       replaceVocalInstruments();
       recordUsage('live');
+      if (take) take.localRecorded = true;
       liveMusicHelper.record();
   });
 
@@ -597,6 +615,7 @@ function main() {
   liveMusicHelper.addEventListener('song-rendered', ((e: Event) => {
       const { duration } = (e as CustomEvent<{ duration: number }>).detail;
       recordUsage('song'); // a Lyria 3.5 song counts once it was really delivered
+      if (take?.kind === 'song') { take.localRecorded = true; take.soundAt = Date.now(); }
       syncVoiceBlocked();
       // A rendered song cannot be conducted: the DJ hands over and the song plays from the start
       deactivateDj();
@@ -623,6 +642,7 @@ function main() {
       const { reason, blocked } = (e as CustomEvent<{ reason: string; blocked: boolean }>).detail;
       console.error('[Lyria 3.5] song render failed:', reason);
       refundQuota('song'); // nothing was delivered: the song goes back to the quota
+      take = null;
       if (blocked) {
           // The API key may not use Lyria 3.5 (free tier): record live instead, voices without words
           pdjMidi.setMessage('LYRIA 3.5 NOT AVAILABLE ON THIS API KEY (PAID TIER NEEDED): RECORDING LIVE, NO WORDS', 'error');
@@ -633,6 +653,7 @@ function main() {
   }));
 
   (leftSidebar as any).addEventListener('stop', () => {
+    giveBackTake();
     cancelAutoLoop();
     liveMusicHelper.cancelSongRender();
     liveMusicHelper.stop(true, false);
@@ -1170,6 +1191,7 @@ function main() {
   });
   
   (leftSidebar as any).addEventListener('reset', async () => {
+      giveBackTake();
       cancelAutoLoop();
       leftSidebar.isResetting = true;
       if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
@@ -1264,6 +1286,7 @@ function main() {
         audioAnalyser.start();
     } else if (playbackState === 'recording') {
         audioAnalyser.start();
+        if (take && take.kind === 'live' && take.soundAt === null) take.soundAt = Date.now(); // the take is audible now
         const keyDisplay = topToolbar.key.replace('Major', 'major').replace('Minor', 'minor');
         const msg = `RECORDING: (${topToolbar.genre}, ${topToolbar.musicStyle} ${topToolbar.currentMood}, KEY ${keyDisplay}, ${topToolbar.bpm} BPM ${topToolbar.meter})`;
         pdjMidi.setMessage(msg, "info");
