@@ -1039,7 +1039,8 @@ export class TopToolbar extends LitElement {
     .logo { font-weight: bold; font-size: 16px; color: var(--accent-color); display: flex; align-items: center; gap: 5px; padding: 0 8px; flex-shrink: 0; transition: padding 0.2s; }
     .logo-stack { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; align-self: stretch; flex-shrink: 0; padding: 0 8px 3px; box-sizing: border-box; }
     .logo-stack .logo { flex: 1; }
-    .logo-stack .logo { padding: 0; }
+    .logo-stack .logo { padding: 0; cursor: pointer; }
+    .logo-stack .logo:hover .brand-text { text-decoration: underline; }
     .dj-name { font-size: 12.5px; font-weight: 700; color: #c0c4c8; white-space: nowrap; line-height: 1.1; text-align: center; }
     .dj-name .dj-tag { color: #ff8c00; }
     :host-context(body.light-theme) .dj-name { color: #4a4a4a; }
@@ -1489,11 +1490,11 @@ export class TopToolbar extends LitElement {
 
     return html`
       <div class="logo-stack">
-        <div class="logo">
+        <div class="logo" title="About" @click=${() => this.dispatchEvent(new CustomEvent('show-about', { bubbles: true, composed: true }))}>
           <span class="brand-text">GameDJ</span>
           <span class="version-badge">V29</span>
         </div>
-        ${this.djActive && this.djName ? html`<div class="dj-name"><span class="dj-tag">Active:</span> ${this.djName}</div>` : ''}
+        <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djActive && this.djName ? this.djName : 'Anonymous'}</div>
       </div>
       <div class="divider"></div>
 

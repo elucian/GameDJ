@@ -25,6 +25,7 @@ This file holds **no secrets**. Real values go in `private/.env` (local, git-ign
 | `UPSTASH_REDIS_REST_URL` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash / Vercel Marketplace | `api/quota.ts` |
 | `IP_LIMIT_MULTIPLIER` | optional, default `3` | `api/quota.ts` |
+| `KOFI_VERIFICATION_TOKEN` | Ko-fi: More > API > Webhooks (the token shown there) | `api/kofi.ts` |
 | `SONG_LIMIT` | optional, default `3` (Lyria 3.5 songs per visitor per month) | `api/quota.ts` |
 | `LIVE_LIMIT` | optional, default `5` (live takes per visitor per 7 days) | `api/quota.ts` |
 
@@ -99,3 +100,14 @@ To reset a visitor while testing, delete the keys in the Upstash console (Data B
 - `vercel.json` - build config (static site + function)
 - `vite.config.ts` - reads `private/.env`, then the root `.env*`
 - `private/.env` - your local secrets (never committed)
+
+## Ko-fi: "Unlock N songs"
+
+Buyers get extra songs (used after the free monthly songs) by buying a Ko-fi shop item whose name or variant says `Unlock N songs`, for example `Unlock 10 songs`, `Unlock 25 songs`, `Unlock 50 songs` (N is read from the name; quantity multiplies).
+
+1. On Ko-fi, create the item with those variants. For each variant set the custom URL to `https://<your-domain>/thanks` (any query string is fine).
+2. Ko-fi: More > API > Webhooks: set the webhook URL to `https://<your-domain>/api/kofi` and copy the verification token into `KOFI_VERIFICATION_TOKEN` (private/.env and Vercel). Redeploy.
+3. How a purchase finds its buyer: pressing the Ko-fi button in the app registers an "intent" for 30 minutes. The webhook credits the newest visitor with an open intent. If nobody has one, the credits wait under a hash of the buyer's Ko-fi e-mail, and the buyer claims them on the `/thanks` page by typing that e-mail.
+4. Test: use the test button on Ko-fi's webhook page, or buy a cheap variant. Ko-fi's real payload field names (item and variant names) are matched loosely; if a purchase is not credited, look at the function log in Vercel and adjust `creditsOf` in `api/kofi.ts`.
+
+Credits are stored in Redis as `credits:<session id>`; transactions as `kofi:tx:<id>` (processed once); e-mails only as salted hashes.

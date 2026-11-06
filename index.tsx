@@ -13,9 +13,11 @@ import { TopToolbar, MUSIC_DATA } from './components/TopToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
+import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, refreshCredits, claimSupport } from './utils/UserQuota';
+import { ThanksDialog } from './components/ThanksDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
@@ -77,6 +79,37 @@ function main() {
   document.body.appendChild(leftSidebar as any);
   document.body.appendChild(djPresetDialog as any);
   document.body.appendChild(vocalDialog as any);
+
+  // Ko-fi "Unlock N songs": the item's custom URL is /thanks. The dialog shows the bought songs (the webhook may need
+  // a few seconds) and lets the buyer claim them with the Ko-fi e-mail.
+  const thanksDialog = new ThanksDialog();
+  document.body.appendChild(thanksDialog as any);
+  const showThanks = async () => {
+      thanksDialog.show = true; thanksDialog.waiting = true; thanksDialog.credits = null;
+      for (let i = 0; i < 8; i++) {
+          const credits = await refreshCredits();
+          if (credits !== null) thanksDialog.credits = credits;
+          if (credits) { syncVoiceBlocked(); break; }
+          await new Promise(r => setTimeout(r, 4000));
+      }
+      thanksDialog.waiting = false;
+  };
+  if (location.pathname.replace(/\/+$/, '') === '/thanks') showThanks();
+  (thanksDialog as any).addEventListener('claim-support', async (e: CustomEvent<string>) => {
+      const r = await claimSupport(e.detail);
+      thanksDialog.claimResult(r ? r.claimed : null);
+      if (r) { thanksDialog.credits = r.credits; syncVoiceBlocked(); }
+  });
+
+  // About dialog: opens when the GameDJ label is pressed, with this browser's quota counts
+  const aboutDialog = new AboutDialog();
+  document.body.appendChild(aboutDialog as any);
+  window.addEventListener('show-about', () => {
+      const song = quotaStatus('song'), live = quotaStatus('live');
+      aboutDialog.songsUsed = song.used; aboutDialog.songsLimit = song.limit;
+      aboutDialog.liveUsed = live.used; aboutDialog.liveLimit = live.limit;
+      aboutDialog.show = true;
+  });
   
   (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {
     vocalDialog.show = !vocalDialog.show;

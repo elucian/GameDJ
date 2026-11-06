@@ -26,6 +26,15 @@ function limitFor(kind: QuotaKind): number {
     } catch { /* default */ }
     return RULES[kind].limit;
 }
+/** Extra songs bought on Ko-fi ("Unlock N songs"): the server's count is remembered here for the UI. */
+const CREDITS_KEY = 'gamedj.credits.v1';
+export function creditsLeft(): number {
+    try { return Math.max(0, Math.floor(Number(localStorage.getItem(CREDITS_KEY))) || 0); } catch { return 0; }
+}
+function rememberCredits(n: number) {
+    try { localStorage.setItem(CREDITS_KEY, String(Math.max(0, Math.floor(n)))); } catch { /* storage unavailable */ }
+}
+
 const messageFor = (kind: QuotaKind) => kind === 'song'
     ? `Monthly free quota limit reached: ${limitFor('song')} songs.`
     : `Weekly free quota limit reached: ${limitFor('live')} songs.`;
@@ -90,6 +99,13 @@ const periodEnd = (kind: QuotaKind, now = Date.now()): number => {
 function deniedUntil(kind: QuotaKind): number {
     try { return Number(JSON.parse(localStorage.getItem(DENIED_KEY) || '{}')[kind]) || 0; } catch { return 0; }
 }
+function clearDenied(kind: QuotaKind) {
+    try {
+        const all = JSON.parse(localStorage.getItem(DENIED_KEY) || '{}');
+        delete all[kind];
+        localStorage.setItem(DENIED_KEY, JSON.stringify(all));
+    } catch { /* nothing remembered */ }
+}
 function rememberDenied(kind: QuotaKind) {
     try {
         const all = JSON.parse(localStorage.getItem(DENIED_KEY) || '{}');
@@ -99,7 +115,9 @@ function rememberDenied(kind: QuotaKind) {
 }
 
 export function quotaStatus(kind: QuotaKind): { ok: boolean; used: number; limit: number; message: string } {
-    const limit = limitFor(kind), message = messageFor(kind);
+    const base = limitFor(kind), message = messageFor(kind);
+    // Bought songs raise the song limit
+    const limit = kind === 'song' ? base + creditsLeft() : base;
     if (isLocalHost()) return { ok: true, used: 0, limit, message };
     if (deniedUntil(kind) > Date.now()) return { ok: false, used: limit, limit, message };
     const used = timesFor(kind).length;
@@ -132,6 +150,7 @@ async function callServer(kind: QuotaKind, action: 'consume' | 'refund'): Promis
         if (!res.ok) return null;
         const data = await res.json();
         if (Number.isInteger(data.limit) && data.limit >= 1) rememberLimit(kind, data.limit);
+        if (kind === 'song' && typeof data.credits === 'number') rememberCredits(data.credits);
         return { ok: data.ok !== false, message: data.message || messageFor(kind) };
     } catch { return null; }
 }
@@ -152,3 +171,39 @@ export async function reserveQuota(kind: QuotaKind): Promise<{ ok: boolean; mess
 
 /** Gives the song back (the take failed before anything was delivered). */
 export async function refundQuota(kind: QuotaKind) { await callServer(kind, 'refund'); }
+
+/** The visitor pressed Support: the next Ko-fi purchase within 30 minutes is credited to them. Fire and forget. */
+export function supportIntent() {
+    if (isLocalHost()) return;
+    fetch('/api/support', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'intent' })
+    }).catch(() => { /* the e-mail claim still works */ });
+}
+
+/** Asks the server how many bought songs this visitor has; unblocks a remembered refusal when there are some. */
+export async function refreshCredits(): Promise<number | null> {
+    try {
+        const res = await fetch('/api/support', { credentials: 'same-origin' });
+        if (!res.ok) return null;
+        const credits = Number((await res.json()).credits) || 0;
+        rememberCredits(credits);
+        if (credits > 0) clearDenied('song');
+        return credits;
+    } catch { return null; }
+}
+
+/** Claims a purchase by the e-mail used on Ko-fi. Returns the credits now available, or null when the server is unreachable. */
+export async function claimSupport(email: string): Promise<{ claimed: number; credits: number } | null> {
+    try {
+        const res = await fetch('/api/support', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'claim', email })
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        rememberCredits(Number(data.credits) || 0);
+        if (Number(data.credits) > 0) clearDenied('song');
+        return { claimed: Number(data.claimed) || 0, credits: Number(data.credits) || 0 };
+    } catch { return null; }
+}

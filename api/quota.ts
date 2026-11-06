@@ -116,8 +116,11 @@ export default async function handler(req: any, res: any) {
     const rule = RULES[kind];
     const k = keys(kind);
 
+    const creditsKey = `credits:${sid}`;
     if (body.action === 'refund') {
-      await redis([['DECR', k.user], ['DECR', k.net]]);
+      const [u] = await redis([['DECR', k.user], ['DECR', k.net]]);
+      // A song above the free limit was paid with a bought credit: give that one back
+      if (kind === 'song' && Number(u) >= rule.limit) await redis([['INCR', creditsKey]]);
       res.status(200).json({ ok: true });
       return;
     }
@@ -131,8 +134,17 @@ export default async function handler(req: any, res: any) {
     if (n === 1) ttl.push(['EXPIRE', k.net, rule.ttl]);
     if (ttl.length) await redis(ttl);
     if (u > rule.limit || n > rule.limit * IP_MULT) {
+      // Songs bought on Ko-fi ("Unlock N songs") are used once the free monthly songs are gone
+      if (kind === 'song') {
+        const [left] = await redis([['DECR', creditsKey]]);
+        if (Number(left) >= 0) {
+          res.status(200).json({ ok: true, used: u, limit: rule.limit, credits: Number(left), message: rule.message });
+          return;
+        }
+        await redis([['INCR', creditsKey]]); // there was none: put the counter back to 0
+      }
       await redis([['DECR', k.user], ['DECR', k.net]]);
-      res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, message: rule.message });
+      res.status(200).json({ ok: false, used: Math.min(u, rule.limit), limit: rule.limit, credits: 0, message: rule.message });
       return;
     }
     res.status(200).json({ ok: true, used: u, limit: rule.limit, message: rule.message });
