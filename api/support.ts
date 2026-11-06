@@ -60,7 +60,11 @@ export default async function handler(req: any, res: any) {
 
     if (body.action === 'intent') {
       const now = Date.now();
-      await redis([['ZREMRANGEBYSCORE', 'kofi:intents', 0, now - INTENT_WINDOW_MS], ['ZADD', 'kofi:intents', now, sid]]);
+      const cmds: (string | number)[][] = [['ZREMRANGEBYSCORE', 'kofi:intents', 0, now - INTENT_WINDOW_MS], ['ZADD', 'kofi:intents', now, sid]];
+      // The e-mail the visitor will use on Ko-fi: the purchase is matched to this visitor by it (2 hours)
+      const mail = String(body.email || '').trim().toLowerCase();
+      if (mail && mail.length <= 200) cmds.push(['SET', `kofi:ie:${hmac('mail:' + mail).slice(0, 32)}`, sid, 'EX', 7200]);
+      await redis(cmds);
       res.status(200).json({ ok: true });
       return;
     }
@@ -75,9 +79,12 @@ export default async function handler(req: any, res: any) {
         if (v === null || v === undefined) break;
         claimed += Number(v) || 0;
       }
-      if (claimed > 0) await redis([['INCRBY', creditsKey, claimed]]);
-      const [c] = await redis([['GET', creditsKey]]);
-      res.status(200).json({ ok: true, claimed, credits: Math.max(0, Number(c) || 0) });
+      const markKey = `kofi:claimed:${hmac('mail:' + mail).slice(0, 32)}`;
+      if (claimed > 0) await redis([['INCRBY', creditsKey, claimed], ['SET', markKey, '1', 'EX', 31536000]]);
+      const [c, was] = await redis([['GET', creditsKey], ['EXISTS', markKey]]);
+      // claimed: songs added now; already: this e-mail's purchase was claimed before; none: no purchase found
+      const status = claimed > 0 ? 'claimed' : Number(was) > 0 ? 'already' : 'none';
+      res.status(200).json({ ok: true, claimed, status, credits: Math.max(0, Number(c) || 0) });
       return;
     }
     res.status(400).json({ error: 'unknown action' });

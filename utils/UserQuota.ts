@@ -173,11 +173,27 @@ export async function reserveQuota(kind: QuotaKind): Promise<{ ok: boolean; mess
 export async function refundQuota(kind: QuotaKind) { await callServer(kind, 'refund'); }
 
 /** The visitor pressed Support: the next Ko-fi purchase within 30 minutes is credited to them. Fire and forget. */
-export function supportIntent() {
+const PENDING_KEY = 'gamedj.supportPending.v1';
+/** True within 2 hours after the visitor pressed Support: the app then checks for new songs when they come back. */
+export function supportPending(): boolean {
+    try { return Date.now() - Number(localStorage.getItem(PENDING_KEY)) < 2 * 3600 * 1000; } catch { return false; }
+}
+export function clearSupportPending() { try { localStorage.removeItem(PENDING_KEY); } catch { /* nothing */ } }
+
+const EMAIL_KEY = 'gamedj.supportEmail.v1';
+/** The e-mail the visitor used for Ko-fi (typed in the Support dialog or a claim): the dialogs fill it in. */
+export function getSupportEmail(): string {
+    try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; }
+}
+function setSupportEmail(email: string) { try { if (email) localStorage.setItem(EMAIL_KEY, email); } catch { /* storage unavailable */ } }
+
+export function supportIntent(email = '') {
+    try { localStorage.setItem(PENDING_KEY, String(Date.now())); } catch { /* storage unavailable */ }
+    setSupportEmail(email.trim());
     if (isLocalHost()) return;
     fetch('/api/support', {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'intent' })
+        body: JSON.stringify({ action: 'intent', email: email.trim() })
     }).catch(() => { /* the e-mail claim still works */ });
 }
 
@@ -194,7 +210,7 @@ export async function refreshCredits(): Promise<number | null> {
 }
 
 /** Claims a purchase by the e-mail used on Ko-fi. Returns the credits now available, or null when the server is unreachable. */
-export async function claimSupport(email: string): Promise<{ claimed: number; credits: number } | null> {
+export async function claimSupport(email: string): Promise<{ claimed: number; credits: number; status: 'claimed' | 'already' | 'none' } | null> {
     try {
         const res = await fetch('/api/support', {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
@@ -204,6 +220,7 @@ export async function claimSupport(email: string): Promise<{ claimed: number; cr
         const data = await res.json();
         rememberCredits(Number(data.credits) || 0);
         if (Number(data.credits) > 0) clearDenied('song');
-        return { claimed: Number(data.claimed) || 0, credits: Number(data.credits) || 0 };
+        if (data.status === 'claimed' || data.status === 'already') setSupportEmail(email.trim());
+        return { claimed: Number(data.claimed) || 0, credits: Number(data.credits) || 0, status: data.status === 'claimed' || data.status === 'already' ? data.status : 'none' };
     } catch { return null; }
 }

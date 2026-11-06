@@ -16,8 +16,9 @@ import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, refreshCredits, claimSupport } from './utils/UserQuota';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
+import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
@@ -93,22 +94,52 @@ function main() {
           await new Promise(r => setTimeout(r, 4000));
       }
       thanksDialog.waiting = false;
+      // Not credited to this browser (another browser paid, or no e-mail was given first): claim with the remembered e-mail
+      const email = getSupportEmail();
+      if (!thanksDialog.credits && email) {
+          const r = await claimSupport(email);
+          if (r) { thanksDialog.credits = r.credits; syncVoiceBlocked(); thanksDialog.claimResult(r); }
+      }
   };
   if (location.pathname.replace(/\/+$/, '') === '/thanks') showThanks();
   (thanksDialog as any).addEventListener('claim-support', async (e: CustomEvent<string>) => {
       const r = await claimSupport(e.detail);
-      thanksDialog.claimResult(r ? r.claimed : null);
+      thanksDialog.claimResult(r);
       if (r) { thanksDialog.credits = r.credits; syncVoiceBlocked(); }
+  });
+
+  // Ko-fi button: ask for the e-mail first, then open the shop item
+  const supportDialog = new SupportDialog();
+  document.body.appendChild(supportDialog as any);
+  window.addEventListener('show-support', () => { supportDialog.show = true; });
+  (supportDialog as any).addEventListener('continue-support', (e: CustomEvent<string>) => {
+      supportIntent(e.detail);
+      window.open('https://ko-fi.com/s/3901d91669', '_blank', 'noopener');
   });
 
   // About dialog: opens when the GameDJ label is pressed, with this browser's quota counts
   const aboutDialog = new AboutDialog();
   document.body.appendChild(aboutDialog as any);
-  window.addEventListener('show-about', () => {
+  const fillAbout = () => {
       const song = quotaStatus('song'), live = quotaStatus('live');
       aboutDialog.songsUsed = song.used; aboutDialog.songsLimit = song.limit;
       aboutDialog.liveUsed = live.used; aboutDialog.liveLimit = live.limit;
+  };
+  window.addEventListener('show-about', () => {
+      fillAbout();
       aboutDialog.show = true;
+      // Songs bought on Ko-fi are kept on the server: ask for the current count when the dialog opens
+      refreshCredits().then(c => { if (c !== null) { fillAbout(); syncVoiceBlocked(); } });
+  });
+  // Back from Ko-fi after pressing Support: look for the new songs once
+  window.addEventListener('focus', async () => {
+      if (!supportPending()) return;
+      const c = await refreshCredits();
+      if (c) {
+          clearSupportPending();
+          syncVoiceBlocked(); fillAbout();
+          toastMessage.show(`Thank you! ${c} extra songs unlocked.`);
+      }
   });
   
   (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {

@@ -4,6 +4,7 @@
  */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { getSupportEmail } from '../utils/UserQuota';
 
 /** Opened by the Ko-fi custom URL (/thanks): shows the bought songs and lets the buyer claim them with the Ko-fi e-mail. */
 @customElement('thanks-dialog')
@@ -13,7 +14,7 @@ export class ThanksDialog extends LitElement {
   @property({ type: Number }) credits: number | null = null;
   /** True while we wait for Ko-fi to confirm the payment */
   @property({ type: Boolean }) waiting = false;
-  @state() private email = '';
+  @state() private email = getSupportEmail();
   @state() private message = '';
   @state() private busy = false;
 
@@ -63,11 +64,19 @@ export class ThanksDialog extends LitElement {
     this.dispatchEvent(new CustomEvent('claim-support', { detail: this.email.trim(), bubbles: true, composed: true }));
   }
 
-  /** The app answers a claim */
-  public claimResult(claimed: number | null) {
+  /** The app answers a claim: songs added, already claimed (the dialog closes), or nothing found */
+  public claimResult(r: { claimed: number; status: 'claimed' | 'already' | 'none' } | null) {
     this.busy = false;
-    this.message = claimed === null ? 'The server did not answer. Try again in a moment.'
-      : claimed > 0 ? `Done: ${claimed} songs added.` : 'No unclaimed purchase found for this e-mail yet.';
+    if (!r) { this.message = 'The server did not answer. Try again in a moment.'; return; }
+    if (r.status === 'claimed') this.message = `Done: ${r.claimed} songs added.`;
+    else if (r.status === 'already') this.message = 'Already claimed. Your songs are in your quota.';
+    else { this.message = 'No purchase found for this e-mail yet.'; return; }
+    setTimeout(() => this.close(), 2200);
+  }
+
+  /** Shows the e-mail remembered from the Support dialog or an earlier claim */
+  protected willUpdate(changed: Map<string, unknown>) {
+    if (changed.has('show') && this.show && !this.email) this.email = getSupportEmail();
   }
 
   render() {

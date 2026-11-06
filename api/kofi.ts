@@ -120,18 +120,26 @@ export default async function handler(req: any, res: any) {
     if (first[0] !== 'OK') { res.status(200).json({ ok: true, duplicate: true }); return; }
 
     const now = Date.now();
-    // The newest visitor who pressed Support in the last 30 minutes gets the songs
-    const recent = await redis([['ZREVRANGEBYSCORE', 'kofi:intents', now, now - INTENT_WINDOW_MS, 'LIMIT', 0, 1]]);
-    const sid: string | undefined = recent[0]?.[0];
+    const mail = String(payload.email || '').trim().toLowerCase();
+    const mh = mail ? hmac('mail:' + mail).slice(0, 32) : '';
+    // 1. The visitor who typed this e-mail in the Support dialog before opening Ko-fi
+    let sid: string | undefined;
+    if (mh) {
+      const [given] = await redis([['GET', `kofi:ie:${mh}`]]);
+      if (given) { sid = String(given); await redis([['DEL', `kofi:ie:${mh}`]]); }
+    }
+    // 2. Else the newest visitor who pressed Support in the last 30 minutes
+    if (!sid) {
+      const recent = await redis([['ZREVRANGEBYSCORE', 'kofi:intents', now, now - INTENT_WINDOW_MS, 'LIMIT', 0, 1]]);
+      sid = recent[0]?.[0];
+    }
     if (sid) {
       await redis([['ZREM', 'kofi:intents', sid], ['INCRBY', `credits:${sid}`, credits]]);
-    } else {
-      // Nobody to credit yet: kept for the buyer, who claims it with the Ko-fi e-mail on the /thanks page
-      const mail = String(payload.email || '').trim().toLowerCase();
-      if (mail) {
-        const key = `kofi:un:${hmac('mail:' + mail).slice(0, 32)}`;
-        await redis([['LPUSH', key, String(credits)], ['EXPIRE', key, 90 * 86400]]);
-      }
+      if (mh) await redis([['SET', `kofi:claimed:${mh}`, '1', 'EX', 31536000]]); // so a later claim says "already claimed"
+    } else if (mh) {
+      // 3. Nobody to credit yet: kept for the buyer, who claims it with the Ko-fi e-mail on the /thanks page
+      const key = `kofi:un:${mh}`;
+      await redis([['LPUSH', key, String(credits)], ['EXPIRE', key, 90 * 86400]]);
     }
     console.log('[kofi] credited', JSON.stringify({ tx, credits, to: sid ? 'visitor with intent' : 'unclaimed (by e-mail)' }));
     res.status(200).json({ ok: true });
