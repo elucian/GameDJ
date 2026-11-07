@@ -128,7 +128,7 @@ To reset a visitor while testing, delete the keys in the Upstash console (Data B
 
 ## Ko-fi: "Unlock N songs"
 
-Buyers get extra songs by buying a Ko-fi shop item. The extra songs are used after the free monthly songs are gone, and they do not expire. Once the free 5 live takes of a week are used, a bought song also pays for live takes: **1 bought song = 3 live takes** (the first take opens a song and the other 2 are kept as `takes:<session id>`; a refunded paid take goes back to them).
+Buyers get extra songs by buying a Ko-fi shop item. The extra songs are used after the free monthly songs are gone, and they do not expire. The free monthly songs do not accumulate: unused ones are lost when the month ends (the counter is per calendar month). Once the free 5 live takes of a week are used, a bought song also pays for live takes: **1 bought song = 3 live takes** (the first take opens a song and the other 2 are kept as `takes:<session id>`; a refunded paid take goes back to them).
 
 ### Setting up Ko-fi
 

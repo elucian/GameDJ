@@ -55,6 +55,9 @@ function rememberTakes(n: number) {
     try { localStorage.setItem(TAKES_KEY, String(Math.max(0, Math.floor(n)))); } catch { /* storage unavailable */ }
 }
 
+/** The free songs per month (the server's SONG_LIMIT, 3 until the server answered). */
+export const freeSongsPerMonth = (): number => limitFor('song');
+
 const messageFor = (kind: QuotaKind) => kind === 'song'
     ? `Monthly free quota limit reached: ${limitFor('song')} songs.`
     : `Weekly free quota limit reached: ${limitFor('live')} songs.`;
