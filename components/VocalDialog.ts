@@ -218,7 +218,7 @@ export class VocalDialog extends LitElement {
       this.show = false;
   }
 
-  private async randomizeFormation() {
+  private randomizeFormation() {
       // Randomize individual voices (the grid items)
       const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
       // Ensure at least one voice is selected
@@ -232,32 +232,9 @@ export class VocalDialog extends LitElement {
       // Randomize choir
       this.selectedChoir = this.choirOptions[Math.floor(Math.random() * this.choirOptions.length)];
       
-      // Generate a new song title based on genre
-      const title = await this.generateTitleTheme(this.genre, this.vocalText || 'new song');
-      this.songName = title;
-      
+      // New lyrics and a new title in one model call, same as the Generate button
+      this.requestGeneration();
       this.requestUpdate();
-  }
-
-  private async generateTitleTheme(genre: string, lyrics: string): Promise<string> {
-      this.generating = true;
-      try {
-          // Use the liveMusicHelper properly
-          const helper = (window as any).liveMusicHelper || (this.getRootNode() as any)?.liveMusicHelper;
-          if (!helper) {
-              console.error("LiveMusicHelper not found for title generation");
-              this.generating = false;
-              return 'Untitled';
-          }
-          const prompt = `Style: ${genre}. Lyrics: "${lyrics.substring(0, 100)}...".\n\nGenerate a catchy song title for this. Output only the title.`;
-          const result = await helper.generateLyrics(genre, 'Auto', 1, 1, prompt);
-          this.generating = false;
-          return result.trim().replace(/^TITLE:\s*/i, '');
-      } catch (e) {
-          console.error("Title generation failed:", e);
-          this.generating = false;
-          return 'Untitled';
-      }
   }
 
   private renderSolo() {
@@ -303,7 +280,7 @@ export class VocalDialog extends LitElement {
   private requestGeneration() {
       if (this.generating) return;
       this.dispatchEvent(new CustomEvent('request-lyrics-generation', {
-          detail: { genre: this.genre, lang: this.lyricsLang, verseCount: 2, lineCount: 4 }, bubbles: true, composed: true
+          detail: { genre: this.genre, lang: this.lyricsLang, verseCount: 0, lineCount: 0 }, bubbles: true, composed: true
       }));
   }
 

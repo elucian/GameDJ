@@ -178,17 +178,19 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
-    const { genre, verseCount, lineCount } = e.detail;
+    const { genre } = e.detail;
     const lang: string = e.detail.lang === 'Auto' ? chooseDjLanguage(genre).language : e.detail.lang;
     pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
     vocalDialog.generating = true;
-    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, verseCount, lineCount, undefined, topToolbar.musicStyle, topToolbar.currentMood);
+    // One call writes the lyrics and the title; a new title replaces the old one
+    const { title, lyrics } = await liveMusicHelper.generateSong(genre, lang, topToolbar.musicStyle, topToolbar.currentMood);
     vocalDialog.generating = false;
     if (lyrics.startsWith('Error') || lyrics.startsWith('Could not')) {
       pdjMidi.setMessage('LYRICS FAILED: TRY AGAIN', 'error');
       return;
     }
     vocalDialog.vocalText = lyrics;
+    if (title) vocalDialog.songName = title;
     liveMusicHelper.setLyrics(lyrics, lang, false);
     updateSongDuration();
     refreshPromptPanel();
@@ -967,7 +969,7 @@ function main() {
               rightSidebar.setEvolution(evo);
               liveMusicHelper.setEvolution(evo);
 
-              liveMusicHelper.generatePerformancePlan(0);
+              liveMusicHelper.generatePerformancePlan();
               pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} SELECTED`, "info");
           } else if (isLive) {
               djEngagingCountdown = true;

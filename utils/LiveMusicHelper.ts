@@ -161,6 +161,52 @@ export const STYLE_DESCRIPTORS: Record<string, string[]> = {
   'Western': ['dusty frontier ballad with acoustic guitar and harmonica', 'lonesome prairie atmosphere with twangy guitar', 'steady trail riding rhythm'],
   'Hawaiian': ['gentle island slack key guitar and ukulele', 'sunny tropical lilt with warm steel guitar', 'relaxed ocean breeze feel']
 };
+/**
+ * What makes a song of each genre a song of that genre, for the full-song prompt (Lyria 3.5): how it is built
+ * (`form`, used when Lyria writes its own words), how the vocals are delivered and how it should sound (`sound`).
+ * Plain descriptions only: no artist, band or song names (the safety filter rejects them).
+ */
+export const GENRE_SONG_BRIEF: Record<string, { form: string; vocals: string; sound: string }> = {
+  'Hip Hop': { form: '[Intro] -> [Verse 1] -> [Hook] -> [Verse 2] -> [Hook] -> [Outro]', vocals: 'rhythmic rapped verses with a sung, catchy hook', sound: 'punchy drums, deep sub bass, tight pocket groove, space in the beat for the rapper' },
+  'Pop': { form: '[Intro] -> [Verse 1] -> [Pre-Chorus] -> [Chorus] -> [Verse 2] -> [Pre-Chorus] -> [Chorus] -> [Bridge] -> [Final Chorus] -> [Outro]', vocals: 'clear lead vocal, memorable hook, stacked harmonies on the chorus', sound: 'polished modern production, big chorus lift, bright and wide mix' },
+  'R&B': { form: '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Chorus] -> [Outro]', vocals: 'smooth melismatic lead vocal with soft harmonies', sound: 'warm bass, laid-back groove, lush chords, intimate mix' },
+  'Jazz': { form: '[Intro] -> [Head: Verse 1] -> [Instrumental Solo] -> [Head: Verse 2] -> [Outro]', vocals: 'relaxed, behind-the-beat phrasing with a little improvisation', sound: 'swinging rhythm, walking bass, brushed drums, instrumental solos between the vocal choruses' },
+  'Blues': { form: 'Twelve-bar blues form: [Intro] -> [Verse 1] -> [Verse 2] -> [Guitar Solo] -> [Verse 3] -> [Outro], each verse a statement, a repeat and an answer line', vocals: 'gritty, expressive vocal with call and response against the guitar', sound: 'shuffle groove, bending guitar, raw live feel' },
+  'Electronic': { form: '[Intro] -> [Build] -> [Drop] -> [Breakdown] -> [Build] -> [Final Drop] -> [Outro]', vocals: 'sparse, processed vocal hooks and short phrases', sound: 'steady kick, evolving synth layers, tension and release, clean club mix' },
+  'Rock': { form: '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Guitar Solo] -> [Final Chorus] -> [Outro]', vocals: 'strong, energetic lead vocal with shouted group backing on the chorus', sound: 'driving drums, crunchy guitars, big open chorus, live band energy' },
+  'Ambient': { form: 'one slowly evolving piece: [Intro] -> [Section 1] -> [Section 2] -> [Fade Out], no hard drops', vocals: 'few or no words, floating wordless voices', sound: 'long soft pads, wide reverb, no drums or very gentle pulse' },
+  'Gaming': { form: '[Intro] -> [Main Theme] -> [Action Section] -> [Theme Returns, Bigger] -> [Outro]', vocals: 'heroic, anthemic voices only when the theme peaks', sound: 'adventurous melodic theme, rhythmic drive, cinematic layering' },
+  'Classic': { form: '[Introduction] -> [Theme A] -> [Theme B] -> [Development] -> [Theme A Returns] -> [Coda]', vocals: 'elegant, trained classical voice or wordless vocalise', sound: 'natural acoustic orchestral balance, expressive dynamics, graceful phrasing' },
+  'Opera': { form: '[Orchestral Prelude] -> [Aria: Verse 1] -> [Aria: Verse 2] -> [Dramatic Climax] -> [Final Cadence]', vocals: 'powerful trained operatic voice with wide vibrato and big high notes', sound: 'full dramatic orchestra, rubato, hall reverb' },
+  'Marching': { form: '[Fanfare] -> [Main March] -> [Trio Section] -> [Main March Returns] -> [Final Flourish]', vocals: 'unison male voices chanting or singing in a steady march rhythm', sound: 'crisp snare cadence, bold brass, strong downbeat' },
+  'Renascentist': { form: '[Instrumental Intro] -> [Verse 1] -> [Verse 2] -> [Dance Interlude] -> [Verse 3]', vocals: 'clear, unforced early-music voices in gentle polyphony', sound: 'lute, recorder and viol consort, light hand percussion, dry intimate room' },
+  'Victorian': { form: '[Introduction] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Coda]', vocals: 'refined, sincere parlour singing with clear diction', sound: 'parlour piano and strings, graceful rubato, salon room' },
+  'Spiritual': { form: '[Quiet Opening] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain, Everyone Joins] -> [Amen]', vocals: 'warm, devotional voices with call and response and rising harmony', sound: 'slow reverent pulse, handclaps or soft organ, church acoustics' },
+  'African': { form: '[Intro: Percussion] -> [Verse: Call] -> [Response] -> [Chorus] -> [Interlude] -> [Chorus]', vocals: 'call and response between a lead singer and a group', sound: 'interlocking polyrhythmic percussion, bright highlife guitar, joyful dance groove' },
+  'Indian': { form: '[Alaap: Free Intro] -> [Verse (Mukhda)] -> [Interlude] -> [Verse (Antara)] -> [Refrain]', vocals: 'expressive melodic ornaments (gamaka), emotional phrasing', sound: 'tabla rhythm, drone, sitar and strings, raga-based melody' },
+  'Irish': { form: '[Intro: Fiddle] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Instrumental Reel] -> [Final Refrain]', vocals: 'plain, heartfelt storytelling voice with group refrain', sound: 'fiddle, tin whistle, bodhran and acoustic guitar, lilting dance rhythm' },
+  'Spanish': { form: '[Guitar Intro] -> [Verse 1] -> [Estribillo (Refrain)] -> [Verse 2] -> [Estribillo] -> [Guitar Falseta] -> [Final Refrain]', vocals: 'passionate, ornamented cante with rhythmic handclaps (palmas)', sound: 'nylon-string guitar rasgueado, compás rhythm, fiery and dramatic' },
+  'Oriental': { form: '[Quiet Intro] -> [Verse 1] -> [Interlude] -> [Verse 2] -> [Closing Phrase]', vocals: 'gentle, delicate sung melody on a pentatonic scale', sound: 'plucked zither and flute, sparse space, flowing dynamics' },
+  'Romanian': { form: '[Slow Doina Intro] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Fast Hora Dance] -> [Refrain]', vocals: 'heartfelt folk voice that opens into group singing', sound: 'fast violin, accordion, cimbalom, quick accelerating dance' },
+  'Western': { form: '[Guitar Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Harmonica Solo] -> [Last Chorus]', vocals: 'plainspoken storytelling voice with a twang, sing-along chorus', sound: 'acoustic guitar, steady trail rhythm, harmonica and fiddle, open spaces' },
+  'Hawaiian': { form: '[Ukulele Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', vocals: 'sweet, relaxed voice with gentle falsetto turns and group harmony', sound: 'ukulele, slack-key guitar, soft steel guitar, easy island sway' }
+};
+
+/** The form line for a song with no given lyrics, trimmed to its length: short songs lose repeats, long ones get an extra verse. */
+function formForLength(form: string, minutes: number): string {
+    const parts = form.split('->').map(p => p.trim());
+    if (parts.length <= 4) return form;
+    if (minutes <= 1.25) {
+        // intro, first verse, the first hook-like section after it, and the outro
+        const verseAt = Math.max(1, parts.findIndex((p, k) => k > 0 && k < parts.length - 1));
+        const hookAt = parts.findIndex((p, k) => k > verseAt && /^\[(final )?(chorus|hook|refrain|drop|estribillo)|theme b|main march/i.test(p));
+        const keep = [parts[0], parts[verseAt], ...(hookAt > 0 ? [parts[hookAt]] : []), parts[parts.length - 1]];
+        return [...new Set(keep)].join(' -> ');
+    }
+    if (minutes <= 2.25) return parts.filter((p, i) => !/pre-chorus|bridge|interlude|solo|falseta/i.test(p) || i === parts.length - 2).join(' -> ');
+    return form;
+}
+
 export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
 export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
 
@@ -575,13 +621,7 @@ export class LiveMusicHelper extends EventTarget {
       this.masterGain.gain.setTargetAtTime(this.userVolume * fadeFactor, this.audioContext.currentTime, 0.02);
   }
 
-  public setMaxDuration(minutes: number) { 
-      this.maxDurationMinutes = minutes; 
-      if (this.playbackState === 'recording' || this.playbackState === 'playing') {
-          this.generatePerformancePlan(this.elapsedSeconds);
-          this.updateRecordingSchedule();
-      }
-  }
+  public setMaxDuration(minutes: number) { this.maxDurationMinutes = minutes; }
   
   public setLoop(loop: boolean) { 
     this.isLooping = loop; 
@@ -616,13 +656,12 @@ export class LiveMusicHelper extends EventTarget {
           const isLive = this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
           const isPlaying = this.playbackState === 'playing';
           
-          // Generate plan based on current state (Start offset is 0 if fresh, else current time)
-          const offset = (isLive || isPlaying) ? this.elapsedSeconds : 0;
-          this.generatePerformancePlan(offset);
+          // The DJ plans the whole song up front
+          this.generatePerformancePlan();
 
           if (isLive || isPlaying) {
               this.startConductor();
-              // Force immediate update to apply "Takeover" stage
+              // Force an immediate update
               this.updateConductor();
           }
           this.dispatchEvent(new CustomEvent('handshake-result', { detail: true }));
@@ -720,8 +759,8 @@ export class LiveMusicHelper extends EventTarget {
       let text = VOWEL_LYRICS;
       if (!vowels) {
           // Don't keep the DJ waiting forever if the lyrics service is slow
-          const timeout = new Promise<string>(r => setTimeout(() => r('Error: timeout'), 10000));
-          const written = await Promise.race([this.generateLyrics(this.genre, language, 2, 4, undefined, style, mood), timeout]);
+          const timeout = new Promise<string>(r => setTimeout(() => r('Error: timeout'), 20000));
+          const written = await Promise.race([this.generateLyrics(this.genre, language, 0, 0, undefined, style, mood), timeout]);
           text = written.startsWith('Error') || written.startsWith('Could not') ? VOWEL_LYRICS : written;
       }
       const usedVowels = text === VOWEL_LYRICS;
@@ -1353,7 +1392,7 @@ Prompt: ${text}`
       return templates[Math.floor(Math.random() * templates.length)];
   }
 
-  public generatePerformancePlan(startOffset: number = 0) {
+  public generatePerformancePlan() {
       this.currentPlan = [];
       const totalSec = this.maxDurationMinutes * 60;
       
@@ -1367,12 +1406,6 @@ Prompt: ${text}`
 
       this.currentPlanIdx = 0;
       if (availableKeys.length === 0) return;
-
-      // If starting mid-stream (takeover), use the improvisation logic
-      if (startOffset >= 5) {
-          this.generateImprovPlan(startOffset, totalSec, availableKeys);
-          return;
-      }
 
       // --- STORY GENERATION MODE ---
       
@@ -1396,45 +1429,6 @@ Prompt: ${text}`
       });
       
       this.currentPlanIdx = 0;
-  }
-
-  private generateImprovPlan(startTime: number, totalSec: number, enabledKeys: Array<keyof InstrumentSet>) {
-      // Improvisation / Takeover Plan (Mid-Stream)
-      let currentTime = startTime;
-      
-      // Immediate Takeover Stage: Respect current activity mostly but transition
-      this.addStage(currentTime, "DJ Takeover", enabledKeys, 'groove'); 
-      
-      currentTime += 8; // Quick takeover transition time
-
-      // Generate variety blocks until near end
-      const remainingTime = totalSec - currentTime;
-      const blockDuration = Math.max(15, Math.min(30, remainingTime / 4)); 
-      
-      while (currentTime < totalSec - 10) {
-          // Low diversity: the DJ stays with the big ensembles instead of solos, duets and trios
-          const diversity = (this.djPersonality?.diversity ?? 50) / 100;
-          const typeRoll = Math.random() < (1 - diversity) * 0.6 ? 0.6 + Math.random() * 0.4 : Math.random();
-          let name = "Improv Mix";
-          let type = 'main';
-          
-          // Even spread across ensemble sizes: solo, duet, trio, quartet, full band
-          const canAcappella = enabledKeys.some(k => isVocalInstrument(this.instruments[k].instrument)) && Math.random() < (ACAPPELLA_ODDS[this.genre] ?? 0) * 0.5;
-          if (canAcappella) { name = "A Cappella"; type = 'acapella'; }
-          else if (typeRoll < 0.2) { name = "Solo Feature"; type = 'solo'; }
-          else if (typeRoll < 0.4 && enabledKeys.length >= 2) { name = "Duet Session"; type = 'duet'; }
-          else if (typeRoll < 0.6 && enabledKeys.length >= 3) { name = "Trio Section"; type = 'trio'; }
-          else if (typeRoll < 0.8) { name = "Quartet Groove"; type = 'main'; }
-          else { name = "Full Band"; type = 'climax'; }
-          
-          this.addStage(currentTime, name, enabledKeys, type);
-          currentTime += blockDuration;
-      }
-
-      // Ensure Outro if we have time
-      if (currentTime < totalSec) {
-          this.addStage(currentTime, "Fade Out", enabledKeys, 'outro');
-      }
   }
 
   // === GENRE KNOB DATABANK ===
@@ -2175,7 +2169,7 @@ Prompt: ${text}`
     this.currentStatusMessage = '';
 
     // Always use fallback/procedural routine for standalone conductor
-    this.generatePerformancePlan(0);
+    this.generatePerformancePlan();
 
     this.setPlaybackState('loading');
     
@@ -2354,32 +2348,85 @@ Prompt: ${text}`
     }, remainingTimeMs + 5000);
   }
 
-  public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string, style?: string, mood?: string): Promise<string> {
+  /** Verses and lines per verse that fit the song: ~1 verse per minute at 120 BPM, more when faster, fewer when slower. */
+  public lyricPlan(): { verses: number; lines: number } {
+      const minutes = Math.max(0.5, this.maxDurationMinutes);
+      const verses = Math.max(1, Math.min(5, Math.round(minutes * (this.bpm / 120))));
+      const lines = this.bpm < 80 ? 3 : this.bpm > 150 ? 6 : 4;
+      return { verses, lines };
+  }
+
+  /** Text models for lyrics, best first. A quota (429), retired model (404) or overload error moves on to the next. */
+  private static readonly LYRICS_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+
+  /** Runs a text prompt through LYRICS_MODELS in order and returns the first answer, or "Error: ..." if all fail. */
+  private async runLyricsModels(prompt: string): Promise<string> {
       if (!this.ai) {
           console.error("AI not initialized");
           return "Error: AI not initialized.";
       }
-      try {
-          const prompt = songTitle
-              ? `Translate or adapt 2 verses of the song "${songTitle}" into ${lang}. The style should fit a ${genre} genre.`
-              : `Write ${verseCount} verses of ${lineCount} short lines each, plus a 2-line [Chorus], for a ${genre} song${style ? ` in ${style} style` : ''}${mood && mood !== 'None' ? ` with a ${mood} mood` : ''}, sung in ${lang}.
-                 Use ONLY real, correctly spelled ${lang} words that a native speaker would say (or open vowel sounds such as Ah, Oh, Ooh). Never invent nonsense words or fake syllables.
-                 Keep the vocabulary, imagery and rhythm authentic to ${genre}${genre === 'Hip Hop' ? ' (rhymed rap bars with strong flow)' : ''}. Lines must be singable: at most 8 words each.
-                 Return ONLY the lyrics in block format ([Verse 1], [Chorus], [Verse 2]). No intro, outro, translation, explanations or commentary.`;
-          
-          console.log("Generating lyrics with prompt:", prompt);
-          
-          // Try gemini-3.1-flash-lite
-          const result = await (this.ai as any).models.generateContent({
-              model: 'gemini-3.1-flash-lite',
-              contents: prompt
-          });
-          
-          return (result.text || "Could not generate lyrics.").trim();
-      } catch (e) {
-          console.error("Lyrics generation failed:", e);
-          return `Error: ${e}`;
+      let lastError: unknown = null;
+      for (const model of LiveMusicHelper.LYRICS_MODELS) {
+          try {
+              const result = await (this.ai as any).models.generateContent({ model, contents: prompt });
+              const text = (result.text || '').trim();
+              if (text) return text;
+              lastError = new Error(`${model} returned no text`);
+          } catch (e) {
+              console.warn(`Lyrics model ${model} failed, trying the next one:`, e);
+              lastError = e;
+          }
       }
+      console.error("Lyrics generation failed:", lastError);
+      return `Error: ${lastError}`;
+  }
+
+  /** The brief for new lyrics: genre, style, mood, language, length, tempo and meter. */
+  private lyricsBrief(genre: string, lang: string, verseCount: number, lineCount: number, style?: string, mood?: string, withTitle = false): string {
+      const plan = this.lyricPlan();
+      const verses = verseCount > 0 ? verseCount : plan.verses;
+      const lines = lineCount > 0 ? lineCount : plan.lines;
+      const feel = this.bpm < 80 ? 'slow and spacious: long, held syllables and room to breathe'
+          : this.bpm > 150 ? 'fast and driving: short, punchy, rhythmic lines'
+          : 'mid-tempo: a relaxed, natural flow';
+      const titleLine = withTitle ? `Start with one line "TITLE: <a short, catchy song title, at most 5 words, in ${lang}>", then the lyrics.` : '';
+      return `Write the lyrics of a ${genre} song${style ? ` in ${style} style` : ''}${mood && mood !== 'None' ? ` with a ${mood} mood` : ''}, sung in ${lang}.
+             Song: about ${Math.round(this.maxDurationMinutes * 10) / 10} minutes, ${this.bpm} BPM, ${this.meter} time, in ${this.key}. Tempo feel: ${feel}.
+             Structure: ${verses} verse${verses > 1 ? 's' : ''} of ${lines} short lines each, with a 2-line [Chorus] between them.
+             Fit the words to the ${this.meter} meter at ${this.bpm} BPM: stress the strong beats, keep every line singable in one or two bars, at most ${this.bpm > 150 ? 6 : 8} words each.
+             Use ONLY real, correctly spelled ${lang} words that a native speaker would say (or open vowel sounds such as Ah, Oh, Ooh). Never invent nonsense words or fake syllables.
+             Keep the vocabulary, imagery and rhythm authentic to ${genre}${genre === 'Hip Hop' ? ' (rhymed rap bars with strong flow)' : ''}.
+             ${titleLine}
+             Return ONLY ${withTitle ? 'that title line and ' : ''}the lyrics in block format ([Verse 1], [Chorus], [Verse 2], ...). No intro, outro, translation, explanations or commentary.`;
+  }
+
+  /** Splits a "TITLE: ..." first line off a model answer. */
+  private static splitTitle(text: string): { title: string; lyrics: string } {
+      const m = text.match(/^\s*\**\s*TITLE\s*:\s*(.+?)\s*\**\s*(?:\r?\n|$)/i);
+      if (!m) return { title: '', lyrics: text.trim() };
+      return { title: m[1].replace(/^["'“”]+|["'“”]+$/g, '').trim(), lyrics: text.slice(m[0].length).trim() };
+  }
+
+  /** Pass verseCount/lineCount of 0 to size the lyrics from the song length and tempo. */
+  public async generateLyrics(genre: string, lang: string, verseCount: number, lineCount: number, songTitle?: string, style?: string, mood?: string): Promise<string> {
+      const prompt = songTitle
+          ? `Translate or adapt 2 verses of the song "${songTitle}" into ${lang}. The style should fit a ${genre} genre.`
+          : this.lyricsBrief(genre, lang, verseCount, lineCount, style, mood);
+      return this.runLyricsModels(prompt);
+  }
+
+  /** Lyrics and the song title from ONE model call (used by Generate and the dice). title is '' if the model gave none. */
+  public async generateSong(genre: string, lang: string, style?: string, mood?: string): Promise<{ title: string; lyrics: string }> {
+      const text = await this.runLyricsModels(this.lyricsBrief(genre, lang, 0, 0, style, mood, true));
+      if (text.startsWith('Error')) return { title: '', lyrics: text };
+      return LiveMusicHelper.splitTitle(text);
+  }
+
+  /** A title for lyrics that already exist (typed or written earlier), from the same model chain. */
+  public async generateTitle(lyrics: string, genre: string, lang: string): Promise<string> {
+      const text = await this.runLyricsModels(
+          `Lyrics of a ${genre} song in ${lang}:\n${lyrics}\n\nGive this song a short, catchy title (at most 5 words, in ${lang}). Output only the title.`);
+      return text.startsWith('Error') ? '' : text.split(/\r?\n/)[0].replace(/^\s*TITLE\s*:\s*/i, '').replace(/^["'“”*]+|["'“”*]+$/g, '').trim();
   }
 
   public async stop(saveRecording = true, resetToZero = false) {
@@ -2505,6 +2552,8 @@ Prompt: ${text}`
           .filter(p => p.weight > 0.3 && !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase()))
           .sort((a, b) => b.weight - a.weight).slice(0, 4).map(p => this.knobPhrase(p.text));
       const regional = this.regionalVocalStyle();
+      const brief = GENRE_SONG_BRIEF[this.genre];
+      const lyricsGiven = !!this.lyricsText.trim() && !this.lyricsVowelsOnly;
 
       const lines = [
           `Create a ${minutes}-minute ${styleTag} song with vocals.`,
@@ -2512,7 +2561,10 @@ Prompt: ${text}`
           this.mood && this.mood !== 'None' ? `Mood: ${this.mood.toLowerCase()}.` : '',
           `Tempo: ${this.bpm} BPM, ${this.meter} time. Key: ${this.key}.`,
           instruments.length ? `Instruments (only these): ${instruments.join(', ')}.` : 'A cappella: voices only, no instruments.',
-          `Vocals: ${voices.join('; ')}, ${this.voiceIntensityPhrase()}${regional ? `, ${regional}` : ''}.`,
+          voices.length ? `Vocals: ${voices.join('; ')}, ${this.voiceIntensityPhrase()}${regional ? `, ${regional}` : ''}${brief && !this.lyricsVowelsOnly ? `, ${brief.vocals}` : ''}.`
+              : brief && !this.lyricsVowelsOnly ? `Vocals: ${brief.vocals}.` : '',
+          // The sound notes name typical instruments: with a fixed lineup they only describe the feel
+          brief ? `Sound: ${brief.sound}${instruments.length ? ' (describes the feel only, use just the instruments listed)' : ''}.` : this.genreReference ? `Sound: ${this.genreReference}.` : '',
           knobs.length ? `Playing style: ${knobs.join(', ')}.` : '',
           this.evolutionValue > 0 ? 'Arrangement: progressive, building and evolving.' : this.evolutionValue < 0 ? 'Arrangement: steady and minimal.' : '',
           'Clear, memorable sung melody, clean high fidelity mix.'
@@ -2521,8 +2573,9 @@ Prompt: ${text}`
       let words: string;
       if (this.lyricsVowelsOnly) words = 'Lyrics: wordless vocalise on open vowels (ah, oh, ooh), no words.';
       else if (lyrics) words = `Language: ${this.lyricsLanguage}. Sing these lyrics exactly, clearly pronounced.\n\nLyrics:\n${lyrics}`;
-      else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage} with verses and a chorus, sung clearly.\n`
-          + 'Structure: [Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]';
+      else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage}, sung clearly, fitting ${this.meter} time at ${this.bpm} BPM.\n`
+          + `Structure: ${formForLength(brief?.form ?? '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', minutes)}`;
+      if (lyricsGiven) lines.push('Follow the section order of the lyrics exactly; add a short instrumental intro and outro, and no extra lyrics.');
       return [...lines.filter(Boolean), words].join('\n');
   }
 
