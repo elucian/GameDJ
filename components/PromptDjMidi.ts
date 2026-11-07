@@ -189,6 +189,16 @@ export class PromptDjMidi extends LitElement {
         padding: 6px;
       }
     }
+
+    /* Phones: the page scrolls, so the knob panel takes its natural height instead of the leftover space */
+    @media (max-width: 700px) {
+      :host { height: auto; overflow: visible; padding: 6px 0; }
+      .grid-container { flex: 0 0 auto; }
+      /* The two displays stack: flex-basis 0 would collapse them to nothing in a column */
+      .bezel { flex-direction: column; }
+      .display-box, .prompt-box { flex: 0 0 auto; }
+      #grid { height: auto; aspect-ratio: 1 / 1; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    }
   `;
 
   private prompts: Map<string, Prompt> = new Map();

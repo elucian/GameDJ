@@ -81,7 +81,7 @@ export class Timeline extends LitElement {
     }
     .track-header {
       width: 100px;
-      background: #000;
+      background: var(--tl-header-bg);
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
@@ -90,13 +90,10 @@ export class Timeline extends LitElement {
       padding: 8px 0;
       flex-shrink: 0;
       z-index: 50;
-      box-shadow: inset -2px 0 10px rgba(0,0,0,0.5);
+      box-shadow: inset -2px 0 10px var(--tl-header-shadow);
       box-sizing: border-box;
     }
 
-    :host-context(body.light-theme) .track-header {
-      background: #e0e0e0;
-    }
 
     .time-display {
       color: var(--accent-color);
@@ -105,9 +102,6 @@ export class Timeline extends LitElement {
       font-weight: bold;
       line-height: 1.2;
       text-align: center;
-    }
-    :host-context(body.light-theme) .time-display {
-      color: #008f5d;
     }
 
     .status-text {
@@ -120,10 +114,10 @@ export class Timeline extends LitElement {
       text-align: center;
     }
     .status-rec { color: var(--accent-secondary); animation: blink 1s infinite; }
-    .status-warm { color: #ffdd28; animation: blink 0.5s infinite; }
-    .status-prep { color: #007bff; animation: blink 0.2s infinite; }
+    .status-warm { color: var(--tl-warn); animation: blink 0.5s infinite; }
+    .status-prep { color: var(--tl-fade-color); animation: blink 0.2s infinite; }
     .status-play { color: var(--accent-color); }
-    .status-waiting { color: #ffdd28; animation: blink 0.2s infinite; }
+    .status-waiting { color: var(--tl-warn); animation: blink 0.2s infinite; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
     .track-lane {
@@ -155,8 +149,12 @@ export class Timeline extends LitElement {
       position: relative;
       width: 100%;
       flex: 1; 
-      background: rgba(255,255,255,0.02);
+      /* Outlined in the channel colour with a transparent fill, so a silent channel is still visible; active time is solid */
+      background: transparent;
+      border: 1px solid var(--channel-color);
+      box-sizing: border-box;
       border-radius: 1px;
+      overflow: hidden;
     }
     .channel-row.hidden {
       display: none;
@@ -168,7 +166,7 @@ export class Timeline extends LitElement {
       bottom: 0;
       border-radius: 1px;
       min-width: 1px;
-      box-shadow: inset 0 0 4px rgba(0,0,0,0.2);
+      background: var(--channel-color);
     }
 
     .ghost-layer {
@@ -184,21 +182,16 @@ export class Timeline extends LitElement {
       position: absolute;
       top: 15%; 
       bottom: 15%;
-      background: rgba(192, 192, 192, 0.4);
+      background: var(--tl-ghost-bg);
       backdrop-filter: blur(2px);
       border-radius: 4px;
-      box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    :host-context(body.light-theme) .ghost-segment {
-      background: rgba(160, 160, 160, 0.3);
-      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.1);
-      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-shadow: inset 0 0 8px var(--tl-ghost-shadow);
+      border: 1px solid var(--tl-ghost-border);
     }
 
     .label-gutter {
       height: 20px; 
-      background: #151515; 
+      background: var(--tl-gutter-bg);
       border-top: 1px solid var(--border-color);
       position: absolute;
       bottom: 0;
@@ -207,9 +200,6 @@ export class Timeline extends LitElement {
       z-index: 60;
     }
     
-    :host-context(body.light-theme) .label-gutter {
-      background: #dcdcdc;
-    }
 
     .fade-handle {
       position: absolute;
@@ -235,7 +225,7 @@ export class Timeline extends LitElement {
       transform: translate(-50%, -50%);
       width: 10px;
       height: 10px;
-      background: #007bff;
+      background: var(--tl-fade-color);
       border-radius: 50%;
     }
     .fade-handle::after {
@@ -245,7 +235,7 @@ export class Timeline extends LitElement {
       bottom: 20px;
       left: 50%;
       width: 2px;
-      background: #007bff;
+      background: var(--tl-fade-color);
       transform: translateX(-50%);
     }
 
@@ -254,30 +244,25 @@ export class Timeline extends LitElement {
       top: 3px;
       font-size: 10.58px;
       white-space: nowrap;
-      background: rgba(0, 0, 0, 0.85);
-      color: #fff;
+      background: var(--tl-label-bg);
+      color: var(--tl-label-text);
       padding: 1px 6px;
       font-weight: 900;
       pointer-events: none;
       border-radius: 2px;
       text-transform: uppercase;
-      border: 1px solid rgba(255, 255, 255, 0.4);
+      border: 1px solid var(--tl-label-border);
       transform: translateX(-50%);
       backdrop-filter: blur(2px);
       z-index: 90;
     }
 
-    :host-context(body.light-theme) .fade-label {
-      background: rgba(255, 255, 255, 0.85);
-      color: #000;
-      border-color: rgba(0, 0, 0, 0.6);
-    }
 
     .fade-overlay {
       position: absolute;
       top: 0;
       bottom: 20px;
-      background: rgba(0, 123, 255, 0.1);
+      background: color-mix(in srgb, var(--tl-fade-color) 10%, transparent);
       pointer-events: none;
       z-index: 10;
     }
@@ -301,14 +286,14 @@ export class Timeline extends LitElement {
       transform: translateX(-50%);
     }
     .playhead.playback {
-      background: #00ff00; /* Green - audible playback position (behind) */
+      background: var(--tl-playback); /* Green - audible playback position (behind) */
       width: 4px;
       opacity: 0.9;
-      box-shadow: 0 0 6px rgba(0, 255, 0, 0.6);
+      box-shadow: 0 0 6px color-mix(in srgb, var(--tl-playback) 60%, transparent);
     }
     .playhead.recording {
-      background: #ff0000; /* Red - buffer write position (ahead) */
-      box-shadow: 0 0 6px rgba(255, 0, 0, 0.6);
+      background: var(--tl-recording); /* Red - buffer write position (ahead) */
+      box-shadow: 0 0 6px color-mix(in srgb, var(--tl-recording) 60%, transparent);
     }
     .playhead::after {
       content: '';
@@ -321,18 +306,18 @@ export class Timeline extends LitElement {
       border-top: 10px solid var(--accent-secondary);
     }
     .playhead.playback::after {
-      border-top-color: #00ff00;
+      border-top-color: var(--tl-playback);
     }
     .playhead.recording::after {
-      border-top-color: #ff0000;
+      border-top-color: var(--tl-recording);
     }
     /* Buffered region between green (playback) and red (write) cursors */
     .buffer-region {
       position: absolute;
       top: 0;
       bottom: 0;
-      background: linear-gradient(90deg, rgba(0, 255, 0, 0.08), rgba(255, 0, 0, 0.15));
-      border-top: 1px dashed rgba(255, 255, 255, 0.25);
+      background: linear-gradient(90deg, color-mix(in srgb, var(--tl-playback) 8%, transparent), color-mix(in srgb, var(--tl-recording) 15%, transparent));
+      border-top: 1px dashed var(--tl-buffer-border);
       pointer-events: none;
       z-index: 60;
     }
@@ -561,7 +546,7 @@ export class Timeline extends LitElement {
     return html`<div class="ghost-layer">${this.history.ghost.map((segment) => { const startPct = (segment.start / duration) * 100; const end = segment.end === null ? this.elapsedSeconds : segment.end; const widthPct = ((end - segment.start) / duration) * 100; return html`<div class="ghost-segment" style="left: ${startPct}%; width: ${widthPct}%"></div>`; })}</div>`;
   }
 
-  private renderChannelHistory(key: keyof ChannelHistory, color: string) {
+  private renderChannelHistory(key: keyof ChannelHistory) {
     if (key === 'ghost') return null;
     const duration = this.effectiveDuration;
     return this.history[key].map((segment) => { 
@@ -569,7 +554,7 @@ export class Timeline extends LitElement {
         const end = segment.end === null ? this.elapsedSeconds : segment.end; 
         const widthPct = ((end - segment.start) / duration) * 100; 
         if (widthPct <= 0) return null;
-        return html`<div class="channel-segment" style="left: ${startPct}%; width: ${widthPct}%; background: ${color}"></div>`; 
+        return html`<div class="channel-segment" style="left: ${startPct}%; width: ${widthPct}%"></div>`; 
     });
   }
 
@@ -609,11 +594,11 @@ export class Timeline extends LitElement {
            <div class="track-lane" @pointerdown=${this.handlePointerDown}>
              ${isManifestEmpty ? this.renderGhostLayer() : html`
                <div class="bars-area">
-                 <div class="channel-row ${!this.visibleChannels.lead ? 'hidden' : ''}">${this.renderChannelHistory('lead', 'var(--ch-lead)')}</div>
-                 <div class="channel-row ${!this.visibleChannels.alto ? 'hidden' : ''}">${this.renderChannelHistory('alto', 'var(--ch-alto)')}</div>
-                 <div class="channel-row ${!this.visibleChannels.harmonic ? 'hidden' : ''}">${this.renderChannelHistory('harmonic', 'var(--ch-harmonic)')}</div>
-                 <div class="channel-row ${!this.visibleChannels.bass ? 'hidden' : ''}">${this.renderChannelHistory('bass', 'var(--ch-bass)')}</div>
-                 <div class="channel-row ${!this.visibleChannels.rhythm ? 'hidden' : ''}">${this.renderChannelHistory('rhythm', 'var(--ch-rhythm)')}</div>
+                 <div class="channel-row ${!this.visibleChannels.lead ? 'hidden' : ''}" style="--channel-color: var(--ch-lead)">${this.renderChannelHistory('lead')}</div>
+                 <div class="channel-row ${!this.visibleChannels.alto ? 'hidden' : ''}" style="--channel-color: var(--ch-alto)">${this.renderChannelHistory('alto')}</div>
+                 <div class="channel-row ${!this.visibleChannels.harmonic ? 'hidden' : ''}" style="--channel-color: var(--ch-harmonic)">${this.renderChannelHistory('harmonic')}</div>
+                 <div class="channel-row ${!this.visibleChannels.bass ? 'hidden' : ''}" style="--channel-color: var(--ch-bass)">${this.renderChannelHistory('bass')}</div>
+                 <div class="channel-row ${!this.visibleChannels.rhythm ? 'hidden' : ''}" style="--channel-color: var(--ch-rhythm)">${this.renderChannelHistory('rhythm')}</div>
                </div>
              `}
              <div class="fade-overlay" style="left: 20px; width: calc((100% - 40px) * ${fadeInPct/100})"></div>

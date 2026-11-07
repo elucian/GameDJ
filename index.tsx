@@ -20,7 +20,7 @@ import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBac
 import { ThanksDialog } from './components/ThanksDialog';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
-import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseDjLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseLyricsLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 import { inject, track } from '@vercel/analytics';
@@ -145,7 +145,8 @@ function main() {
   (leftSidebar as any).addEventListener('toggle-vocal-dialog', () => {
     vocalDialog.show = !vocalDialog.show;
     vocalDialog.genre = topToolbar.genre;
-    // Show the lyrics the DJ (or you) wrote
+    vocalDialog.musicStyle = topToolbar.musicStyle;
+    // Show the lyrics you typed or generated
     if (liveMusicHelper.lyricsText) vocalDialog.vocalText = liveMusicHelper.lyricsText;
   });
 
@@ -190,7 +191,8 @@ function main() {
 
   (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
     const { genre } = e.detail;
-    const lang: string = e.detail.lang === 'Auto' ? chooseDjLanguage(genre).language : e.detail.lang;
+    // Auto: the style's own language first (Japanese Folk sings Japanese), then the genre's
+    const lang: string = e.detail.lang === 'Auto' ? chooseLyricsLanguage(genre, topToolbar.musicStyle) : e.detail.lang;
     pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
     vocalDialog.generating = true;
     setLyricsBusy(true);
@@ -243,7 +245,7 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('lyrics-set', (e: CustomEvent<string>) => {
-    // Lyrics typed or edited by the user: sung as real words in the dialog's language (Auto keeps the DJ's / genre's)
+    // Lyrics typed or edited by the user: sung as real words in the dialog's language (Auto keeps the one picked for the style)
     const lang = vocalDialog.language;
     if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, lang !== 'Auto' ? lang : undefined, false);
     updateSongDuration();
@@ -251,7 +253,7 @@ function main() {
   });
 
   (vocalDialog as any).addEventListener('voice-lock-changed', (e: CustomEvent<boolean>) => {
-      pdjMidi.setMessage(e.detail ? 'VOICE SETTINGS LOCKED' : 'VOICE SETTINGS UNLOCKED: DJ MAY CHANGE THEM', 'info');
+      pdjMidi.setMessage(e.detail ? 'VOICE SETTINGS LOCKED' : 'VOICE SETTINGS UNLOCKED: DICE MAY CHANGE THEM', 'info');
   });
 
   (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => {
@@ -380,6 +382,7 @@ function main() {
       cancelAutoLoop();
       const genre = (e as CustomEvent<string>).detail;
       rightSidebar.genre = genre;
+      vocalDialog.genre = genre;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
           pdjMidi.setMessage(`GENRE: ${genre.toUpperCase()}`, 'info');
       }
@@ -391,6 +394,7 @@ function main() {
       cancelAutoLoop();
       const style = (e as CustomEvent<string>).detail;
       rightSidebar.musicStyle = style;
+      vocalDialog.musicStyle = style;
       if (!leftSidebar.isShuffling && !leftSidebar.isResetting) {
           pdjMidi.setMessage(`STYLE: ${style.toUpperCase()}`, 'info');
       }
@@ -723,8 +727,9 @@ function main() {
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
   // `keep` + `force`: also in voice mode, swap the voices on every channel except `keep` (locked voice settings)
-  const replaceVocalInstruments = (keep: (keyof InstrumentSet)[] = [], force = false) => {
-      if ((!force && liveMusicHelper.generationMode === 'VOCALIZATION') || rightSidebar.locks.channels) return;
+  // `ignoreLock`: also on locked channels (power button)
+  const replaceVocalInstruments = (keep: (keyof InstrumentSet)[] = [], force = false, ignoreLock = false) => {
+      if ((!force && liveMusicHelper.generationMode === 'VOCALIZATION') || (rightSidebar.locks.channels && !ignoreLock)) return;
       const settings = { ...rightSidebar.settings };
       let changed = false;
       Object.keys(settings).forEach((ch) => {
@@ -742,7 +747,7 @@ function main() {
       if (changed) (rightSidebar as any).auditAndCommit(settings);
   };
 
-  // Voice master mode on: the dice and the DJ put a voice on the solo-voice channel when no channel has one
+  // Voice master mode on: the dice put a voice on the solo-voice channel when no channel has one
   // (Band: alto, solo / duet / quartet. Lyria: VOICE/LEAD, solo / duet).
   const ensureVoiceChannels = () => {
       if (liveMusicHelper.generationMode !== 'VOCALIZATION' || rightSidebar.locks.channels) return;
@@ -894,15 +899,6 @@ function main() {
       }
   };
 
-  // The DJ picked voice channels: set the Voice dialog to match and send the vocal direction
-  const djConfigureVoices = () => {
-      const target = voicesFromChannels(vocalDialog.getVoices());
-      if (!target) return false;
-      vocalDialog.djConfigure(target.solos, target.choir);
-      refreshPromptPanel();
-      return true;
-  };
-
   // The Voice dialog's voices go onto the voice channels as a matching random voice instrument.
   // Returns the channels that got a voice (empty when the dialog has none).
   const applyDialogVoices = (solos: string[], choir: string): (keyof InstrumentSet)[] => {
@@ -931,6 +927,7 @@ function main() {
 
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
+      djStepsDownForVoices('THE DJ DOES NOT CONDUCT VOICES');
       liveMusicHelper.setGenerationMode('VOCALIZATION');
 
       rightSidebar.currentTab = 'Lyria';
@@ -938,8 +935,8 @@ function main() {
       (window as any).applyVoiceKnobSettings();
   });
 
-  // Dice and DJ planning in voice mode: locked voice settings put exactly the dialog's voices on stage (and no
-  // other voices); otherwise a voice is added only when no channel has one.
+  // Dice in voice mode: locked voice settings put exactly the dialog's voices on stage (and no other voices);
+  // otherwise a voice is added only when no channel has one. The DJ never places voices.
   const placeVoices = () => {
       const { solos, choir } = vocalDialog.getVoices();
       if (vocalDialog.locked && liveMusicHelper.generationMode === 'VOCALIZATION' && !rightSidebar.locks.channels && (solos.length > 0 || choir !== 'None')) {
@@ -951,11 +948,38 @@ function main() {
       ensureVoiceChannels();
   };
 
+  // Voice off and primary mode DIVERSITY (DJ activation, power button): voice instruments leave the channels,
+  // the voice tracks are no longer offered and the Voice dialog closes. Lyrics and song title are kept.
+  const voiceOffToDiversity = (ignoreLock = false) => {
+      liveMusicHelper.setGenerationMode('DIVERSITY');
+      leftSidebar.primaryMode = 'DIVERSITY';
+      (window as any).primaryMode = 'DIVERSITY';
+      rightSidebar.voiceEnabled = false;
+      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: false } }));
+      vocalDialog.show = false;
+      replaceVocalInstruments([], true, ignoreLock);
+      refreshPromptPanel();
+  };
+
   (rightSidebar as any).addEventListener('tab-changed', (e: CustomEvent<string>) => {
       // The tab only changes the prompts (orchestra / voices or band). Live takes always stream from the realtime
       // model; Lyria 3.5 is a song model that renderSong() calls on its own, it cannot stream (the take is silent).
       pdjMidi.setMessage(e.detail === 'Lyria' ? 'LYRIA TAB: ORCHESTRA CHANNELS' : 'BAND TAB: BAND CHANNELS', 'info');
   });
+  // The DJ is for real-time music without voices: it never touches the Voice dialog. Activating it turns the voice
+  // off and sets the primary mode to DIVERSITY (from any mode); voice channels leave the stage.
+  const stripVoicesForDj = () => {
+      const was = liveMusicHelper.generationMode;
+      voiceOffToDiversity();
+      if (was !== 'DIVERSITY') pdjMidi.setMessage('DJ: VOICE OFF, MODE DIVERSITY', 'info');
+  };
+  // Voices chosen while the DJ is on (voice mode, Voice dialog, a voice instrument): the DJ steps down
+  const djStepsDownForVoices = (why: string) => {
+      if (!leftSidebar.isConductorActive && !liveMusicHelper.conductorMode) return;
+      deactivateDj();
+      pdjMidi.setMessage(`DJ OFF: ${why}`, 'info');
+  };
+
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
       cancelAutoLoop();
       const active = (e as CustomEvent<boolean>).detail;
@@ -966,6 +990,16 @@ function main() {
       const isLive = liveMusicHelper.playbackState === 'recording' || liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing' || liveMusicHelper.playbackState === 'loading';
       
       if (active) {
+          // Voices the DJ cannot take off the stage (locked channels): it does not start, and changes nothing.
+          // Otherwise activation always turns the voice off and sets the primary mode to DIVERSITY.
+          const voiceOnStage = () => (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
+          if (!(voiceOnStage() && rightSidebar.locks.channels)) stripVoicesForDj();
+          if (voiceOnStage()) {
+              (window as any).isConductorActive = false;
+              deactivateDj();
+              pdjMidi.setMessage('DJ OFF: VOICES ON STAGE (THE DJ DOES NOT CONDUCT VOICES)', 'info');
+              return;
+          }
           const rsLocks = (rightSidebar as any).locks;
           // DJ always uses BAND tab (Band channels)
           rightSidebar.currentTab = 'Band';
@@ -982,9 +1016,8 @@ function main() {
                   rightSidebar.applyDjManifest(keep);
               }
 
-              // The voice mode stays on when the user chose it: the DJ conducts with the voices (as the dice do)
-              replaceVocalInstruments();
-              placeVoices();
+              // The DJ plays real-time music without voices: voice instruments leave the channels and the voice mode ends
+              stripVoicesForDj();
               rightSidebar.finalizeDiceChannels();
 
               const mood = topToolbar.djPickMood();
@@ -1026,6 +1059,7 @@ function main() {
   (leftSidebar as any).addEventListener('mode-changed', ((e: Event) => {
       cancelAutoLoop();
       const mode = (e as CustomEvent<MusicGenerationMode>).detail;
+      if (mode === 'VOCALIZATION') djStepsDownForVoices('THE DJ DOES NOT CONDUCT VOICES');
       (window as any).primaryMode = mode; // Keep global in sync
       liveMusicHelper.setGenerationMode(mode);
       
@@ -1084,13 +1118,13 @@ function main() {
   // manifest or instruments.
   type Mix = [number, number, number, number, number]; // lead, alto, harmonic, bass, rhythm
   const STAGE_MIX: Record<string, Mix> = {
-      acapella: [1, 0.5, 0.4, 0.2, 0],     intro: [0.6, 0.6, 0.9, 0.5, 0.4],  verse: [0.9, 0.7, 0.8, 0.8, 0.7],
+      intro: [0.6, 0.6, 0.9, 0.5, 0.4],  verse: [0.9, 0.7, 0.8, 0.8, 0.7],
       main: [0.9, 0.9, 0.9, 0.9, 0.9],     build: [0.8, 0.8, 0.8, 0.9, 0.9],  chorus: [1, 0.9, 0.9, 1, 1],
       climax: [1, 1, 1, 1, 1],             breakdown: [0.8, 0.6, 0.8, 0.5, 0.3], solo: [1, 0.5, 0.7, 0.8, 0.8],
       outro: [0.6, 0.5, 0.8, 0.4, 0.3]
   };
-  const STAGE_VOLUME: Record<string, number> = { acapella: 0.7, intro: 0.5, outro: 0.5, breakdown: 0.6, build: 0.7, chorus: 0.9, climax: 0.9 };
-  const STAGE_EVOLUTION: Record<string, number> = { acapella: 1, intro: -3, outro: -4, breakdown: 0, build: 2, verse: 1, main: 2, chorus: 5, climax: 6, solo: 3 };
+  const STAGE_VOLUME: Record<string, number> = { intro: 0.5, outro: 0.5, breakdown: 0.6, build: 0.7, chorus: 0.9, climax: 0.9 };
+  const STAGE_EVOLUTION: Record<string, number> = { intro: -3, outro: -4, breakdown: 0, build: 2, verse: 1, main: 2, chorus: 5, climax: 6, solo: 3 };
   const djStageControls = (type: string | undefined, index: number) => {
       const t = type || 'main';
       const volume = STAGE_VOLUME[t] ?? 0.7;
@@ -1179,6 +1213,8 @@ function main() {
       // Sync RightSidebar with the new genre/style before randomizing instruments
       rightSidebar.genre = topToolbar.genre;
       rightSidebar.musicStyle = topToolbar.musicStyle;
+      vocalDialog.genre = topToolbar.genre;
+      vocalDialog.musicStyle = topToolbar.musicStyle;
 
       // 3. Duration and evolution are rolled too, unless the manifest is locked (then the current ones are kept)
       if (!(rightSidebar as any).locks.manifest) {
@@ -1258,6 +1294,8 @@ function main() {
       timeline.resetHistory(true);
       rightSidebar.reset(); 
       pdjMidi.reset(); 
+      // Power: voice off and primary mode DIVERSITY, also on locked channels
+      voiceOffToDiversity(true);
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
       
@@ -1292,6 +1330,7 @@ function main() {
       // A voice just came on stage (preset, locked channels, Voice dialog): the voice becomes the primary mode.
       // Only on the change, so switching the mode off yourself afterwards is respected.
       const voiceOnStage = (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
+      if (voiceOnStage && !hadVoiceOnStage) djStepsDownForVoices('A VOICE IS ON STAGE');
       if (voiceOnStage && !hadVoiceOnStage && liveMusicHelper.generationMode !== 'VOCALIZATION') {
           liveMusicHelper.setGenerationMode('VOCALIZATION');
           pdjMidi.setMessage('VOICE ON STAGE: MODE VOCALIZATION', 'info');
@@ -1358,13 +1397,6 @@ function main() {
       if (take && take.kind === 'live' && take.soundAt === null && e.detail?.type === 'error' && /^API Error/.test(String(e.detail?.text))) {
           failTake('LYRIA REALTIME STOPPED BEFORE THE TAKE STARTED (NOT COUNTED)');
       }
-  }) as EventListener);
-
-  (liveMusicHelper as any).addEventListener('dj-vocal-message', ((e: CustomEvent) => {
-    const { message, stage } = e.detail || {};
-    if (message) {
-      pdjMidi.setMessage(`DJ->LYRA [${stage ? stage.toUpperCase() : 'VOICE'}]: ${message}`, "info");
-    }
   }) as EventListener);
 
   (liveMusicHelper as any).addEventListener('vocal-signal-received', ((e: CustomEvent) => {

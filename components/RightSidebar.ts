@@ -175,12 +175,12 @@ export class RightSidebar extends LitElement {
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
-      --channel-color: #3dffab;
+      --channel-color: var(--accent-color);
     }
     .lira-control.active {
-      border-color: #3dffab;
-      background: rgba(61, 255, 171, 0.1);
-      color: #3dffab;
+      border-color: var(--accent-color);
+      background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+      color: var(--accent-color);
     }
 
     .lira-control input[type="checkbox"].channel-toggle {
@@ -232,7 +232,7 @@ export class RightSidebar extends LitElement {
       transition: opacity 0.2s;
     }
     .channel-group.deactivated {
-      opacity: 0.5;
+      /* solid colours: an off channel is shown by its hollow (transparent) toggle ring, not by fading the whole group */
     }
 
     .label-row {
@@ -270,16 +270,18 @@ export class RightSidebar extends LitElement {
       height: 14px;
       flex-shrink: 0;
       aspect-ratio: 1;
-      border: 1px solid rgba(0,0,0,0.6);
+      /* Always the channel's own colour: a ring when the channel is off (transparent inside), a solid disc when it is on (no glow) */
+      border: 2px solid var(--channel-color);
+      box-sizing: border-box;
       border-radius: 50%;
       cursor: pointer;
       position: relative;
-      background: #2a1b0a;
+      margin: 0;
+      background: transparent;
     }
 
     input[type="checkbox"].channel-toggle:checked {
       background: var(--channel-color);
-      box-shadow: 0 0 12px var(--channel-color);
     }
     
     input[type="checkbox"].channel-toggle:disabled {
@@ -478,6 +480,20 @@ export class RightSidebar extends LitElement {
     }
     .remove-x:hover { color: #ff6666; border-color: #ff6666; }
     .remove-x.blocked { cursor: not-allowed; opacity: 0.5; }
+
+    /* Phones: the sidebar dissolves into the page column (display: contents) so its sections can be
+       placed apart: the master volume meters right below the record bar, the manifest and the sound
+       tracks below the knobs (orders match index.css). */
+    @media (max-width: 700px) {
+      .volume-header, master-volume-panel.volume-box { order: 5; }
+      .section-header:not(.volume-header), master-volume-panel.manifest-box { order: 8; }
+      .sidebar-tabs-container, .content { order: 9; }
+      master-volume-panel, .content { background: var(--surface-color); }
+      .volume-header { border-top: none; }
+      master-volume-panel.volume-box { border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+      master-volume-panel.manifest-box { flex-shrink: 0; }
+      .content { flex: 0 0 auto; overflow: visible; }
+    }
   `;
 
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
@@ -951,8 +967,10 @@ export class RightSidebar extends LitElement {
         <div class="channel-control">
           <div class="row ${isInteractionDisabled ? 'blocked' : ''}">
             <input type="checkbox" class="channel-toggle" .checked=${live(ch.active)} ?disabled=${!ch.instrument} @change=${(e: Event) => this.onActiveChange(key, e)}>
-            <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} tabindex=${isInteractionDisabled ? '-1' : '0'}>
-              ${options.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}
+            <!-- Selection is set on each option (live property), not with select.value: lit sets select.value before the
+                 new options exist, so after a dice roll the box showed blank or a stale instrument -->
+            <select @change=${(e: Event) => this.onInstrumentChange(key, e)} tabindex=${isInteractionDisabled ? '-1' : '0'}>
+              ${options.map((inst: string) => html`<option value=${inst} .selected=${live(inst === ch.instrument)}>${inst}</option>`)}
             </select>
           </div>
           <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Weight: how strongly this track is asked for">

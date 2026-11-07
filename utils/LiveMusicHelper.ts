@@ -34,13 +34,13 @@ const DJ_KNOBS_TRADITIONAL = 4;
 const DJ_KNOBS_REGIONAL = 2;
 // Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
 // The Guidance knob is the single truth: guidance = knob value x 3 (knob 0..2 = guidance 0..6), so an unset knob means 0.
-// While the DJ conducts it turns that knob itself (up to 6 for solos, duets and a cappella), so the knob always shows the real value.
+// While the DJ conducts it turns that knob itself (up to 6 for solos and duets), so the knob always shows the real value.
 const LYRIA_GUIDANCE_MAX = 6;
 // With the mixer channels locked the DJ keeps guidance at least this high (Lyria default is 4.0)
 const LOCKED_GUIDANCE_MIN = 5.2;
 const isGuidanceKnob = (p: { text: string }) => p.text.trim().toLowerCase() === 'guidance';
-// Solo and a cappella sections are the exception to the genre knob maximums: the DJ may go past them when it calls for it.
-const isGenreOverrideStage = (type?: string, formation?: string) => type === 'solo' || type === 'acapella' || formation === 'solo';
+// Solo sections are the exception to the genre knob maximums: the DJ may go past them when it calls for it.
+const isGenreOverrideStage = (type?: string, formation?: string) => type === 'solo' || formation === 'solo';
 // When the user touches a knob the DJ leaves it alone for this long before it may turn it again.
 const USER_KNOB_HOLD_MS = 30000;
 // Knob pairs that pull the music in opposite directions — the DJ never engages both at once.
@@ -321,22 +321,39 @@ export function chooseDjTab(genre: string): 'Lyria' | 'Band' {
     return Math.random() < (LYRIA_GENRES.includes(genre) ? 0.5 : 0.2) ? 'Lyria' : 'Band';
 }
 
-// Language the DJ writes lyrics in: the native language for regional genres, classical/liturgical languages for
-// traditional ones, and the popular languages of the charts for modern music.
+// Lyrics language for the Voice dialog (Auto, and its dice): the native language for regional genres,
+// classical/liturgical languages for traditional ones, and the popular languages of the charts for modern music.
 const GENRE_LANGUAGES: Record<string, string[]> = {
     'African': ['Swahili', 'Zulu'], 'Indian': ['Hindi'], 'Irish': ['Irish Gaelic', 'English'], 'Spanish': ['Spanish'],
     'Oriental': ['Mandarin Chinese', 'Japanese'], 'Romanian': ['Romanian'], 'Western': ['English'], 'Hawaiian': ['Hawaiian'],
     'Classic': ['Italian', 'German', 'Latin'], 'Opera': ['Italian', 'German', 'French'], 'Renascentist': ['Latin', 'Italian'],
     'Victorian': ['English'], 'Spiritual': ['Latin', 'English'], 'Marching': ['English', 'German'], 'Blues': ['English']
 };
+// A style tied to one culture sings in that culture's language, whatever the genre's general list says
+// (Oriental / Japanese Folk is Japanese, never Chinese; Spanish / Bossa Nova is Portuguese). Checked before GENRE_LANGUAGES.
+const STYLE_LANGUAGES: Record<string, string[]> = {
+    // Oriental
+    'Japanese Folk': ['Japanese'], 'Chinese Traditional': ['Mandarin Chinese'], 'Arabic Classical': ['Arabic'],
+    'Turkish Folk': ['Turkish'], 'Balinese Gamelan': ['Indonesian'],
+    // Indian
+    'Hindustani': ['Hindi'], 'Bollywood': ['Hindi'], 'Bhangra': ['Punjabi'], 'Carnatic': ['Tamil'], 'Tabla Solo/Raga': ['Hindi'],
+    // African
+    'Afrobeats': ['Yoruba', 'English'], 'Highlife': ['English'], 'Malian Blues': ['French'], 'Desert Rock': ['French'], 'Marabi/Soweto': ['Zulu'],
+    // Spanish genre: Brazil sings in Portuguese
+    'Bossa Nova': ['Portuguese'],
+    // Irish
+    'Celtic Punk/Rock': ['English'],
+    // Hawaiian
+    'Island Reggae': ['English', 'Hawaiian'],
+    // Classical and sacred
+    'Viennese Waltz': ['German'], 'Baroque Opera': ['Italian'], 'Contemporary Opera': ['English'],
+    'Gregorian Chant': ['Latin'], 'Byzantine Chant': ['Greek'], 'Gospel': ['English'], 'Christmas Carols': ['English', 'Latin'],
+    'Cathedral': ['Latin'], 'Royal Court': ['English', 'Italian'], 'Minstrel Ballad': ['English'], 'Tudor Dance': ['English'], 'Village Festival': ['English']
+};
 const POPULAR_LANGUAGES: Array<[string, number]> = [['English', 60], ['Spanish', 12], ['French', 8], ['Portuguese', 8], ['Korean', 6], ['Italian', 6]];
-// Genres where singing open vowels (Ah, Oh, Ooh) instead of words is a natural choice, with the odds of doing so.
-const VOWEL_ODDS: Record<string, number> = { 'Ambient': 0.7, 'Classic': 0.25, 'Spiritual': 0.25, 'Renascentist': 0.2 };
-// Genres where the DJ sometimes drops the band for an a cappella section, with the odds per performance.
-const ACAPPELLA_ODDS: Record<string, number> = { 'Hip Hop': 0.6, 'Spiritual': 0.4, 'African': 0.35, 'Irish': 0.3, 'Blues': 0.3, 'Opera': 0.25, 'Classic': 0.2 };
 
-export function chooseDjLanguage(genre: string, choirOnly = false): { language: string; vowels: boolean } {
-    const fixed = GENRE_LANGUAGES[genre];
+export function chooseLyricsLanguage(genre: string, style?: string): string {
+    const fixed = (style && STYLE_LANGUAGES[style]) || GENRE_LANGUAGES[genre];
     let language: string;
     if (fixed) language = fixed[Math.floor(Math.random() * fixed.length)];
     else {
@@ -344,11 +361,9 @@ export function chooseDjLanguage(genre: string, choirOnly = false): { language: 
         language = 'English';
         for (const [lang, w] of POPULAR_LANGUAGES) { if ((roll -= w) < 0) { language = lang; break; } }
     }
-    const odds = (VOWEL_ODDS[genre] ?? 0) + (choirOnly ? 0.25 : 0);
-    return { language, vowels: Math.random() < odds };
+    return language;
 }
 
-export const VOWEL_LYRICS = '[Vocalise]\nAh... ah... oh...\nOoh... ah... oh...\nAh-ah... oh-oh... ooh...';
 
 // Lyria takes a scale as a relative major/minor pair; index = pitch class of the major key.
 const LYRIA_SCALES = ['C_MAJOR_A_MINOR', 'D_FLAT_MAJOR_B_FLAT_MINOR', 'D_MAJOR_B_MINOR', 'E_FLAT_MAJOR_C_MINOR', 'E_MAJOR_D_FLAT_MINOR', 'F_MAJOR_D_MINOR',
@@ -379,7 +394,7 @@ export function describeVoice(instrument: string): string {
 }
 
 // Artistic singer profiles, written the way the Lyria prompt guide describes voices (gender, range, timbre, delivery).
-// The DJ picks one at random per voice, so every song gets its own singer.
+// One is picked at random per voice, so every song gets its own singer.
 const VOICE_PERSONAS: Record<string, string[]> = {
     Soprano: ['female soprano lead vocal, clear crystalline timbre, agile soaring delivery', 'female soprano lead vocal, airy breathy tone, gentle vibrato',
         'female soprano lead vocal, bright bell-like voice, expressive phrasing'],
@@ -491,25 +506,25 @@ export class LiveMusicHelper extends EventTarget {
   private djPersonality: DjPersonality | null = null;
   private lyricBlocks: { label: string; lines: string }[] = [];
   private lyricsPrompt = '';
-  /** The lyrics as written (by the DJ or the user), so the Voice dialog can show them. */
+  /** The lyrics as written in the Voice dialog (typed or generated). */
   public lyricsText = '';
-  /** How strongly the voices sing (0 soft .. 1 powerful). The DJ moves it from section to section. */
+  /** How strongly the voices sing (0 soft .. 1 powerful). */
   public voiceIntensity = 0.7;
   /** Lyria temperature: 0.0 to 3.0, default 1.1. Set from the DJ dialog. */
   private temperature = 1.1;
   public setTemperature(value: number) { this.temperature = Math.round(Math.max(0, Math.min(3, value)) * 10) / 10; this.scheduleRefresh(); }
   private static readonly STAGE_GUIDANCE: Record<string, number> = {
       intro: 3.5, outro: 3.5, breakdown: 4.0, build: 4.5, verse: 4.5, main: 4.5, groove: 4.5, percussion: 4.5,
-      chorus: 5.0, climax: 5.0, solo: 5.6, duet: 5.6, trio: 5.3, acapella: 6.0
+      chorus: 5.0, climax: 5.0, solo: 5.6, duet: 5.6, trio: 5.3
   };
-  /** Where the DJ wants guidance for the current section: tight formations (solo, duet, a cappella) need the model to obey strictly. */
+  /** Where the DJ wants guidance for the current section: tight formations (solo, duet) need the model to obey strictly. */
   private djGuidanceTarget(): number {
       const stage = this.currentPlan?.[this.currentPlanIdx];
       let g = LiveMusicHelper.STAGE_GUIDANCE[stage?.type || 'main'] ?? 4.5;
       if (stage && (stage.formation === 'solo' || stage.formation === 'duet')) g = Math.max(g, 5.6);
       if (this.currentVocalSignal) g += 0.4;
       // The genre profile has the last word: guidance (knob x 3) stays inside the genre's Guidance range,
-      // except in solo and a cappella sections where the DJ may override the genre maximum
+      // except in solo sections where the DJ may override the genre maximum
       const range = this.genreProfile()['Guidance'];
       if (range) g = Math.max(range[0] * 3, isGenreOverrideStage(stage?.type, stage?.formation) ? g : Math.min(range[1] * 3, g));
       // Locked instruments: the model must stick to the selected instruments, so the DJ raises guidance above the
@@ -537,14 +552,6 @@ export class LiveMusicHelper extends EventTarget {
       this.voiceIntensity = Math.max(0, Math.min(1, value));
       this.dispatchEvent(new CustomEvent('voice-intensity-changed', { detail: this.voiceIntensity }));
       this.scheduleRefresh();
-  }
-  private static readonly STAGE_VOICE_INTENSITY: Record<string, number> = {
-      intro: 0.3, outro: 0.3, breakdown: 0.4, build: 0.6, verse: 0.6, main: 0.65, groove: 0.5, percussion: 0.5,
-      solo: 0.75, duet: 0.7, trio: 0.75, chorus: 0.95, climax: 1.0, acapella: 0.9
-  };
-  private djVoiceIntensityFor(type: string | undefined) {
-      const base = LiveMusicHelper.STAGE_VOICE_INTENSITY[type || 'main'] ?? 0.65;
-      this.setVoiceIntensity(base + (Math.random() * 0.1 - 0.05));
   }
   private voiceIntensityPhrase(): string {
       const v = this.voiceIntensity;
@@ -579,7 +586,6 @@ export class LiveMusicHelper extends EventTarget {
 
   private currentVocalSignal: string | null = null;
   private vocalSignalTimer: number | null = null;
-  private lastDjVocalMessageTime = 0;
   private conductorActivationTime = 0;
 
   public isLiraMode = false;
@@ -589,7 +595,7 @@ export class LiveMusicHelper extends EventTarget {
       return ({ lead: 'lead melody', alto: 'harmony accompaniment', harmonic: 'orchestral backing', bass: 'brass', rhythm: 'percussion' } as Record<ChannelKey, string>)[k];
   }
 
-  /** The solo voices (Soprano, Alto, Tenor, Baritone) chosen in the Voice dialog or by the DJ. Each new cast gets new random singers. */
+  /** The solo voices (Soprano, Alto, Tenor, Baritone) chosen in the Voice dialog. Each new cast gets new random singers. */
   private voiceCast: { solos: string[] } = { solos: [] };
   private voicePersonas = new Map<string, string>();
   public setVoiceCast(solos: string[]) {
@@ -806,7 +812,7 @@ export class LiveMusicHelper extends EventTarget {
       this.setInstruments(this.instruments);
   }
   
-  /** Store the lyrics the DJ will cue section by section (real words only, or open vowels). */
+  /** Store the lyrics from the Voice dialog (real words only, or open vowels). */
   public setLyrics(text: string, language?: string, vowelsOnly = false) {
       this.lyricsText = text;
       if (language) this.lyricsLanguage = language;
@@ -820,7 +826,7 @@ export class LiveMusicHelper extends EventTarget {
           else lines.push(l);
       });
       flush();
-      // Lyria cannot follow lyrics line by line, so the DJ hands over the essentials once, at the start:
+      // Lyria cannot follow lyrics line by line, so only the essentials are handed over once, at the start:
       // the language plus the opening lines, and lets Lyria shape the singing itself.
       const opening = (this.lyricBlocks.find(b => /chorus|hook|refrain/.test(b.label)) ?? this.lyricBlocks[0])?.lines ?? '';
       // Lyria RealTime cannot sing given words: quoted lyric lines only come out as garbled syllables (noise),
@@ -828,28 +834,6 @@ export class LiveMusicHelper extends EventTarget {
       this.lyricsPrompt = vowelsOnly || !opening
           ? 'wordless vocalise, ah and ooh'
           : `sung in ${this.lyricsLanguage}, verse and chorus song structure`;
-  }
-
-  /**
-   * Before the baton is raised: the DJ writes lyrics (or a vowel vocalise). The language is `fixedLanguage` when the
-   * Voice dialog sets one, else the DJ picks it for the genre.
-   */
-  public async djPrepareLyrics(style: string, mood: string, fixedLanguage?: string): Promise<{ text: string; language: string; vowels: boolean }> {
-      const choirOnly = Object.values(this.instruments).every(ch => !ch.active || !isVocalInstrument(ch.instrument) || ch.instrument.toLowerCase().includes('choir'));
-      const pick = chooseDjLanguage(this.genre, choirOnly);
-      // A language set in the dialog means real words in that language, never a vowel vocalise
-      const language = fixedLanguage || pick.language;
-      const vowels = fixedLanguage ? false : pick.vowels;
-      let text = VOWEL_LYRICS;
-      if (!vowels) {
-          // Don't keep the DJ waiting forever if the lyrics service is slow
-          const timeout = new Promise<string>(r => setTimeout(() => r('Error: timeout'), 20000));
-          const written = await Promise.race([this.generateLyrics(this.genre, language, 0, 0, undefined, style, mood), timeout]);
-          text = written.startsWith('Error') || written.startsWith('Could not') ? VOWEL_LYRICS : written;
-      }
-      const usedVowels = text === VOWEL_LYRICS;
-      this.setLyrics(text, language, usedVowels);
-      return { text, language, vowels: usedVowels };
   }
 
   public setDjPersonality(personality: DjPersonality | null) { this.djPersonality = personality; }
@@ -1162,166 +1146,6 @@ Prompt: ${text}`
       return names.length === 1 ? `solo ${list}, unaccompanied` : `${size} ${list} only${leadHint}`;
   }
 
-  public getActiveVocalDetails() {
-      const activeVocals: string[] = [];
-      let hasFemale = false;
-      let hasMale = false;
-      let hasChoir = false;
-      let hasGirl = false;
-      let hasBoy = false;
-      let hasRapper = false;
-
-      Object.values(this.instruments).forEach(ch => {
-          if (!ch.active || ch.visible === false || !ch.instrument) return;
-          if (isVocalInstrument(ch.instrument)) {
-              activeVocals.push(ch.instrument);
-              const lower = ch.instrument.toLowerCase();
-              if (lower.includes('female')) hasFemale = true;
-              if (lower.includes('male') && !lower.includes('female')) hasMale = true;
-              if (lower.includes('rapper') || lower.includes('mc ')) { hasMale = true; hasRapper = true; }
-              if (lower.includes('choir') || lower.includes('chant') || lower.includes('a cappella')) hasChoir = true;
-              if (lower.includes('girl')) hasGirl = true;
-              if (lower.includes('boy') || lower.includes('bou')) hasBoy = true;
-          }
-      });
-
-      return {
-          activeVocals,
-          hasAny: activeVocals.length > 0,
-          hasFemale,
-          hasMale,
-          hasChoir,
-          hasGirl,
-          hasBoy,
-          hasRapper
-      };
-  }
-
-  private getVocalStyleHint(genre: string): string {
-      const g = genre.toLowerCase();
-      if (g.includes('indian')) return 'in a traditional Indian Hindustani or Carnatic style';
-      if (g.includes('irish') || g.includes('celtic')) return 'in a traditional Irish or Celtic folk style';
-      if (g.includes('spanish') || g.includes('flamenco')) return 'in a traditional Spanish or Flamenco style';
-      if (g.includes('romanian')) return 'in a traditional Romanian or Balkan style';
-      return 'in a natural authentic style';
-  }
-
-  public generateDjVocalSimulationMessage(stageName?: string): string {
-      const details = this.getActiveVocalDetails();
-      if (!details.hasAny) return '';
-
-      const stage = (stageName || this.currentStatusMessage || '').toLowerCase();
-      const isClimax = stage.includes('chorus') || stage.includes('climax') || stage.includes('drop') || stage.includes('peak');
-      const isIntro = stage.includes('intro') || stage.includes('warmup');
-      const isOutro = stage.includes('outro') || stage.includes('fade');
-      const styleHint = this.getVocalStyleHint(this.genre);
-
-      const isAcappella = stage.includes('cappella');
-      const cues: string[] = [];
-      const langHint = ` Sung in ${this.lyricsLanguage}.`;
-      const addCue = (msg: string) => cues.push(`${msg} ${styleHint}`);
-
-      if (isAcappella) {
-          const rap = details.hasRapper || this.genre === 'Hip Hop';
-          const cue = rap
-              ? 'A CAPPELLA RAP: drums and instruments drop out completely, only the rapper with tight rhythmic flow, breath accents and vocal percussion'
-              : 'A CAPPELLA: all instruments drop out completely, only unaccompanied human voices in natural harmony';
-          return `${cue}.${langHint}`;
-      }
-      if (details.hasRapper) {
-          addCue(isClimax ? 'RAP VOCAL: Hard-hitting hook with layered ad-libs and crowd-style shouts' : isIntro ? 'RAP VOCAL: Low murmured spoken-word intro setting the scene' : isOutro ? 'RAP VOCAL: Slowed-down final bars fading into ad-libs' : 'RAP VOCAL: Confident rhythmic verse with tight internal rhymes and on-beat flow');
-      }
-
-      if (details.hasFemale) {
-          if (isClimax) {
-              addCue("FEMALE VOCAL: Soaring emotional chorus hook with powerful belt, expressive vibrato, and melodic runs");
-              addCue("FEMALE VOCAL: High expressive vocal climax with passionate dynamics and lyrical storytelling");
-          } else if (isIntro) {
-              addCue("FEMALE VOCAL: Atmospheric melodic humming, soft breathing dynamics, and intimate vocal entrance");
-              addCue("FEMALE VOCAL: Gentle vocalise introduction with delicate melodic ornaments");
-          } else if (isOutro) {
-              addCue("FEMALE VOCAL: Graceful sustained emotional tones, fading melodic vibrato, and gentle vocal resolution");
-              addCue("FEMALE VOCAL: Soft acoustic vocal ad-libs gently resolving the melody");
-          } else {
-              addCue("FEMALE VOCAL: Emotive lead verses with natural human vocal resonance, clear tone, and soulful phrasing");
-              addCue("FEMALE VOCAL: Lyrical vocal storytelling singing expressive syllables and melodic hooks");
-              addCue("FEMALE VOCAL: Warm chest-to-head voice transitions with authentic human expression");
-          }
-      }
-
-      if (details.hasMale) {
-          if (isClimax) {
-              addCue("MALE VOCAL: Soaring tenor climax with impassioned chest resonance and powerful melodic delivery");
-              addCue("MALE VOCAL: Dramatic vocal hook with dynamic energy, natural vibrato, and full acoustic presence");
-          } else if (isIntro) {
-              addCue("MALE VOCAL: Low resonant vocal hums, deep chest tone, and subtle melodic entrance");
-              addCue("MALE VOCAL: Atmospheric acoustic vocal murmurs establishing the song motif");
-          } else if (isOutro) {
-              addCue("MALE VOCAL: Warm baritone sustained notes resolving the harmonic progression gracefully");
-              addCue("MALE VOCAL: Quiet vocal hums and gentle acoustic fade");
-          } else {
-              addCue("MALE VOCAL: Charismatic baritone/tenor verses with rich acoustic chest warmth and clear diction");
-              addCue("MALE VOCAL: Soulful melodic phrasing with natural vocal inflection and emotive resonance");
-              addCue("MALE VOCAL: Storytelling vocal delivery singing expressive lyrical lines");
-          }
-      }
-
-      if (details.hasGirl) {
-          if (isClimax) {
-              addCue("GIRL VOCAL: Clear crystalline soprano soaring on the chorus with pure, bright resonance");
-              addCue("GIRL VOCAL: High sweet melodic refrain carrying radiant emotional energy");
-          } else {
-              addCue("GIRL VOCAL: Delicate young girl soloist singing clear, innocent melodies with pure acoustic timbre");
-              addCue("GIRL VOCAL: Sweet crystalline vocal refrains with bright pitch accuracy and gentle expression");
-              addCue("GIRL VOCAL: Gentle girl solo voice carrying the primary theme with acoustic purity");
-          }
-      }
-
-      if (details.hasBoy) {
-          if (isClimax) {
-              addCue("BOY VOCAL: Soaring treble soloist reaching bell-like acoustic peaks with sacred clarity");
-              addCue("BOY VOCAL: Angelic boy soprano singing impassioned melodic lines with pure resonance");
-          } else {
-              addCue("BOY VOCAL: Angelic boy treble soloist with sacred acoustic clarity, singing pure thematic motifs");
-              addCue("BOY VOCAL: Pure treble soloist vocalizing melodic lines with pristine acoustic warmth");
-              addCue("BOY VOCAL: Clear bell-like boy soprano melody with delicate breath phrasing");
-          }
-      }
-
-      if (details.hasChoir) {
-          if (isClimax) {
-              addCue("CHOIR: Majestic fortissimo choral swell with rich 4-part harmonies and triumphant cathedral polyphony");
-              addCue("CHOIR: Powerful full choir harmonic explosion supporting the melodic climax");
-          } else if (isIntro) {
-              addCue("CHOIR: Ethereal pianissimo vocal pads and gentle cathedral choir hums");
-              addCue("CHOIR: Subtle atmospheric chanting and mystical choral hums entering softly");
-          } else {
-              addCue("CHOIR: Lush multi-part choir harmonies with expansive acoustic polyphony and vocal backing beds");
-              addCue("CHOIR: Cathedral choral ensemble singing rich harmonic counterpoint and sacred chants");
-              addCue("CHOIR: Expressive backing choir vocal harmonies enriching the acoustic texture");
-          }
-      }
-
-      if (details.hasFemale && details.hasChoir) {
-          addCue("FEMALE + CHOIR: Emotive female lead vocal soaring passionately over lush cathedral backing choir harmonies");
-          addCue("FEMALE + CHOIR: Dynamic call-and-response between female soloist and rich polyphonic choir");
-      }
-      if (details.hasMale && details.hasChoir) {
-          addCue("MALE + CHOIR: Resonant male lead vocal supported by expansive 4-part choir harmonies and choral swells");
-          addCue("MALE + CHOIR: Dramatic male soloist singing primary melody with majestic choral counterpoint");
-      }
-      if (details.hasMale && details.hasFemale) {
-          addCue("MALE + FEMALE DUET: Soulful vocal duet with interlocking harmonies, expressive call-and-response, and dynamic passion");
-      }
-
-      if (cues.length === 0) {
-          addCue(`VOICE SIMULATION: Authentic human singing voices for ${details.activeVocals.join(' and ')} with natural vocal cords and expressive dynamics`);
-      }
-
-      const chosen = cues[Math.floor(Math.random() * cues.length)];
-      return `${chosen}${langHint}`;
-  }
-
   public toggleSolo(active: boolean) { this.soloMuted = !active; this.scheduleRefresh(); }
   public toggleChoir(active: boolean) { this.choirMuted = !active; this.scheduleRefresh(); }
 
@@ -1547,13 +1371,6 @@ Prompt: ${text}`
 
       // 2. Build Stages
       let currentTime = 0;
-      // Sometimes the DJ drops the band for one a cappella section (rap, gospel, folk...) when a voice is on stage
-      const hasVoice = availableKeys.some(k => isVocalInstrument(this.instruments[k].instrument));
-      if (hasVoice && story.length >= 4 && Math.random() < (ACAPPELLA_ODDS[this.genre] ?? 0)) {
-          const candidates = story.map((seg, i) => ({ seg, i })).filter(({ seg, i }) => i > 0 && i < story.length - 1 && ['verse', 'main', 'breakdown', 'percussion', 'groove', 'build'].includes(seg.type));
-          const pick = candidates[Math.floor(Math.random() * candidates.length)];
-          if (pick) story[pick.i] = { ...pick.seg, name: 'A Cappella', type: 'acapella' };
-      }
       story.forEach(seg => {
           // Normalize duration to avoid rounding gaps, though addStage handles timing
           const dur = seg.durationPct * totalSec;
@@ -1842,7 +1659,6 @@ Prompt: ${text}`
       'trio':       { 'Groove': +0.3, 'Presence': +0.2, 'Organic': +0.2, 'Ornamentation': +0.1 },
       'breakdown':  { 'Density': -0.4, 'Space': +0.4, 'Atmosphere': +0.4, 'Dynamics': -0.3, 'Brightness': -0.3, 'Attack': -0.3 },
       'groove':     { 'Groove': +0.5, 'Density': +0.3, 'Attack': +0.2, 'Dynamics': +0.2, 'Staccato': +0.2 },
-      'acapella':   { 'Presence': +0.5, 'Organic': +0.3, 'Space': +0.2, 'Density': -0.3, 'Groove': +0.2 },
       'outro':      { 'Space': +0.5, 'Atmosphere': +0.5, 'Dynamics': -0.4, 'Density': -0.4, 'Brightness': -0.3, 'Glide': +0.3 }
   };
 
@@ -1854,7 +1670,7 @@ Prompt: ${text}`
       const stageMod = LiveMusicHelper.STAGE_MODIFIERS[type] || {};
 
       // Genre default + stage modifier, always inside the genre's own min/max (the genre range is the ceiling);
-      // solo and a cappella sections may override the genre maximum (up to the knob's full scale)
+      // solo sections may override the genre maximum (up to the knob's full scale)
       const override = isGenreOverrideStage(type);
       // The style on the main bar shifts the genre profile: its default and its limits move together
       const styleAdj = LiveMusicHelper.STYLE_KNOB_ADJUST[this.style] || {};
@@ -1910,15 +1726,8 @@ Prompt: ${text}`
       };
       const melody = availableKeys.includes('lead') ? 'lead' : (availableKeys.includes('alto') ? 'alto' : melodic[0]);
 
-      // Voice channels: the DJ brings the voice in where it makes harmonious music and rests it elsewhere
-      const vocalKeys = availableKeys.filter(k => isVocalInstrument(this.instruments[k].instrument));
-
       let lineup: ChannelKey[];
       switch (type) {
-          case 'acapella':
-              // Unaccompanied voices only
-              lineup = vocalKeys.slice(0, 2);
-              break;
           case 'intro':
           case 'outro':
               // Sparse: one harmonic/melodic voice opens or closes the piece
@@ -1957,21 +1766,6 @@ Prompt: ${text}`
               lineup = lineupOf([melody], 5);
               break;
       }
-      if (vocalKeys.length > 0 && type !== 'acapella') {
-          const voiceIn = ['verse', 'main', 'chorus', 'climax', 'solo', 'duet', 'trio', 'build'].includes(type);
-          const voiceOut = ['percussion', 'groove', 'breakdown'].includes(type);
-          if (voiceIn) {
-              const voice = vocalKeys.find(k => lineup.includes(k)) ?? vocalKeys[Math.floor(Math.random() * vocalKeys.length)];
-              if (!lineup.includes(voice)) {
-                  if (lineup.length > 1 || Math.random() < 0.5) lineup[lineup.length - 1] = voice;
-              }
-              // The voice leads the melody in sung sections
-              if (['verse', 'main', 'chorus', 'climax'].includes(type) && lineup.includes(voice)) lineup = [voice, ...lineup.filter(k => k !== voice)];
-          } else if (voiceOut) {
-              const without = lineup.filter(k => !vocalKeys.includes(k));
-              if (without.length > 0) lineup = without;
-          }
-      }
       if (lineup.length === 0) lineup = [availableKeys[0]];
 
       const formation = (['solo', 'duet', 'trio', 'quartet', 'full'] as Formation[])[Math.min(lineup.length, 5) - 1];
@@ -1993,10 +1787,10 @@ Prompt: ${text}`
           stage.channelWeights[k] = k === featured ? 1.0 : FORMATION_SUPPORT_WEIGHT[formation];
       });
 
-      const formationLabel = type === 'acapella' ? 'A Cappella' : formation === 'solo'
+      const formationLabel = formation === 'solo'
           ? `${this.instruments[featured].instrument} Solo`
           : formation === 'full' ? 'Full Band' : formation.charAt(0).toUpperCase() + formation.slice(1);
-      stage.stageName = type === 'acapella' ? `${name} · A Cappella` : `${name} · ${formationLabel}`;
+      stage.stageName = `${name} · ${formationLabel}`;
 
       this.currentPlan.push(stage);
   }
@@ -2038,29 +1832,8 @@ Prompt: ${text}`
           this.synchronizeInstrumentsWithStage();
 
           this.dispatchEvent(new CustomEvent('conductor-stage-changed', { detail: { name: currentStage.stageName, isAi: false, type: currentStage.type, index: this.currentPlanIdx } }));
-          if (this.isVocalInstrumentActive()) this.djVoiceIntensityFor(currentStage.type);
           this.interpolateParameters();
           this.scheduleRefresh();
-
-          // When voice channels are active, DJ immediately cues Lyria with a vocal direction for this stage!
-          if (this.isVocalInstrumentActive()) {
-              this.lastDjVocalMessageTime = Date.now();
-              const stageVocalMsg = this.generateDjVocalSimulationMessage(currentStage.stageName);
-              if (stageVocalMsg) {
-                  this.sendVocalSignal(stageVocalMsg, 6000);
-                  this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { message: stageVocalMsg, stage: currentStage.stageName } }));
-              }
-          }
-      }
-
-      // Continuous vocal guidance: DJ periodically sends human voice simulation messages to Lyria
-      if (this.isVocalInstrumentActive() && (Date.now() - this.lastDjVocalMessageTime > 9000) && !this.currentVocalSignal) {
-          this.lastDjVocalMessageTime = Date.now();
-          const vocalMsg = this.generateDjVocalSimulationMessage();
-          if (vocalMsg) {
-              this.sendVocalSignal(vocalMsg, 5000);
-              this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { message: vocalMsg } }));
-          }
       }
       this.interpolateParameters();
   }

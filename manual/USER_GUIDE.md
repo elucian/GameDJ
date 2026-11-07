@@ -18,6 +18,8 @@ GameDJ is a live AI music workstation built on Google's Lyria. You choose a genr
 | Right sidebar | Channels (instruments), Manifest switches, Duration, Evolution, Volume |
 | Bottom | Timeline with fades and seeking |
 
+On a phone (screens up to 700 px wide) the page is one scrolling column: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record), which stay at the top while you scroll; the master volume meters and the timeline; the Mode, Export format and Download buttons; the displays and knobs; the song manifest; and the sound tracks.
+
 ## 3. Choosing the music
 
 - **Genre** is grouped as Modern (Hip Hop, Jazz, Pop, Blues, Electronic, Rock, Ambient, Gaming), Traditional (Classic, Opera, Marching, Renascentist, Victorian, Spiritual) and Regional (African, Indian, Irish, Spanish, Oriental, Romanian, Western, Hawaiian).
@@ -50,16 +52,16 @@ The right sidebar has two tabs with five channels each:
 
 - **Record** starts a new take (it overwrites the previous one). **Stop** ends it. **Play Recording** replays it, including the automation of knobs and channels. **Loop** replays automatically after 5 seconds, and a finished recording auto-loops after a 20-second countdown unless you touch something.
 - **Duration** sets the target length. **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
-- **Mode**: Quality, Diversity or Vocalization. Vocalization is selected automatically when a voice channel is used.
+- **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when the DJ is off and you have songs left in your quota. Vocalization is selected automatically when a voice channel is used.
 - **Export** downloads the recording (choose the format with the format button).
 
 ## 6. The Dice (Random)
 
-The dice button (only while stopped) picks genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres.
+The dice button (only while stopped) picks genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked).
 
 ## 7. The knobs
 
-Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. The **Density** and **Brightness** knobs control Lyria's real density and brightness settings. The **Guidance** knob is Lyria's overall guidance (how strictly it follows the prompts): guidance = knob value x 3, so a knob that is not set means guidance 0, and full is 6. While the DJ conducts it turns this knob itself (up to 6 for solos, duets and a cappella sections, lower for intros), so the knob always shows the real value; if you touch it, it is yours for 30 seconds. Guidance 0 lets Lyria follow your prompts loosely, so raise the knob for a tighter result. Higher guidance can make changes sound more abrupt. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
+Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so on) on top of the style. Turn them by dragging or with the arrow keys. The **Density** and **Brightness** knobs control Lyria's real density and brightness settings. The **Guidance** knob is Lyria's overall guidance (how strictly it follows the prompts): guidance = knob value x 3, so a knob that is not set means guidance 0, and full is 6. While the DJ conducts it turns this knob itself (up to 6 for solos and duets, lower for intros), so the knob always shows the real value; if you touch it, it is yours for 30 seconds. Guidance 0 lets Lyria follow your prompts loosely, so raise the knob for a tighter result. Higher guidance can make changes sound more abrupt. Keep a few active rather than all of them; contradictory pairs (for example Density and Space) work against each other.
 
 ## 8. The DJ
 
@@ -81,13 +83,14 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 **Your hands win.** When you turn a knob yourself, the DJ leaves it alone for **30 seconds** before touching it again.
 
-## 9. Voices, lyrics and a cappella
+## 9. Voices and lyrics
 
 - The **Voice** button opens the Voice dialog: the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
-- When the DJ activates a voice channel it configures this dialog itself and writes lyrics in a language that suits the genre: the native language for regional music (for example Hindi, Swahili, Romanian, Hawaiian), Latin, Italian or German for traditional, and popular languages (mostly English) for modern. Lyrics are always real words, or open vowels (Ah, Oh, Ooh), never made-up syllables.
-- During play the DJ cues the next lines at each section, and turns the voice on or off where it fits the arrangement.
-- In some genres (Hip Hop most of all) the DJ occasionally drops the band for an **a cappella** section with only the voices.
-- You can type or edit lyrics in the dialog; press Apply and the DJ will sing them.
+- The dialog's dice (🎲) randomize what is not locked: the voices (unless the dialog's lock is on) and the language (unless its own lock is on). They keep the lyrics and the song title, and only reach the channels when you press Apply.
+- The lyrics language has its own lock next to the dropdown. Unlocked, the dialog's dice pick a language that suits the style (Japanese for Japanese Folk) and show it in the dropdown; locked, the dice keep your language. Generate never changes the dropdown: it writes in the language shown (with Auto, a language that suits the style).
+- The DJ is for real-time music without voices: it never changes this dialog. Starting the DJ turns the voice off (voice instruments leave the channels) and sets the primary mode to Diversity, whatever mode was on; choosing voices (Vocalization mode, Apply in this dialog, or a voice instrument) while the DJ is on turns the DJ off. With locked channels that hold a voice, the DJ does not start.
+- With the language on Auto, lyrics are written in a language that suits the style and genre. A style tied to one culture always uses its own language (Japanese Folk is sung in Japanese, Chinese Traditional in Mandarin, Bossa Nova in Portuguese, Bhangra in Punjabi); otherwise the native language for regional music (for example Hindi, Swahili, Romanian, Hawaiian), Latin, Italian or German for traditional, and popular languages (mostly English) for modern. Lyrics are always real words, or open vowels (Ah, Oh, Ooh), never made-up syllables.
+- You can type or edit lyrics in the dialog; press Apply to use them.
 
 ## 10. DJ Presets (personalities)
 
@@ -98,9 +101,9 @@ The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft
 - **Repeat a take:** the SEED chip (next to VOLUME) shows AUTO. Click it to lock the current seed: the next recordings reuse it, so with the same settings you get a similar performance. Click again to go back to a fresh seed each time.
 
 - Lock the things you like, then Dice the rest.
-- For rap, choose Hip Hop, use a Band channel with a rapper, then start the DJ before recording so it can write lyrics and plan a cappella sections.
+- For rap, choose Hip Hop, put a rapper on a Band channel, and generate lyrics in the Voice dialog (without the DJ).
 - If nothing plays, check the API key and that audio was allowed by clicking the page.
-- **Engine Reset** (power button) stops everything and restores defaults.
+- **Engine Reset** (power button) stops everything and restores defaults; it turns the voice off (also on locked channels) and sets the mode to Diversity. Lyrics and song title are kept.
 
 ## 12. Other documents
 

@@ -1,21 +1,27 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
+import { chooseLyricsLanguage } from '../utils/LiveMusicHelper';
 
 @customElement('vocal-dialog')
 export class VocalDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) show = false;
   @property({ type: String }) genre = 'Pop';
+  /** Style of the main bar: the voice dice pick the lyrics language for it (Japanese Folk sings Japanese). */
+  @property({ type: String }) musicStyle = '';
   
-  /** Lyrics the DJ (or you) wrote for this song: real words in the genre's language, or open vowels. */
+  /** Lyrics you typed or generated for this song: real words in the chosen language, or open vowels. */
   @property({ type: String }) vocalText = '';
   @property({ type: Boolean }) generating = false;
   /** The song's name: becomes the file name when the song is downloaded. */
   @property({ type: String }) songName = '';
   @state() private tab: 'voices' | 'lyrics' = 'voices';
   @state() private lyricsLang = 'Auto';
-  /** Locked: the DJ keeps these voices and this language, and only writes lyrics when there are none yet. */
+  /** Language locked: the voice dice keep the language. Unlocked: the dice pick one that suits the style. Generate never changes it. */
+  @state() private langLocked = false;
+  /** Locked: the dice put exactly these voices on stage. (The DJ never uses voices or this dialog.) */
   @property({ type: Boolean }) locked = false;
-  private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Romanian', 'Swahili', 'Irish Gaelic', 'Hawaiian'];
+  private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Punjabi', 'Tamil', 'Arabic', 'Turkish', 'Indonesian', 'Greek', 'Romanian', 'Swahili', 'Zulu', 'Yoruba', 'Irish Gaelic', 'Hawaiian'];
   @state() private activeSoloVoices = {
     'Soprano': false,
     'Alto': false,
@@ -108,6 +114,11 @@ export class VocalDialog extends LitElement {
       flex: 1; min-width: 0; padding: 6px; border-radius: 6px; background: var(--bg-color);
       color: var(--text-color); border: 1px solid var(--border-color); font-size: 12px;
     }
+    .lang-lock {
+      flex: 0 0 auto; width: 28px; padding: 0; border-radius: 6px; border: 1px solid var(--border-color);
+      background: var(--bg-color); color: var(--text-color); font-size: 12px; cursor: pointer;
+    }
+    .lang-lock.active { border-color: var(--accent-color); background: var(--accent-color); color: #000; }
     .generate-btn, .copy-btn { flex: 1; padding: 6px 10px; background: #0b4c0b; color: #fff; cursor: pointer; border: none; border-radius: 6px; font-size: 12px; }
     .generate-btn:hover, .copy-btn:hover { background: #1e601e; }
     .generate-btn[disabled], .copy-btn[disabled] { cursor: not-allowed; background: #333; }
@@ -172,11 +183,11 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
-            <button class="close-x-btn" style="right: 160px" @click=${this.randomizeFormation} title="Randomize Formation">🎲</button>
+            <button class="close-x-btn" style="right: 160px" @click=${this.randomizeFormation} title="Randomize what is not locked (voices, language); keeps lyrics and title">🎲</button>
             <button class="close-x-btn" style="right: 130px" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
             <button class="close-x-btn" style="right: 100px" @click=${this.saveSongFile} title="Download Settings">⬇</button>
             <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" style="right: 70px" @click=${() => this.toggleLock()}
-                    title=${this.locked ? 'Voice settings locked: the DJ keeps your voices and language, and writes lyrics only when there are none' : 'Lock the voice settings so the DJ cannot change them'}>${this.locked ? '🔒' : '🔓'}</button>
+                    title=${this.locked ? 'Voice settings locked: the dice put exactly these voices on stage' : 'Lock the voice settings so the dice use exactly these voices'}>${this.locked ? '🔒' : '🔓'}</button>
             <input type="file" id="uploadInput" style="display:none" @change=${this.loadSongFile} accept=".json">
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
             <h3>Voice Configuration</h3>
@@ -218,22 +229,33 @@ export class VocalDialog extends LitElement {
       this.show = false;
   }
 
+  /**
+   * Dice: randomizes what is not locked. The voices (solo formation and choir) change unless the voice settings are
+   * locked; the language changes unless the language is locked. Lyrics and song title are never touched, and the
+   * voice mode is not switched on or off (the formation only reaches the channels with Apply).
+   */
   private randomizeFormation() {
-      // Randomize individual voices (the grid items)
-      const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
-      // Ensure at least one voice is selected
-      let anySelected = false;
-      voices.forEach(v => {
-          this.activeSoloVoices[v] = Math.random() > 0.5;
-          if (this.activeSoloVoices[v]) anySelected = true;
-      });
-      if (!anySelected) this.activeSoloVoices[voices[Math.floor(Math.random() * voices.length)]] = true;
+      if (!this.locked) {
+          // Randomize individual voices (the grid items), at least one selected
+          const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
+          const next = { ...this.activeSoloVoices };
+          let anySelected = false;
+          voices.forEach(v => {
+              next[v] = Math.random() > 0.5;
+              if (next[v]) anySelected = true;
+          });
+          if (!anySelected) next[voices[Math.floor(Math.random() * voices.length)]] = true;
+          this.activeSoloVoices = next;
+          // Randomize choir
+          this.selectedChoir = this.choirOptions[Math.floor(Math.random() * this.choirOptions.length)];
+      }
+
+      // Language unlocked: the dice pick one that suits the style (then the genre) and show it in the dropdown
+      if (!this.langLocked) {
+          const pick = chooseLyricsLanguage(this.genre, this.musicStyle);
+          this.lyricsLang = this.languages.includes(pick) ? pick : 'Auto';
+      }
       
-      // Randomize choir
-      this.selectedChoir = this.choirOptions[Math.floor(Math.random() * this.choirOptions.length)];
-      
-      // New lyrics and a new title in one model call, same as the Generate button
-      this.requestGeneration();
       this.requestUpdate();
   }
 
@@ -266,9 +288,11 @@ export class VocalDialog extends LitElement {
   private renderLyrics() {
     return html`
       <div class="lyrics-tools">
-          <select .value=${this.lyricsLang} @change=${(e: any) => this.lyricsLang = e.target.value} title="Language of the lyrics">
-              ${this.languages.map(l => html`<option value=${l} ?selected=${l === this.lyricsLang}>${l === 'Auto' ? 'Auto (by genre)' : l}</option>`)}
+          <select @change=${(e: any) => this.lyricsLang = e.target.value} title="Language of the lyrics">
+              ${this.languages.map(l => html`<option value=${l} .selected=${live(l === this.lyricsLang)}>${l === 'Auto' ? 'Auto (by style)' : l}</option>`)}
           </select>
+          <button class="lang-lock ${this.langLocked ? 'active' : ''}" @click=${() => this.langLocked = !this.langLocked}
+                  title=${this.langLocked ? 'Language locked: the voice dice keep it' : 'Language unlocked: the voice dice pick one that suits the style'}>${this.langLocked ? '🔒' : '🔓'}</button>
           <button class="generate-btn" ?disabled=${this.generating} @click=${() => this.requestGeneration()}>${this.generating ? 'Writing...' : 'Generate'}</button>
           <button class="copy-btn" ?disabled=${!this.vocalText.trim()} @click=${this.copyLyrics}>Copy</button>
       </div>
@@ -308,12 +332,6 @@ export class VocalDialog extends LitElement {
       this.selectedChoir = this.choirOptions.includes(choir) ? choir : 'None';
   }
 
-  /** The DJ sets the voice options itself when it picks a voice channel. */
-  public djConfigure(solos: string[], choir: string) {
-      this.setVoices(solos, choir);
-      this.applySelection(true);
-  }
-
   private triggerUpload() {
     this.shadowRoot?.getElementById('uploadInput')?.click();
   }
@@ -324,6 +342,7 @@ export class VocalDialog extends LitElement {
           choir: this.getVoices().choir,
           vocalText: this.vocalText,
           lyricsLang: this.lyricsLang,
+          langLocked: this.langLocked,
           genre: this.genre,
           style: (window as any).topToolbar?.musicStyle || 'Synth-Pop',
           songName: this.songName
@@ -346,6 +365,7 @@ export class VocalDialog extends LitElement {
           this.setVoices(data.solos, data.choir);
           this.vocalText = data.vocalText;
           this.lyricsLang = data.lyricsLang;
+          if (typeof data.langLocked === 'boolean') this.langLocked = data.langLocked;
           this.genre = data.genre;
           this.songName = data.songName;
           if (data.style && (window as any).topToolbar) {
@@ -362,7 +382,7 @@ export class VocalDialog extends LitElement {
       });
   }
 
-  private applySelection(fromDj = false) {
+  private applySelection() {
       const solos = Object.entries(this.activeSoloVoices)
           .filter(([_, active]) => active)
           .map(([voice]) => voice);
@@ -378,8 +398,8 @@ export class VocalDialog extends LitElement {
       // Lyria has no routing or per-voice volume: it only understands a short description of the voices
       const directive = active ? `VOCAL CONFIG: ${config.join(', ')}` : 'VOCAL CONFIG: None';
       
-      // Your own choice re-tunes the voice channels (the DJ's choice already came from the channels)
-      if (!fromDj) this.dispatchEvent(new CustomEvent('voices-applied', { detail: this.getVoices() }));
+      // Your choice re-tunes the voice channels
+      this.dispatchEvent(new CustomEvent('voices-applied', { detail: this.getVoices() }));
       this.dispatchEvent(new CustomEvent('send-vocal-command', { detail: directive }));
       this.dispatchEvent(new CustomEvent('lyrics-set', { detail: this.vocalText, bubbles: true, composed: true }));
       window.dispatchEvent(new CustomEvent('vocal-state-changed', { 

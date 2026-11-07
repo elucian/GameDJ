@@ -5,6 +5,7 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { isVocalInstrument } from '../utils/LiveMusicHelper';
 import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
@@ -1111,6 +1112,31 @@ export class TopToolbar extends LitElement {
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
     .lock-btn.locked { color: #ffcc00; background: rgba(255, 204, 0, 0.15); border-color: rgba(255, 204, 0, 0.3); box-shadow: 0 0 10px rgba(255, 204, 0, 0.1); }
     .lock-btn svg { width: 12px; height: 12px; fill: currentColor; }
+
+    /* Phones: the toolbar dissolves into the page column (display: contents): the logo on top (order 1),
+       then the song controls one on top of the next (order 3), label on the left and the control filling the row */
+    @media (max-width: 700px) {
+      :host { display: contents; }
+      .divider { display: none; }
+      .logo-stack {
+        order: 1; flex-direction: row; justify-content: space-between; align-items: center; align-self: stretch;
+        padding: 6px 10px; background: var(--surface-color); border-bottom: 1px solid var(--border-color);
+      }
+      .logo-stack .logo { flex: 0 0 auto; }
+      .brand-text { display: block; }
+      .control-group, .control-group.fixed,
+      .control-group.group-genre, .control-group.group-style, .control-group.group-mood,
+      .control-group.group-key, .control-group.group-meter, .control-group.group-bars {
+        order: 3; flex: 0 0 auto; width: 100%; min-width: 0; max-width: none;
+        flex-direction: row; align-items: center; gap: 8px; padding: 5px 10px; margin: 0;
+        background: var(--surface-color);
+      }
+      .control-group.group-bars { border-bottom: 1px solid var(--border-color); }
+      .label-row { width: 92px; flex: 0 0 92px; margin: 0; }
+      .row { flex: 1; min-width: 0; }
+      .select-meter { width: 100%; max-width: none; flex: 1; }
+      select { height: 32px; }
+    }
   `;
 
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
@@ -1506,10 +1532,11 @@ export class TopToolbar extends LitElement {
           ${this.renderLock(this.locked.genre, () => this.toggleLock('genre'))}
         </div>
         <div class="row ${isRecording ? 'blocked' : ''}">
-          <select class="select-genre" .value=${this.genre} @change=${this.onGenreChange} tabindex=${isRecording ? '-1' : '0'}>
-            <optgroup label="MODERN">${GENRE_MAP_MODERN.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
-            <optgroup label="TRADITIONAL">${GENRE_MAP_TRADITIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
-            <optgroup label="REGIONAL">${GENRE_MAP_REGIONAL.map(g => html`<option value=${g}>${g}</option>`)}</optgroup>
+          <!-- Each select is driven by its options' live .selected (select.value is set by lit before the options change) -->
+          <select class="select-genre" @change=${this.onGenreChange} tabindex=${isRecording ? '-1' : '0'}>
+            <optgroup label="MODERN">${GENRE_MAP_MODERN.map(g => html`<option value=${g} .selected=${live(g === this.genre)}>${g}</option>`)}</optgroup>
+            <optgroup label="TRADITIONAL">${GENRE_MAP_TRADITIONAL.map(g => html`<option value=${g} .selected=${live(g === this.genre)}>${g}</option>`)}</optgroup>
+            <optgroup label="REGIONAL">${GENRE_MAP_REGIONAL.map(g => html`<option value=${g} .selected=${live(g === this.genre)}>${g}</option>`)}</optgroup>
           </select>
         </div>
       </div>
@@ -1522,8 +1549,8 @@ export class TopToolbar extends LitElement {
           ${this.renderLock(this.locked.style, () => this.toggleLock('style'))}
         </div>
         <div class="row ${isRecording ? 'blocked' : ''}">
-          <select class="select-style" .value=${this.musicStyle} @change=${this.onStyleChange} tabindex=${isRecording ? '-1' : '0'}>
-            ${styles.map(s => html`<option value=${s}>${s}</option>`)}
+          <select class="select-style" @change=${this.onStyleChange} tabindex=${isRecording ? '-1' : '0'}>
+            ${styles.map(s => html`<option value=${s} .selected=${live(s === this.musicStyle)}>${s}</option>`)}
           </select>
         </div>
       </div>
@@ -1536,10 +1563,10 @@ export class TopToolbar extends LitElement {
           ${this.renderLock(this.locked.mood, () => this.toggleLock('mood'))}
         </div>
         <div class="row">
-          <select class="select-mood" .value=${this.currentMood} @change=${this.onMoodChange}>
-            <option value="None">None</option>
-            ${moodsFor(this.genre, this.musicStyle).length ? html`<optgroup label="Suits ${this.musicStyle || this.genre}">${moodsFor(this.genre, this.musicStyle).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>` : ''}
-            <optgroup label="${moodsFor(this.genre, this.musicStyle).length ? 'Other moods' : 'Moods'}">${MOODS.filter(m => m !== 'None' && !moodsFor(this.genre, this.musicStyle).includes(m)).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>
+          <select class="select-mood" @change=${this.onMoodChange}>
+            <option value="None" .selected=${live(this.currentMood === 'None')}>None</option>
+            ${moodsFor(this.genre, this.musicStyle).length ? html`<optgroup label="Suits ${this.musicStyle || this.genre}">${moodsFor(this.genre, this.musicStyle).map(m => html`<option value=${m} .selected=${live(m === this.currentMood)}>${m}</option>`)}</optgroup>` : ''}
+            <optgroup label="${moodsFor(this.genre, this.musicStyle).length ? 'Other moods' : 'Moods'}">${MOODS.filter(m => m !== 'None' && !moodsFor(this.genre, this.musicStyle).includes(m)).map(m => html`<option value=${m} .selected=${live(m === this.currentMood)}>${m}</option>`)}</optgroup>
           </select>
         </div>
       </div>
@@ -1552,8 +1579,8 @@ export class TopToolbar extends LitElement {
           ${this.renderLock(this.locked.key, () => this.toggleLock('key'))}
         </div>
         <div class="row">
-          <select class="select-key" .value=${this.key} @change=${this.onKeyChange}>
-             ${keys.map(k => html`<option value=${k}>${k}</option>`)}
+          <select class="select-key" @change=${this.onKeyChange}>
+             ${keys.map(k => html`<option value=${k} .selected=${live(k === this.key)}>${k}</option>`)}
           </select>
         </div>
       </div>
@@ -1566,8 +1593,8 @@ export class TopToolbar extends LitElement {
           ${this.renderLock(this.locked.tempo, () => this.toggleLock('tempo'))}
         </div>
         <div class="row">
-          <select class="select-meter" .value=${this.meter} @change=${this.onMeterChange}>
-            ${meters.map(m => html`<option value=${m}>${m}</option>`)}
+          <select class="select-meter" @change=${this.onMeterChange}>
+            ${meters.map(m => html`<option value=${m} .selected=${live(m === this.meter)}>${m}</option>`)}
           </select>
         </div>
       </div>
