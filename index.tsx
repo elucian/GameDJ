@@ -177,11 +177,24 @@ function main() {
       pdjMidi.setMessage(`DJ CONFIG CANCELLED`, "info");
   });
 
+  // The lyrics are written in the background (also with the dialog closed). Meanwhile the song settings and the recording
+  // are frozen, the status says WORKING, and the dice and the instruments stay usable.
+  let lyricsBusy = false;
+  let lyricsRun = 0; // Cancel in the voice dialog discards the lyrics still being written
+  (vocalDialog as any).addEventListener('vocal-dialog-cancelled', () => { lyricsRun++; });
+  const setLyricsBusy = (busy: boolean) => {
+      lyricsBusy = busy;
+      topToolbar.lyricsBusy = busy; rightSidebar.lyricsBusy = busy; leftSidebar.lyricsBusy = busy;
+      if (busy) pdjMidi.setMessage('WORKING: WRITING LYRICS...', 'info'); else updatePlayerStatus();
+  };
+
   (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
     const { genre } = e.detail;
     const lang: string = e.detail.lang === 'Auto' ? chooseDjLanguage(genre).language : e.detail.lang;
     pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
     vocalDialog.generating = true;
+    setLyricsBusy(true);
+    const run = ++lyricsRun;
     // One call writes the lyrics and the title; a new title replaces the old one
     let title = '', lyrics = '';
     try {
@@ -190,7 +203,9 @@ function main() {
       lyrics = `Error: ${err}`;
     } finally {
       vocalDialog.generating = false;
+      setLyricsBusy(false);
     }
+    if (run !== lyricsRun) return; // cancelled meanwhile: the lyrics are thrown away
     if (lyrics.startsWith('Error') || lyrics.startsWith('Could not')) {
       pdjMidi.setMessage('LYRICS FAILED: TRY AGAIN', 'error');
       return;
@@ -200,7 +215,7 @@ function main() {
     liveMusicHelper.setLyrics(lyrics, lang, false);
     updateSongDuration();
     refreshPromptPanel();
-    pdjMidi.setMessage(`LYRICS READY: ${lang.toUpperCase()}`, 'info');
+    pdjMidi.setMessage(title ? `LYRICS READY: ${title.toUpperCase()} (${lang.toUpperCase()})` : `LYRICS READY: ${lang.toUpperCase()}`, 'info');
   });
 
   (vocalDialog as any).addEventListener('request-song-translation', async (e: CustomEvent) => {
@@ -439,7 +454,7 @@ function main() {
   // A song with voices (Lyria 3.5) is as long as its lyrics, tempo and meter make it: the duration slider follows
   // that estimate until the rendered song tells the exact length.
   const updateSongDuration = () => {
-      if (!liveMusicHelper.usesSongModel) return;
+      if (!liveMusicHelper.usesSongModel || !liveMusicHelper.songHasVoices) return; // an instrumental keeps the chosen length
       const est = liveMusicHelper.estimateSongSeconds();
       if (est === null) return;
       const mins = rightSidebar.setDuration(est / 60);
@@ -552,6 +567,7 @@ function main() {
   };
 
   (leftSidebar as any).addEventListener('record', async () => {
+      if (lyricsBusy) { pdjMidi.setMessage('WORKING: LYRICS ARE BEING WRITTEN', 'info'); return; }
       cancelAutoLoop();
       const genre = topToolbar.genre;
       const style = topToolbar.musicStyle;
@@ -595,13 +611,15 @@ function main() {
           // A song with voices is rendered whole by Lyria 3.5 and cannot be conducted: the DJ steps down (button unselected)
           if (liveMusicHelper.conductorMode || leftSidebar.isConductorActive) {
               deactivateDj();
-              pdjMidi.setMessage('DJ OFF: A SONG WITH VOICES CANNOT BE CONDUCTED', 'info');
+              pdjMidi.setMessage('DJ OFF: A LYRIA 3.5 SONG CANNOT BE CONDUCTED', 'info');
           }
           // The dialog's lyrics and language are what gets sung, also when they were not applied yet
-          const lang = vocalDialog.language;
-          if (vocalDialog.vocalText.trim() && vocalDialog.vocalText !== liveMusicHelper.lyricsText) {
-              liveMusicHelper.setLyrics(vocalDialog.vocalText, lang !== 'Auto' ? lang : undefined, false);
-          } else if (lang !== 'Auto') liveMusicHelper.lyricsLanguage = lang;
+          if (liveMusicHelper.songHasVoices) {
+              const lang = vocalDialog.language;
+              if (vocalDialog.vocalText.trim() && vocalDialog.vocalText !== liveMusicHelper.lyricsText) {
+                  liveMusicHelper.setLyrics(vocalDialog.vocalText, lang !== 'Auto' ? lang : undefined, false);
+              } else if (lang !== 'Auto') liveMusicHelper.lyricsLanguage = lang;
+          }
           updateSongDuration();
           liveMusicHelper.renderSong();
           return;
@@ -627,7 +645,7 @@ function main() {
       panelsCleared = false;
       lastPromptText = `[LYRIA 3.5 SONG] ${prompt.replace(/\s*\n\s*/g, ' / ')}`;
       refreshPromptPanel();
-      pdjMidi.setMessage('LYRIA 3.5: RENDERING SONG WITH VOICES...', 'info');
+      pdjMidi.setMessage(liveMusicHelper.songHasVoices ? 'LYRIA 3.5: RENDERING SONG WITH VOICES...' : 'LYRIA 3.5: RENDERING INSTRUMENTAL SONG...', 'info');
       
       // Force UI into recording state so channels show and progress
       leftSidebar.playbackState = 'recording';
@@ -777,7 +795,7 @@ function main() {
           const label = state === 'paused' ? 'PAUSED' : liveMusicHelper.isLooping ? 'LOOPING' : 'PLAYING';
           pdjMidi.setMessage(`${label} ${mmss(liveMusicHelper.elapsedSeconds)} / ${mmss(liveMusicHelper.recordedDuration)}`, 'info');
       } else if (state === 'stopped') {
-          pdjMidi.setMessage('READY', 'info');
+          pdjMidi.setMessage(lyricsBusy ? 'WORKING: WRITING LYRICS...' : 'READY', 'info');
       }
   };
   setInterval(() => { refreshPromptPanel(); updatePlayerStatus(); }, 5000);

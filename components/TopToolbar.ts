@@ -8,19 +8,13 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { isVocalInstrument } from '../utils/LiveMusicHelper';
 import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
-import { GENRE_MOODS, pickGenreMood } from '../constants/moods';
+import { MOODS, canonicalMood } from '../constants/moods';
+import { STYLE_MOODS, moodsFor, pickStyleMood } from '../constants/styleMoods';
 
 
 import { uiSounds } from '../utils/UISounds';
 
-export const MOODS = [
-    'None', 
-    'Aggressive', 'Calm', 'Cinematic', 'Dark', 'Dramatic', 'Dreamy', 'Elegant', 
-    'Energetic', 'Epic', 'Ethereal', 'Groovy', 'Happy', 'Heroic', 'Hypnotic', 
-    'Intense', 'Joyful', 'Meditative', 'Melancholic', 'Mysterious', 'Nostalgic', 
-    'Ominous', 'Party', 'Peaceful', 'Romantic', 'Sad', 'Sentimental', 'Sexy', 
-    'Soulful', 'Spiritual', 'Tense', 'Triumphal', 'Uplifting', 'Whimsical'
-];
+export { MOODS };
 
 
 interface StyleSignature {
@@ -959,6 +953,9 @@ const GENRE_MAP_TRADITIONAL = ['Classic', 'Opera', 'Marching', 'Renascentist', '
 const GENRE_MAP_REGIONAL = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
 
 // Final Alto Replacement Audit
+// The default mood of a style is the first of its Lyria mood list (constants/styleMoods.ts); an old name is translated
+Object.values(MUSIC_DATA).forEach(genreDef => Object.entries(genreDef.styles).forEach(([name, st]) => { st.mood = STYLE_MOODS[name]?.[0] ?? canonicalMood(st.mood); }));
+
 Object.values(MUSIC_DATA).forEach(genreDef => {
     Object.values(genreDef.styles).forEach(style => {
         if (style.instrumentPools.alto) {
@@ -1100,6 +1097,8 @@ export class TopToolbar extends LitElement {
 
     optgroup { font-weight: 800; text-decoration: underline; background: #111; color: var(--accent-color); margin-top: 0px; margin-bottom: 0px; }
 
+    /* Lyrics are written for the genre, style, mood and tempo shown here: nothing can change until they are ready */
+    :host([lyricsbusy]) .control-group { pointer-events: none; opacity: 0.55; cursor: not-allowed; }
     .blocked { cursor: not-allowed; }
     .blocked > * { pointer-events: none; }
     .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
@@ -1115,6 +1114,8 @@ export class TopToolbar extends LitElement {
   `;
 
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
+  /** Lyrics are being written in the background: the song settings are frozen until they are ready. */
+  @property({ type: Boolean, reflect: true }) lyricsBusy = false;
   @property({ type: Boolean }) hasRecording = false;
   /** Name of the DJ on deck, shown under the logo while the DJ is active */
   @state() private djName = '';
@@ -1173,7 +1174,7 @@ export class TopToolbar extends LitElement {
         this.meter = sig.meters[0];
         this.key = sig.keys[0];
         this.mode = this.key.toLowerCase().includes('minor') ? 'Minor' : 'Natural';
-        this.currentMood = sig.mood || 'None';
+        this.currentMood = canonicalMood(sig.mood) || 'None';
       }
     }
   }
@@ -1215,7 +1216,7 @@ export class TopToolbar extends LitElement {
     // 3. MOOD
     if (!this.locked.mood) {
         // High probability of picking the style's defined mood, else a random global mood
-        this.currentMood = (Math.random() > 0.3) ? sig.mood : (pickGenreMood(this.genre) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
+        this.currentMood = (Math.random() > 0.3) ? canonicalMood(sig.mood) : (pickStyleMood(this.genre, this.musicStyle) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
         if (!suppressEvents) this.dispatch('mood-changed', this.currentMood);
     }
 
@@ -1247,7 +1248,7 @@ export class TopToolbar extends LitElement {
   public djPickMood(): string {
     if (this.locked.mood) return this.currentMood;
     const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];
-    this.currentMood = (sig?.mood && Math.random() < 0.6) ? sig.mood : (pickGenreMood(this.genre) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
+    this.currentMood = (sig?.mood && Math.random() < 0.6) ? canonicalMood(sig.mood) : (pickStyleMood(this.genre, this.musicStyle) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
     this.dispatch('mood-changed', this.currentMood);
     return this.currentMood;
   }
@@ -1420,7 +1421,7 @@ export class TopToolbar extends LitElement {
                   this.dispatch('key-changed', { key: this.key, mode: this.mode });
               }
               if (!this.locked.mood && sig.mood) {
-                  this.currentMood = sig.mood;
+                  this.currentMood = canonicalMood(sig.mood);
                   this.dispatch('mood-changed', this.currentMood);
               }
           }
@@ -1449,7 +1450,7 @@ export class TopToolbar extends LitElement {
               this.dispatch('key-changed', { key: this.key, mode: this.mode });
           }
           if (!this.locked.mood && sig.mood) {
-              this.currentMood = sig.mood;
+              this.currentMood = canonicalMood(sig.mood);
               this.dispatch('mood-changed', this.currentMood);
           }
       }
@@ -1537,8 +1538,8 @@ export class TopToolbar extends LitElement {
         <div class="row">
           <select class="select-mood" .value=${this.currentMood} @change=${this.onMoodChange}>
             <option value="None">None</option>
-            ${(GENRE_MOODS[this.genre] || []).length ? html`<optgroup label="Suits ${this.genre}">${GENRE_MOODS[this.genre].map(m => html`<option value=${m}>${m}</option>`)}</optgroup>` : ''}
-            <optgroup label="${(GENRE_MOODS[this.genre] || []).length ? 'Other moods' : 'Moods'}">${MOODS.filter(m => m !== 'None' && !(GENRE_MOODS[this.genre] || []).includes(m)).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>
+            ${moodsFor(this.genre, this.musicStyle).length ? html`<optgroup label="Suits ${this.musicStyle || this.genre}">${moodsFor(this.genre, this.musicStyle).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>` : ''}
+            <optgroup label="${moodsFor(this.genre, this.musicStyle).length ? 'Other moods' : 'Moods'}">${MOODS.filter(m => m !== 'None' && !moodsFor(this.genre, this.musicStyle).includes(m)).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>
           </select>
         </div>
       </div>

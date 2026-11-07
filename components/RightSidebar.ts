@@ -430,6 +430,8 @@ export class RightSidebar extends LitElement {
     }
 
     master-volume-panel { flex-shrink: 0; }
+    /* The song manifest stays as it was when the lyrics were asked for (instruments can still be chosen) */
+    :host([lyricsbusy]) master-volume-panel.manifest-box, :host([lyricsbusy]) .header-btns { pointer-events: none; opacity: 0.55; }
     master-volume-panel.manifest-box { height: 112px; border-bottom: 1px solid var(--border-color); }
     master-volume-panel.volume-box { height: 112px; }
     .volume-header { border-top: 1px solid var(--border-color); }
@@ -479,6 +481,8 @@ export class RightSidebar extends LitElement {
   `;
 
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
+  /** Lyrics are being written in the background: the song settings are frozen until they are ready. */
+  @property({ type: Boolean, reflect: true }) lyricsBusy = false;
   @property({ type: Number }) volume = 0.8;
   @property({ type: Number }) audioLevelL = 0;
   @property({ type: Number }) audioLevelR = 0;
@@ -941,7 +945,7 @@ export class RightSidebar extends LitElement {
     return html`
       <div class="channel-group ${!ch.active ? 'deactivated' : ''}" style="--channel-color: var(--ch-${key})">
         <div class="label-row">
-          <div class="channel-label" style="color: var(--ch-${key})">${label}</div>
+          <div class="channel-label" style="color: var(--text-color)">${label}</div>
           <button class="remove-x ${this.isPlaybackRestricted ? 'blocked' : ''}" title="Remove this track" @click=${() => this.removeTrack(key)}>✕</button>
         </div>
         <div class="channel-control">

@@ -440,6 +440,8 @@ export class LeftSidebar extends LitElement {
   @property({ type: Boolean }) hasVocalInstrument = false;
   /** The monthly song quota is used up: the voice dialog is closed (forbidden cursor on the button) */
   @property({ type: Boolean }) voiceBlocked = false;
+  /** Lyrics are being written in the background: recording is not possible until they are ready. */
+  @property({ type: Boolean }) lyricsBusy = false;
   @property({ type: String }) primaryMode: MusicGenerationMode = 'DIVERSITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
 
@@ -519,8 +521,8 @@ export class LeftSidebar extends LitElement {
       <button 
         class="record-btn ${active ? 'active-recording' : ''}"
         @click=${this.onRecordClick} 
-        ?disabled=${isRecording && !isSongRendering}
-        title="Record (Overwrite)">
+        ?disabled=${(isRecording && !isSongRendering) || this.lyricsBusy}
+        title=${this.lyricsBusy ? 'Lyrics are being written' : 'Record (Overwrite)'}>
         <span class="icon-span">
             <svg width="24" height="24" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="${isSongRendering ? 6 : 6}" fill="currentColor"/>

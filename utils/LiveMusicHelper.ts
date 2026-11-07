@@ -2689,6 +2689,10 @@ Prompt: ${text}`
       if (this.songModelBlocked) return false;
       // Quality mode without the DJ: a finished song by Lyria 3.5 whenever the song quota allows it, with or without voices
       if (this.generationMode === 'QUALITY' && !this.conductorMode && this.songQuotaOk) return true;
+      return this.songHasVoices;
+  }
+  /** The rendered song will have singers (voice mode on, a voice or choir on stage); otherwise it is instrumental. */
+  public get songHasVoices(): boolean {
       return this.voiceMode && this.playingChannelKeys().some(k => isVocalInstrument(this.instruments[k].instrument));
   }
   /** The user still has songs in the quota (kept up to date by index.tsx). */
@@ -2721,8 +2725,9 @@ Prompt: ${text}`
   /** The text prompt for Lyria 3.5: song description in labelled lines, then the lyrics with section tags. */
   public buildSongPrompt(): string {
       const keys = this.playingChannelKeys();
-      const voiceKeys = keys.filter(k => isVocalInstrument(this.instruments[k].instrument));
-      const instruments = keys.filter(k => !voiceKeys.includes(k)).map(k => this.instruments[k].instrument);
+      // Without the voice mode the song is instrumental: the channel instruments are played, any voice on a channel is not sung
+      const voiceKeys = this.voiceMode ? keys.filter(k => isVocalInstrument(this.instruments[k].instrument)) : [];
+      const instruments = keys.filter(k => !isVocalInstrument(this.instruments[k].instrument)).map(k => this.instruments[k].instrument);
       const voices = voiceKeys.map(k => this.voicePrompt(this.instruments[k].instrument));
       const minutes = Math.max(0.5, Math.round(this.maxDurationMinutes * 2) / 2);
       const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style} ${this.genre}`;
@@ -2821,7 +2826,7 @@ Prompt: ${text}`
           this.segments = [{ startTime: 0, duration: buffer.duration, buffer }];
           this.recordedAudioBlob = blob;
           // Lyria wrote the words itself: keep them so the Voice dialog shows what is sung
-          if (!this.lyricsText.trim() && text && !this.lyricsVowelsOnly) this.setLyrics(text, this.lyricsLanguage, false);
+          if (this.songHasVoices && !this.lyricsText.trim() && text && !this.lyricsVowelsOnly) this.setLyrics(text, this.lyricsLanguage, false);
           this.setPlaybackState('stopped');
           this.dispatchEvent(new CustomEvent('song-rendered', { detail: { duration: buffer.duration, lyrics: text, prompt } }));
           return true;
@@ -2842,6 +2847,22 @@ Prompt: ${text}`
   /** Stop pressed while a song renders: the result is thrown away when it arrives. */
   public cancelSongRender() { this.renderToken++; }
 
+  /** Length of the recording in bars of the current tempo and meter (a free meter counts as 4 beats). */
+  private recordedBars(): number {
+    const seconds = this.segments.reduce((sum, seg) => sum + seg.duration, 0);
+    const [num, den] = this.meter.split('/').map(Number);
+    // Compound meters (6/8, 9/8, 12/8) beat in dotted quarters, other eighth meters in pairs of eighths
+    const beats = !num || !den ? 4 : den === 8 ? (num % 3 === 0 ? num / 3 : num / 2) : num;
+    return Math.max(1, Math.round(seconds * this.bpm / 60 / beats));
+  }
+
+  /** File name of a song without a name: Genre-Style-Mood-tempo-bars, e.g. Jazz-CoolJazz-Chill-90BPM-25BAR */
+  private defaultSongName(): string {
+    const part = (t: string) => t.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '');
+    return [this.genre, this.style, this.mood && this.mood !== 'None' ? this.mood : '', `${this.bpm}BPM`, `${this.recordedBars()}BAR`]
+      .map(part).filter(Boolean).join('-');
+  }
+
   public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3', songName = '') {
     if (this.segments.length === 0) return;
     const url = URL.createObjectURL(this.recordedAudioBlob!);
@@ -2849,7 +2870,7 @@ Prompt: ${text}`
     a.href = url;
     // A named song (Voice dialog) is saved under its name, spaces replaced by underscores
     const named = songName.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
-    const filename = named ? `${named}.${format}` : `${this.maxDurationMinutes}m-${this.genre}-${this.style.replace(/\s+/g, '')}-${this.bpm}bpm-${this.key.replace(/\s+/g, '')}.${format}`;
+    const filename = `${named || this.defaultSongName()}.${format}`;
     a.download = filename; a.click();
     window.URL.revokeObjectURL(url);
   }
