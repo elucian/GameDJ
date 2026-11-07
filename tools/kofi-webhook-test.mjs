@@ -1,6 +1,6 @@
 // Sends a Ko-fi "Shop Order" test webhook to the deployed function (or a local one).
 //
-//   node tools/kofi-webhook-test.mjs                          -> "Unlock 25 songs" x1 to https://game-dj.vercel.app/api/kofi
+//   node tools/kofi-webhook-test.mjs                          -> "Unlock 25 songs" x1 to https://game-dj.com/api/kofi
 //   node tools/kofi-webhook-test.mjs --variant "Unlock 10 songs" --qty 2
 //   node tools/kofi-webhook-test.mjs --url http://localhost:3000/api/kofi
 //   node tools/kofi-webhook-test.mjs --email you@example.com   (the e-mail that /thanks will ask for)
@@ -18,7 +18,7 @@ let token = "";
 try { token = /^KOFI_VERIFICATION_TOKEN=(.*)$/m.exec(fs.readFileSync(new URL("../private/.env", import.meta.url), "utf8"))?.[1]?.trim().replace(/^"|"$/g, "") ?? ""; } catch {}
 if (!token && !flag("bad-token")) throw new Error("KOFI_VERIFICATION_TOKEN is empty in private/.env");
 
-const url = arg("url", "https://game-dj.vercel.app/api/kofi");
+const url = arg("url", "https://game-dj.com/api/kofi");
 const tx = arg("tx", crypto.randomUUID());
 const payload = {
   verification_token: flag("bad-token") ? "wrong-token" : token,

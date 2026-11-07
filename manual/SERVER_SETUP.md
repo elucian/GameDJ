@@ -59,7 +59,7 @@ Keep the same `QUOTA_SECRET` in production for good: changing it invalidates eve
 - Anything compiled into the browser is public, so the browser only gets the **free** key (`GEMINI_LIVE_KEY`). Its project has no billing: if it leaks, the worst case is someone using up its free rate limit, never a bill.
 - The **paid** key (`GEMINI_SONG_KEY`) stays on the server. Songs are rendered by `api/song.ts`, which needs a one-time **ticket**; `api/quota.ts` issues the ticket only when it takes a song from the quota. Without a ticket nothing is rendered, so the quota cannot be skipped for songs. When Redis is down, songs are refused (they fail closed).
 - `api/song.ts` runs for up to 5 minutes (`vercel.json`, `maxDuration: 300`). Check your Vercel plan allows that.
-- Local development: `npm run dev` proxies `/api/*` to the deployed site (`DEV_API_TARGET`, default `https://game-dj.vercel.app`) and sends `DEV_SONG_SECRET`, so local songs work without spending quota.
+- Local development: `npm run dev` proxies `/api/*` to the deployed site (`DEV_API_TARGET`, default `https://game-dj.com`) and sends `DEV_SONG_SECRET`, so local songs work without spending quota.
 - Rotate the old key: delete the old `GEMINI_API_KEY` from Vercel and from Google Cloud once this version is deployed and a song works.
 
 ## 2. Local setup

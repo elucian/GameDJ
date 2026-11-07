@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         // Local development calls the deployed api/* functions (quota, Ko-fi, songs) through this proxy
-        proxy: { '/api': { target: env.DEV_API_TARGET || 'https://game-dj.vercel.app', changeOrigin: true, cookieDomainRewrite: '' } },
+        proxy: { '/api': { target: env.DEV_API_TARGET || 'https://game-dj.com', changeOrigin: true, cookieDomainRewrite: '' } },
       },
       plugins: [],
       define: {
