@@ -10,6 +10,7 @@ import { throttle } from './throttle';
 import { PromptGuard } from './PromptGuard';
 import { uiSounds } from './UISounds';
 import { takeSongTicket } from './UserQuota';
+import { moodPhrase } from '../constants/moods';
 
 type ChannelKey = keyof InstrumentSet;
 type Formation = 'solo' | 'duet' | 'trio' | 'quartet' | 'full';
@@ -191,6 +192,88 @@ export const GENRE_SONG_BRIEF: Record<string, { form: string; vocals: string; so
   'Western': { form: '[Guitar Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Harmonica Solo] -> [Last Chorus]', vocals: 'plainspoken storytelling voice with a twang, sing-along chorus', sound: 'acoustic guitar, steady trail rhythm, harmonica and fiddle, open spaces' },
   'Hawaiian': { form: '[Ukulele Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', vocals: 'sweet, relaxed voice with gentle falsetto turns and group harmony', sound: 'ukulele, slack-key guitar, soft steel guitar, easy island sway' }
 };
+
+/**
+ * What "authentic" means for each folk, regional and traditional genre: the real scales, rhythms and ornaments of the
+ * tradition. Used to keep Lyria from turning folk music into pop with a folk instrument on top.
+ * Plain descriptions only: no artist, band or song names.
+ */
+export const GENRE_AUTHENTICITY: Record<string, string> = {
+  'African': 'polyrhythmic interlocking percussion, call and response singing, pentatonic and modal melodies, cyclical grooves',
+  'Indian': 'raga-based melody with microtonal ornaments called gamaka, tala rhythm cycles, a steady drone, tabla',
+  'Irish': 'modal melodies with traditional ornaments such as cuts and rolls, jig, reel and slow air forms, plain unaccompanied-style singing',
+  'Spanish': 'Phrygian flamenco mode, compas rhythm cycles, rasgueado guitar, ornamented cante and palmas',
+  'Oriental': 'traditional pentatonic or maqam scales, plucked and bowed traditional instruments, sparse space, no Western harmony',
+  'Romanian': 'doina-style free rubato, lautareasca violin ornaments, hora and sarba dance rhythms, Balkan modes',
+  'Western': 'American frontier and country tradition: simple I-IV-V chords, open fifths, steady train-beat rhythm, storytelling melody',
+  'Hawaiian': 'slack key guitar and ukulele strumming, steel guitar glides, gentle falsetto leaps, relaxed hula sway',
+  'Spiritual': 'sacred tradition: modal chant lines, call and response, plain reverent harmony, church acoustics',
+  'Renascentist': 'modal early music, polyphonic lines, dance forms such as pavane and galliard, period instruments',
+  'Victorian': 'nineteenth-century parlour and music-hall tradition: waltz and polka forms, plain diatonic harmony, refined phrasing',
+  'Blues': 'twelve-bar form, blue notes and bent pitches, shuffle rhythm, call and response between voice and instrument',
+  'Marching': 'regimental march form with a steady two-beat cadence, bold brass melody, snare roll patterns',
+  'Classic': 'authentic classical-period craft: clear themes, functional harmony, natural dynamics, no pop rhythms',
+  'Opera': 'authentic operatic tradition: trained voices, recitative and aria forms, full dramatic orchestral support'
+};
+
+// Styles too broad to define a sound by themselves: these get the stronger "typical of the genre" push.
+const GENERIC_STYLE_NAMES = ['folk', 'traditional', 'guitar', 'classic', 'modern', 'world', 'instrumental', 'standard', 'general', 'mix'];
+
+/** True when the style says little (none, the genre's own name, or a catch-all word), so the genre must do the work. */
+export function isGenericStyle(genre: string, style: string): boolean {
+    const st = (style || '').trim().toLowerCase();
+    return !st || st === genre.toLowerCase() || GENERIC_STYLE_NAMES.includes(st);
+}
+
+/** Short tags for the live (Lyria RealTime) prompt: it reads tags, not sentences. */
+export function fidelityTags(genre: string, style: string): string[] {
+    const name = style && !style.toLowerCase().includes(genre.toLowerCase()) ? `${genre} ${style}` : (style || genre);
+    const tags: string[] = [];
+    if (GENRE_AUTHENTICITY[genre]) tags.push(`authentic traditional ${name} music, ${GENRE_AUTHENTICITY[genre].split(',').slice(0, 3).join(',')}`);
+    if (isGenericStyle(genre, style)) tags.push(`classic typical ${genre} sound, true to the genre`);
+    return tags;
+}
+
+/** Sentences for the full-song prompt (Lyria 3.5): stay in the genre, and sound authentic for folk and traditional genres. */
+export function fidelityLines(genre: string, style: string): string[] {
+    const name = style && !style.toLowerCase().includes(genre.toLowerCase()) ? `${genre} ${style}` : (style || genre);
+    const lines = [`Stay strictly within ${name}: no crossover with other genres.`];
+    if (isGenericStyle(genre, style)) lines.push(`The style is broad, so use the most typical, recognizable conventions of ${genre}.`);
+    if (GENRE_AUTHENTICITY[genre]) {
+        lines.push(`Authenticity: play it as real traditional ${name} music, true to the tradition: ${GENRE_AUTHENTICITY[genre]}.`);
+        lines.push('Avoid modern pop, electronic or generic world-music fusion arrangements; no pop chord loops.');
+    }
+    return lines;
+}
+
+/**
+ * The story of a live performance when the DJ is off. Lyria RealTime has no memory of where it is in a piece: with
+ * fixed prompts it settles into a short loop. So the app walks the prompts through an arc, the way a folk tune is
+ * played: state the tune, repeat it with ornaments, a contrasting part, the return, a closing statement. Each cue is a
+ * plain description of the music (never an instrument), `density` shifts Lyria's density (-1..+1 around its middle).
+ */
+interface ArcSection { until: number; name: string; cue: string; density: number }
+const FOLK_ARC: ArcSection[] = [
+    { until: 0.08, name: 'Opening', cue: 'opening: a single melodic line states the main tune, sparse and spacious', density: -0.35 },
+    { until: 0.28, name: 'Theme', cue: 'the main tune played in full, clear, simple and singable', density: -0.05 },
+    { until: 0.48, name: 'Varied repeat', cue: 'the main tune repeats with new ornaments and a fuller accompaniment', density: 0.1 },
+    { until: 0.62, name: 'Contrast', cue: 'a contrasting second part with a new melody that answers the first', density: 0.0 },
+    { until: 0.85, name: 'Return', cue: 'the main tune returns fuller and more energetic, building to a peak', density: 0.25 },
+    { until: 1.01, name: 'Close', cue: 'a final embellished statement of the tune, then a gentle slowing close', density: -0.2 }
+];
+const MODERN_ARC: ArcSection[] = [
+    { until: 0.08, name: 'Intro', cue: 'intro: sparse, setting the groove and the key', density: -0.35 },
+    { until: 0.30, name: 'Verse', cue: 'verse: steady groove with a clear melodic hook', density: -0.05 },
+    { until: 0.45, name: 'Lift', cue: 'chorus: bigger, fuller and brighter, the hook returns', density: 0.25 },
+    { until: 0.58, name: 'Break', cue: 'breakdown: stripped back, a new melodic idea, tension building', density: -0.25 },
+    { until: 0.85, name: 'Final push', cue: 'final chorus: the full groove at its peak with extra variations', density: 0.3 },
+    { until: 1.01, name: 'Outro', cue: 'outro: winding down, resolving to the tonic', density: -0.3 }
+];
+// Two-bar-pair phrasing inside a section: a rising question, then a falling answer (breaks up "ta ti ta ti" loops)
+const PHRASE_CUES = ['melody phrase rises and ends open, like a question', 'answering phrase falls and resolves, like a reply'];
+const AUTO_PHRASE_BARS = 8;
+// Genres whose scales are mostly not major/minor-pair material (raga, maqam, pentatonic, microtonal)
+const NON_DIATONIC_GENRES = ['Indian', 'Oriental'];
 
 /** The form line for a song with no given lyrics, trimmed to its length: short songs lose repeats, long ones get an extra verse. */
 function formForLength(form: string, minutes: number): string {
@@ -651,6 +734,7 @@ export class LiveMusicHelper extends EventTarget {
 
   public setConductorMode(active: boolean) {
       this.conductorMode = active;
+      this.syncAutoArrange();
       if (active) {
           this.conductorActivationTime = Date.now();
           const isLive = this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
@@ -874,6 +958,45 @@ Prompt: ${text}`
   private lastConfig: any = null;
   private lastPrompts: any = null;
 
+  // --- Self-arranging live performance (DJ off) ---
+  /** Turn off to keep the live prompts fixed while the DJ is off. */
+  public autoArrange = true;
+  private autoArrangeTimer: number | null = null;
+  private autoArrangeKey = '';
+  private barSeconds(): number {
+      const [num, den] = this.meter.split('/').map(n => parseInt(n, 10));
+      const quarters = (num > 0 && den > 0 ? num : 4) * (4 / (num > 0 && den > 0 ? den : 4));
+      return quarters * 60 / Math.max(40, this.bpm);
+  }
+  /** Where the live performance is in its story right now, or null when the DJ conducts or the song is not being generated. */
+  private autoArrangement(): { section: ArcSection; phraseCue: string; key: string } | null {
+      // Ambient is one slow continuous evolution: no verse/chorus-style arc
+      if (!this.autoArrange || this.conductorMode || this.playbackState !== 'recording' || this.genre === 'Ambient') return null;
+      const total = Math.max(30, this.maxDurationMinutes * 60);
+      const p = Math.max(0, Math.min(1, this.elapsedSeconds / total));
+      const arc = isTraditionalGenre(this.genre) ? FOLK_ARC : MODERN_ARC;
+      const idx = arc.findIndex(sec => p < sec.until);
+      const section = arc[idx < 0 ? arc.length - 1 : idx];
+      const phraseSec = Math.max(8, Math.min(30, this.barSeconds() * AUTO_PHRASE_BARS));
+      const phrase = Math.floor(this.elapsedSeconds / phraseSec);
+      return { section, phraseCue: PHRASE_CUES[phrase % PHRASE_CUES.length], key: `${section.name}/${phrase % PHRASE_CUES.length}` };
+  }
+  /** Runs while recording: when the section or the phrase changes, the prompts are refreshed (and cross-faded). */
+  private syncAutoArrange() {
+      const run = this.playbackState === 'recording' && this.autoArrange && !this.conductorMode;
+      if (!run) {
+          if (this.autoArrangeTimer) { clearInterval(this.autoArrangeTimer); this.autoArrangeTimer = null; }
+          this.autoArrangeKey = '';
+          return;
+      }
+      if (this.autoArrangeTimer) return;
+      this.autoArrangeTimer = window.setInterval(() => {
+          const a = this.autoArrangement();
+          if (!a) { this.syncAutoArrange(); return; }
+          if (a.key !== this.autoArrangeKey) { this.autoArrangeKey = a.key; this.scheduleRefresh(); }
+      }, 1000);
+  }
+
   private async refreshSessionPrompts() {
     if (!this.session) return;
     
@@ -889,7 +1012,10 @@ Prompt: ${text}`
         for (const p of this.prompts.values()) if (p.text.trim().toLowerCase() === name && p.weight > 0.01) return Math.round(Math.min(1, p.weight / 2) * 100) / 100;
         return undefined;
     };
-    const density = knobValue('density'); if (density !== undefined) config.density = density;
+    const arrangement = this.autoArrangement();
+    const density = knobValue('density');
+    if (density !== undefined) config.density = density;
+    else if (arrangement) config.density = Math.round(Math.max(0.15, Math.min(0.9, 0.5 + arrangement.section.density)) * 100) / 100;
     const brightness = knobValue('brightness'); if (brightness !== undefined) config.brightness = brightness;
     // Variation widens the token sampling pool (topK 1..1000): more varied playing without touching the prompts
     const variation = knobValue('variation');
@@ -906,8 +1032,10 @@ Prompt: ${text}`
         && playingNow.every(k => k === 'bass' ? /bass|tuba/i.test(this.instruments.bass.instrument) : /drum|percussion|kit|tabla|djembe|conga|bongo|timbale|taiko|shaker|tambourine|snare|cajon/i.test(this.instruments.rhythm.instrument));
     config.muteDrums = !isOn('rhythm') && /drum|percussion|kit|tabla|djembe|conga|bongo|timbale|taiko|shaker|tambourine|snare|cajon/i.test(this.instruments.rhythm.instrument);
     
+    // Lyria's scales are the 12 major/minor pairs. Ragas and maqam-based music is not diatonic, so forcing one of these
+    // fights the melody (it sounds "wrong"); the model is left to find its own mode unless the user locked a key.
     const scale = scaleForKey(this.key);
-    if (scale) config.scale = scale;
+    if (scale && (this.toolbarLocks.key || !NON_DIATONIC_GENRES.includes(this.genre))) config.scale = scale;
 
     if (JSON.stringify(config) !== JSON.stringify(this.lastConfig)) {
         const prev = this.lastConfig;
@@ -937,8 +1065,9 @@ Prompt: ${text}`
 
     const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style}, ${this.genre}`;
     const finalPayload: { text: string; weight: number }[] = [{ text: styleTag, weight: GENRE_PROMPT_WEIGHT }];
+    fidelityTags(this.genre, this.style).forEach((tag, i) => finalPayload.push({ text: tag, weight: i === 0 ? 2.0 : 1.5 }));
     finalPayload.push({ text: `${this.key}, ${this.bpm} BPM, ${this.meter} time`, weight: 0.8 });
-    if (this.mood && this.mood !== 'None') finalPayload.push({ text: `${this.mood.toLowerCase()} mood`, weight: 1.2 });
+    if (this.mood && this.mood !== 'None') finalPayload.push({ text: moodPhrase(this.mood), weight: 1.2 });
 
     // The exact ensemble on the channels (solo, duet, trio, quartet or band), always, so no other instruments join in
     const currentStage = this.conductorMode ? this.currentPlan?.[this.currentPlanIdx] : undefined;
@@ -971,6 +1100,10 @@ Prompt: ${text}`
         finalPayload.push({ text: `${ch.instrument} ${role}`, weight: ch.weight * CHANNEL_PROMPT_WEIGHT[k] * (voiceLed ? ACCOMPANIMENT_SCALE : 1) });
     });
 
+    if (arrangement) {
+        finalPayload.push({ text: arrangement.section.cue, weight: 1.0 });
+        finalPayload.push({ text: arrangement.phraseCue, weight: 0.5 });
+    }
     if (this.evolutionValue > 0) finalPayload.push({ text: 'progressive, evolving arrangement', weight: 0.6 });
     else if (this.evolutionValue < 0) finalPayload.push({ text: 'steady, minimal arrangement', weight: 0.6 });
     finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix', weight: 0.6 });
@@ -1661,7 +1794,38 @@ Prompt: ${text}`
       'Bluegrass': { Attack: +0.3, Staccato: +0.2, Density: +0.3, Groove: +0.2 }, 'Honky Tonk': { Groove: +0.2, Attack: +0.2 }, 'Spaghetti Western': { Space: +0.3, Atmosphere: +0.3, Dynamics: +0.2 },
       'Cowboy Ballad': { Dynamics: -0.2, Space: +0.2, Groove: -0.2 }, 'Rockabilly': { Groove: +0.3, Attack: +0.3, Staccato: +0.2 },
       'Slack Key Guitar': { Glide: +0.2, Dynamics: -0.1 }, 'Traditional Hula': { Groove: +0.2, Authenticity: +0.1 }, 'Island Reggae': { Groove: +0.4, Space: +0.1, Dynamics: -0.1 },
-      'Military Fanfare': { Attack: +0.3, Staccato: +0.2, Dynamics: +0.3 }, 'Ceremonial': { Dynamics: -0.2, Space: +0.2 }
+      'Military Fanfare': { Attack: +0.3, Staccato: +0.2, Dynamics: +0.3 }, 'Ceremonial': { Dynamics: -0.2, Space: +0.2 },
+      // Styles added later: each moves the genre profile toward what makes the style itself
+      'R&B': { Groove: +0.2, Glide: +0.3, Space: +0.2, Attack: -0.2, Dynamics: -0.1, Brightness: -0.1 },
+      'Freestyle Rap': { Groove: +0.2, Presence: +0.3, Variation: +0.2, Density: -0.1 }, 'Old School': { Groove: +0.2, Organic: +0.2, Brightness: +0.1 },
+      'G-Funk': { Groove: +0.3, Glide: +0.3, Space: +0.2, Attack: -0.2 }, 'Conscious Rap': { Organic: +0.3, Presence: +0.2, Complexity: +0.2, Attack: -0.1 },
+      'Arctic Tundra': { Space: +0.3, Brightness: -0.2, Atmosphere: +0.2, Density: -0.1 }, 'Solar Wind': { Brightness: +0.3, Width: +0.3, Atmosphere: +0.2 },
+      'Deep Forest': { Organic: +0.3, Texture: +0.3, Space: +0.1 }, 'Australian Desert': { Space: +0.3, Organic: +0.2, Density: -0.2 },
+      'African Jungle': { Organic: +0.3, Texture: +0.3, Groove: +0.3, Density: +0.2 }, 'Vast Ocean': { Width: +0.4, Space: +0.3, Glide: +0.3, Dynamics: +0.1 },
+      'RPG Adventure': { Dynamics: +0.2, Complexity: +0.2, Authenticity: +0.1, Organic: +0.2 }, 'Cyberpunk': { Brightness: +0.2, Texture: +0.3, Organic: -0.3, Attack: +0.2 },
+      'Dungeon Crawler': { Atmosphere: +0.3, Brightness: -0.3, Dynamics: -0.1, Space: +0.2 }, 'Platformer Bounce': { Staccato: +0.4, Groove: +0.3, Brightness: +0.3, Attack: +0.2 },
+      'Victory Theme': { Dynamics: +0.3, Brightness: +0.3, Width: +0.2, Attack: +0.2 },
+      'Modern Classical': { Space: +0.3, Texture: +0.3, Complexity: +0.2, Density: -0.1 }, 'Opera/Dramatic': { Dynamics: +0.3, Glide: +0.2, Presence: +0.2 },
+      'Baroque Opera': { Ornamentation: +0.4, Staccato: +0.2, Complexity: +0.2, Dynamics: -0.1 }, 'Romantic Opera': { Dynamics: +0.3, Glide: +0.3, Width: +0.2 },
+      'Contemporary Opera': { Complexity: +0.4, Texture: +0.3, Brightness: +0.1, Authenticity: -0.2 },
+      'Royal Court': { Staccato: +0.1, Dynamics: +0.1, Brightness: +0.2, Space: +0.1 }, 'Minstrel Ballad': { Presence: +0.3, Organic: +0.2, Density: -0.2, Dynamics: -0.1 },
+      'Gothic Horror': { Brightness: -0.3, Atmosphere: +0.4, Dynamics: +0.2, Space: +0.2 }, 'Parlour Waltz': { Glide: +0.2, Groove: +0.2, Dynamics: -0.1 },
+      'Steampunk Factory': { Attack: +0.3, Staccato: +0.3, Density: +0.3, Texture: +0.3, Groove: +0.2 }, 'Industrial Revolution': { Attack: +0.3, Groove: +0.3, Density: +0.2, Texture: +0.2 },
+      'Detective Mystery': { Space: +0.3, Atmosphere: +0.3, Brightness: -0.2, Dynamics: -0.1 },
+      'New Age Healing': { Space: +0.3, Density: -0.2, Dynamics: -0.3, Glide: +0.2, Atmosphere: +0.3 }, 'Christmas Carols': { Brightness: +0.3, Dynamics: +0.1, Organic: +0.1, Groove: +0.1 },
+      'Malian Blues': { Glide: +0.3, Groove: +0.3, Ornamentation: +0.2, Organic: +0.2 }, 'Highlife': { Groove: +0.3, Brightness: +0.3, Staccato: +0.2 },
+      'Desert Rock': { Glide: +0.2, Attack: +0.2, Dynamics: +0.2, Groove: +0.2, Space: +0.1 }, 'Marabi/Soweto': { Groove: +0.3, Dynamics: +0.1, Staccato: +0.1, Presence: +0.1 },
+      'Folk': { Organic: +0.3, Presence: +0.2, Density: -0.2, Dynamics: -0.1 }, 'Guitar': { Presence: +0.3, Ornamentation: +0.2, Density: -0.2, Organic: +0.2 },
+      'Arabic Classical': { Ornamentation: +0.4, Glide: +0.4, Complexity: +0.2, Density: -0.1 }, 'Japanese Folk': { Space: +0.3, Density: -0.3, Dynamics: -0.2, Staccato: +0.1 },
+      'Chinese Traditional': { Glide: +0.2, Ornamentation: +0.2, Space: +0.2, Brightness: +0.1 }, 'Turkish Folk': { Ornamentation: +0.3, Groove: +0.3, Glide: +0.2 },
+      'Balinese Gamelan': { Brightness: +0.3, Groove: +0.3, Texture: +0.3, Density: +0.2, Glide: -0.2 },
+      'Lautareasca': { Ornamentation: +0.4, Glide: +0.3, Dynamics: +0.2, Presence: +0.2 }, 'Bănățeană': { Groove: +0.2, Staccato: +0.1, Brightness: +0.1 },
+      'Geampara': { Groove: +0.3, Attack: +0.2, Staccato: +0.2, Dynamics: +0.2 }, 'Invârtită': { Groove: +0.4, Attack: +0.3, Staccato: +0.2, Dynamics: +0.2 },
+      'Etno-Dance': { Groove: +0.3, Organic: -0.3, Brightness: +0.2, Density: +0.2 }, 'Plugușorul': { Groove: +0.3, Attack: +0.3, Dynamics: +0.2, Staccato: +0.2, Space: -0.2 },
+      'Country': { Groove: +0.2, Brightness: +0.2, Density: +0.1, Organic: +0.1 }, 'Americana': { Organic: +0.2, Space: +0.2, Dynamics: -0.1 },
+      'Outlaw Country': { Attack: +0.2, Dynamics: +0.2, Brightness: -0.2, Authenticity: +0.1 }, 'Alt-Country': { Texture: +0.2, Dynamics: +0.2, Organic: +0.1 },
+      'Texas Swing': { Groove: +0.3, Staccato: +0.2, Density: +0.2, Complexity: +0.2 }, 'Folk Revival': { Presence: +0.3, Organic: +0.3, Density: -0.2 },
+      'Western Swing': { Groove: +0.3, Staccato: +0.2, Density: +0.2, Complexity: +0.3, Brightness: +0.1 }
   };
 
   // Stage modifiers — how much to adjust from the genre default for each stage type
@@ -2264,6 +2428,7 @@ Prompt: ${text}`
   private setPlaybackState(state: PlaybackState) { 
     this.playbackState = state; 
     this.dispatchEvent(new CustomEvent('playback-state-changed', { detail: state })); 
+    this.syncAutoArrange();
     const totalSec = this.maxDurationMinutes * 60;
     const isAtEnd = this.elapsedSeconds >= (totalSec - 0.5);
     if ((state === 'stopped' || state === 'paused') && !isAtEnd) {
@@ -2357,7 +2522,11 @@ Prompt: ${text}`
   }
 
   /** Text models for lyrics, best first. A quota (429), retired model (404) or overload error moves on to the next. */
-  private static readonly LYRICS_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  private static readonly LYRICS_MODELS: { model: string; config?: object }[] = [
+      // Lyrics need no deep reasoning: a low thinking level keeps the 3.8 answer to seconds instead of minutes
+      { model: 'gemini-3.8-flash', config: { thinkingConfig: { thinkingLevel: 'low' } } },
+      { model: 'gemini-3.1-flash-lite' }
+  ];
 
   /** Runs a text prompt through LYRICS_MODELS in order and returns the first answer, or "Error: ..." if all fail. */
   private async runLyricsModels(prompt: string): Promise<string> {
@@ -2366,9 +2535,13 @@ Prompt: ${text}`
           return "Error: AI not initialized.";
       }
       let lastError: unknown = null;
-      for (const model of LiveMusicHelper.LYRICS_MODELS) {
+      for (const { model, config } of LiveMusicHelper.LYRICS_MODELS) {
           try {
-              const result = await (this.ai as any).models.generateContent({ model, contents: prompt });
+              // A model that never answers must not hang the UI: give up after 15 s and try the next one
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${model} timed out`)), 15000); });
+              const result: any = await Promise.race([(this.ai as any).models.generateContent({ model, contents: prompt, config }), timeout])
+                  .finally(() => clearTimeout(timer));
               const text = (result.text || '').trim();
               if (text) return text;
               lastError = new Error(`${model} returned no text`);
@@ -2558,7 +2731,8 @@ Prompt: ${text}`
       const lines = [
           `Create a ${minutes}-minute ${styleTag} song with vocals.`,
           `Genre: ${this.genre}. Style: ${this.style}.`,
-          this.mood && this.mood !== 'None' ? `Mood: ${this.mood.toLowerCase()}.` : '',
+          ...fidelityLines(this.genre, this.style),
+          this.mood && this.mood !== 'None' ? `Mood: ${moodPhrase(this.mood)}.` : '',
           `Tempo: ${this.bpm} BPM, ${this.meter} time. Key: ${this.key}.`,
           instruments.length ? `Instruments (only these): ${instruments.join(', ')}.` : 'A cappella: voices only, no instruments.',
           voices.length ? `Vocals: ${voices.join('; ')}, ${this.voiceIntensityPhrase()}${regional ? `, ${regional}` : ''}${brief && !this.lyricsVowelsOnly ? `, ${brief.vocals}` : ''}.`

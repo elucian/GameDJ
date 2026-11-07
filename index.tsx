@@ -183,8 +183,14 @@ function main() {
     pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
     vocalDialog.generating = true;
     // One call writes the lyrics and the title; a new title replaces the old one
-    const { title, lyrics } = await liveMusicHelper.generateSong(genre, lang, topToolbar.musicStyle, topToolbar.currentMood);
-    vocalDialog.generating = false;
+    let title = '', lyrics = '';
+    try {
+      ({ title, lyrics } = await liveMusicHelper.generateSong(genre, lang, topToolbar.musicStyle, topToolbar.currentMood));
+    } catch (err) {
+      lyrics = `Error: ${err}`;
+    } finally {
+      vocalDialog.generating = false;
+    }
     if (lyrics.startsWith('Error') || lyrics.startsWith('Could not')) {
       pdjMidi.setMessage('LYRICS FAILED: TRY AGAIN', 'error');
       return;

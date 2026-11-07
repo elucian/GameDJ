@@ -8,6 +8,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { isVocalInstrument } from '../utils/LiveMusicHelper';
 import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
+import { GENRE_MOODS, pickGenreMood } from '../constants/moods';
 
 
 import { uiSounds } from '../utils/UISounds';
@@ -1214,7 +1215,7 @@ export class TopToolbar extends LitElement {
     // 3. MOOD
     if (!this.locked.mood) {
         // High probability of picking the style's defined mood, else a random global mood
-        this.currentMood = (Math.random() > 0.3) ? sig.mood : MOODS[Math.floor(Math.random() * MOODS.length)];
+        this.currentMood = (Math.random() > 0.3) ? sig.mood : (pickGenreMood(this.genre) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
         if (!suppressEvents) this.dispatch('mood-changed', this.currentMood);
     }
 
@@ -1246,7 +1247,7 @@ export class TopToolbar extends LitElement {
   public djPickMood(): string {
     if (this.locked.mood) return this.currentMood;
     const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];
-    this.currentMood = (sig?.mood && Math.random() < 0.6) ? sig.mood : MOODS[Math.floor(Math.random() * MOODS.length)];
+    this.currentMood = (sig?.mood && Math.random() < 0.6) ? sig.mood : (pickGenreMood(this.genre) ?? MOODS[Math.floor(Math.random() * MOODS.length)]);
     this.dispatch('mood-changed', this.currentMood);
     return this.currentMood;
   }
@@ -1535,7 +1536,9 @@ export class TopToolbar extends LitElement {
         </div>
         <div class="row">
           <select class="select-mood" .value=${this.currentMood} @change=${this.onMoodChange}>
-            ${MOODS.map(m => html`<option value=${m}>${m}</option>`)}
+            <option value="None">None</option>
+            ${(GENRE_MOODS[this.genre] || []).length ? html`<optgroup label="Suits ${this.genre}">${GENRE_MOODS[this.genre].map(m => html`<option value=${m}>${m}</option>`)}</optgroup>` : ''}
+            <optgroup label="${(GENRE_MOODS[this.genre] || []).length ? 'Other moods' : 'Moods'}">${MOODS.filter(m => m !== 'None' && !(GENRE_MOODS[this.genre] || []).includes(m)).map(m => html`<option value=${m}>${m}</option>`)}</optgroup>
           </select>
         </div>
       </div>

@@ -33,8 +33,8 @@ The right sidebar has two tabs with five channels each:
 |---|---|---|
 | lead | Lead | Voice/Lead |
 | alto | Alto | Voice/Harmony |
-| harmonic | Harmonic | Orchestra |
-| bass | Bass | Brass |
+| harmonic | Harmonic | Orchestra Instruments |
+| bass | Bass | Brass Instruments |
 | rhythm | Rhythm | Percussion |
 
 - Lyria itself has no channels: it plays one mixed stream from text prompts. The channels are how the app builds those prompts, one prompt per channel, named by its role.

@@ -5,6 +5,7 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
 import { DURATION_STEPS } from './MasterVolumePanel';
@@ -51,7 +52,7 @@ const RHYTHMIC_GENRES = ['Pop', 'Hip Hop', 'Electronic', 'Rock', 'Gaming', 'Marc
 /** What each track type is called on screen */
 const TRACK_LABELS: Record<string, string> = {
   SOLO: 'LEAD INSTRUMENT', VOICE: 'LEAD VOICE', CHOIR: 'BACKGROUND CHOIR', HARMONY: 'HARMONIC INSTRUMENT',
-  BASS: 'BASS INSTRUMENT', PERCUSSION: 'RHYTHM INSTRUMENT', ORCHESTRA: 'ORCHESTRA', FANFARE: 'FANFARE'
+  BASS: 'BASS INSTRUMENT', PERCUSSION: 'RHYTHM INSTRUMENT', ORCHESTRA: 'ORCHESTRA INSTRUMENTS', FANFARE: 'BRASS INSTRUMENTS'
 };
 
 @customElement('right-sidebar')
@@ -815,7 +816,12 @@ export class RightSidebar extends LitElement {
   }
 
   private onActiveChange(channel: keyof InstrumentSet, e: Event) {
-    if (this.playbackState === 'playing') return;
+    if (this.playbackState === 'playing') {
+        // The browser already flipped the checkbox: put it back so the dot always shows the real state
+        const box = e.target as HTMLInputElement;
+        box.checked = this.settings[channel].active;
+        return;
+    }
     uiSounds.playTick();
     const isActive = (e.target as HTMLInputElement).checked;
     const newSettings = { ...this.settings };
@@ -940,7 +946,7 @@ export class RightSidebar extends LitElement {
         </div>
         <div class="channel-control">
           <div class="row ${isInteractionDisabled ? 'blocked' : ''}">
-            <input type="checkbox" class="channel-toggle" .checked=${ch.active} ?disabled=${!ch.instrument} @change=${(e: Event) => this.onActiveChange(key, e)}>
+            <input type="checkbox" class="channel-toggle" .checked=${live(ch.active)} ?disabled=${!ch.instrument} @change=${(e: Event) => this.onActiveChange(key, e)}>
             <select @change=${(e: Event) => this.onInstrumentChange(key, e)} .value=${ch.instrument} tabindex=${isInteractionDisabled ? '-1' : '0'}>
               ${options.map((inst: string) => html`<option value=${inst} ?selected=${inst.toLowerCase() === (ch.instrument || "").toLowerCase()}>${inst}</option>`)}
             </select>

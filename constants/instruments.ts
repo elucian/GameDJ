@@ -64,6 +64,34 @@ export const LEAD_VOICE_OPTIONS = ['Solo Male', 'Solo Female', 'Duet Male', 'Due
 /** Lyria tab: the channel that carries solo voices (VOICE/LEAD) and the one that carries choirs (VOICE/HARMONY). */
 export const LYRIA_VOICE_CHANNELS = { solo: 'lead', choir: 'alto' } as const;
 
+/**
+ * Small-ensemble options for the Lyria tab, added after each genre's pool. Lyria renders a few instruments with a voice
+ * as well as it renders a symphony, and often better: a guitar duo under a singer is a real option, not only an orchestra.
+ * The DJ and the dropdowns draw from the merged pool, so intimate lineups come up as often as the big ones.
+ */
+const LYRIA_SMALL_ENSEMBLES: Record<string, Partial<Record<ChannelName, string[]>>> = {
+  '_default': { harmonic: ['Piano Trio', 'String Quartet', 'Acoustic Guitar Duo', 'Piano & Strings'], bass: ['Double Bass', 'Cello', 'Bass Clarinet'], rhythm: ['Hand Percussion', 'Frame Drum', 'Brushed Snare', 'Shakers'] },
+  'Classic': { harmonic: ['String Quartet', 'Piano Trio', 'Wind Quintet'], bass: ['Double Bass', 'Cello', 'Bassoon'], rhythm: ['Timpani'] },
+  'Renascentist': { harmonic: ['Lute & Viola da Gamba', 'Recorder Consort'], bass: ['Viola da Gamba', 'Dulcian'], rhythm: ['Frame Drum', 'Tambourine'] },
+  'Victorian': { harmonic: ['Piano Trio', 'String Quartet'], bass: ['Double Bass', 'Cello'], rhythm: ['Brushed Snare'] },
+  'Spiritual': { harmonic: ['Organ & Strings', 'Solo Piano'], bass: ['Cello', 'Double Bass'], rhythm: ['Handclaps', 'Tambourine'] },
+  'Opera': { harmonic: ['Piano & Strings', 'String Quartet'], bass: ['Cello', 'Double Bass'], rhythm: ['Timpani'] },
+  'Marching': { harmonic: ['Brass Band', 'Fife & Clarinets'], bass: ['Sousaphone', 'Tuba'], rhythm: ['Snare Drum', 'Bass Drum'] },
+  'Ambient': { harmonic: ['Solo Piano', 'Cello & Pads'], bass: ['Cello', 'Double Bass'], rhythm: ['Singing Bowls', 'Soft Frame Drum'] },
+  'Gaming': { harmonic: ['Chiptune Synths', 'Piano & Strings'], bass: ['Synth Bass', 'Electric Bass'], rhythm: ['Electronic Drums', 'Drum Kit'] },
+  'African': { harmonic: ['Kora & Guitar', 'Marimba Ensemble'], bass: ['Electric Bass', 'Double Bass'], rhythm: ['Djembe', 'Congas', 'Shakers'] },
+  'Indian': { harmonic: ['Sitar & Tanpura', 'Harmonium & Strings'], bass: ['Tanpura Drone', 'Cello'], rhythm: ['Tabla', 'Dholak', 'Manjira'] },
+  'Irish': { harmonic: ['Fiddle & Guitar', 'Concertina'], bass: ['Double Bass', 'Bouzouki'], rhythm: ['Bodhran', 'Bones', 'Spoons'] },
+  'Spanish': { harmonic: ['Flamenco Guitar Duo', 'Guitar & Cajon'], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Cajon', 'Palmas Handclaps', 'Castanets'] },
+  'Oriental': { harmonic: ['Guzheng & Erhu', 'Koto Ensemble'], bass: ['Cello', 'Double Bass'], rhythm: ['Taiko Drums', 'Frame Drum', 'Temple Blocks'] },
+  'Romanian': { harmonic: ['Violin & Cimbalom Duo', 'Accordion'], bass: ['Double Bass', 'Tuba'], rhythm: ['Toba Drum', 'Tambourine'] },
+  'Western': { harmonic: ['Guitar & Fiddle', 'Banjo & Mandolin'], bass: ['Upright Bass', 'Electric Bass'], rhythm: ['Brushed Snare', 'Washboard', 'Cajon'] },
+  'Hawaiian': { harmonic: ['Ukulele & Slack Key Guitar', 'Steel Guitar'], bass: ['Upright Bass', 'Ukulele Bass'], rhythm: ['Ipu Gourd Drum', 'Hand Percussion', 'Shakers'] }
+};
+
 export function getLyriaPool(genre: string, channel: ChannelName): string[] {
-  return LYRIA_GENRE_POOLS[genre]?.[channel] || LYRIA_DEFAULT_POOLS[channel];
+  const base = LYRIA_GENRE_POOLS[genre]?.[channel] || LYRIA_DEFAULT_POOLS[channel];
+  const small = LYRIA_SMALL_ENSEMBLES[genre]?.[channel] || LYRIA_SMALL_ENSEMBLES['_default'][channel] || [];
+  // Added after the existing options so the first (default) choice does not change
+  return [...base, ...small.filter(i => !base.includes(i))];
 }

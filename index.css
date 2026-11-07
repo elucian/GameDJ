@@ -22,7 +22,7 @@
   --ch-alto: #c9a8ff;
   --ch-harmonic: #8fd3ff;
   --ch-bass: #ffb97a;
-  --ch-rhythm: #ffe082;
+  --ch-rhythm: #fff08a;
   --ch-vocal: #f2a6f2;
   --master-label-color: #c0c0c0;
 }
@@ -50,7 +50,7 @@ body.light-theme {
   --ch-alto: #6a3fb5;
   --ch-harmonic: #0a6f9c;
   --ch-bass: #b35a00;
-  --ch-rhythm: #9a7400;
+  --ch-rhythm: #a07800;
   --ch-vocal: #9c1f9c;
   --master-label-color: #444444;
 }
