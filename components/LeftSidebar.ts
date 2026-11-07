@@ -440,7 +440,7 @@ export class LeftSidebar extends LitElement {
   @property({ type: Boolean }) hasVocalInstrument = false;
   /** The monthly song quota is used up: the voice dialog is closed (forbidden cursor on the button) */
   @property({ type: Boolean }) voiceBlocked = false;
-  @property({ type: String }) primaryMode: MusicGenerationMode = 'QUALITY';
+  @property({ type: String }) primaryMode: MusicGenerationMode = 'DIVERSITY';
   @state() private downloadFormat: 'mp3' | 'wav' | 'webm' = 'mp3';
 
   protected updated(changed: Map<string, unknown>) {

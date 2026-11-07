@@ -260,7 +260,7 @@ function main() {
   };
   const liveMusicHelper = new LiveMusicHelper(ai, model);
   // Song quota used up: the voice dialog button is forbidden until the month ends
-  const syncVoiceBlocked = () => { leftSidebar.voiceBlocked = !quotaStatus('song').ok; }; // local count or a remembered server refusal
+  const syncVoiceBlocked = () => { const ok = quotaStatus('song').ok; leftSidebar.voiceBlocked = !ok; liveMusicHelper.songQuotaOk = ok; }; // local count or a remembered server refusal
   syncVoiceBlocked();
   // Fall back to the live model: Band tab selected, voice mode off (as when the voice dialog is cancelled)
   const fallBackToLive = () => {

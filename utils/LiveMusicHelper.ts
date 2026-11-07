@@ -473,7 +473,7 @@ export class LiveMusicHelper extends EventTarget {
   private bpm = 120; private key = 'C Major';
   public genre = 'Jazz'; public style = 'Acid Jazz'; private meter = '4/4';
   private mood = 'None';
-  public generationMode: MusicGenerationMode = 'QUALITY';
+  public generationMode: MusicGenerationMode = 'DIVERSITY';
   public instruments: InstrumentSet = {
     lead: { instrument: 'Piano', active: true, weight: 1.0, visible: true },
     alto: { instrument: 'Alto Saxophone', active: true, weight: 1.0, visible: true },
@@ -2686,8 +2686,13 @@ Prompt: ${text}`
 
   /** A voice or choir is on stage in the voice mode: takes are rendered by Lyria 3.5 (unless the API key may not use it). */
   public get usesSongModel(): boolean {
-      return !this.songModelBlocked && this.voiceMode && this.playingChannelKeys().some(k => isVocalInstrument(this.instruments[k].instrument));
+      if (this.songModelBlocked) return false;
+      // Quality mode without the DJ: a finished song by Lyria 3.5 whenever the song quota allows it, with or without voices
+      if (this.generationMode === 'QUALITY' && !this.conductorMode && this.songQuotaOk) return true;
+      return this.voiceMode && this.playingChannelKeys().some(k => isVocalInstrument(this.instruments[k].instrument));
   }
+  /** The user still has songs in the quota (kept up to date by index.tsx). */
+  public songQuotaOk = true;
   /** Set when the API refused the song model for quota / tier reasons (free tier: 0 requests). Live takes are used then. */
   public songModelBlocked: string | null = null;
 
@@ -2726,26 +2731,29 @@ Prompt: ${text}`
           .sort((a, b) => b.weight - a.weight).slice(0, 4).map(p => this.knobPhrase(p.text));
       const regional = this.regionalVocalStyle();
       const brief = GENRE_SONG_BRIEF[this.genre];
-      const lyricsGiven = !!this.lyricsText.trim() && !this.lyricsVowelsOnly;
+      // Quality mode without any voice on stage: an instrumental piece, no singing and no lyrics
+      const instrumental = voices.length === 0;
+      const lyricsGiven = !instrumental && !!this.lyricsText.trim() && !this.lyricsVowelsOnly;
 
       const lines = [
-          `Create a ${minutes}-minute ${styleTag} song with vocals.`,
+          `Create a ${minutes}-minute ${styleTag} ${instrumental ? 'instrumental piece with no vocals' : 'song with vocals'}.`,
           `Genre: ${this.genre}. Style: ${this.style}.`,
           ...fidelityLines(this.genre, this.style),
           this.mood && this.mood !== 'None' ? `Mood: ${moodPhrase(this.mood)}.` : '',
           `Tempo: ${this.bpm} BPM, ${this.meter} time. Key: ${this.key}.`,
-          instruments.length ? `Instruments (only these): ${instruments.join(', ')}.` : 'A cappella: voices only, no instruments.',
+          instruments.length ? `Instruments (only these): ${instruments.join(', ')}.` : instrumental ? '' : 'A cappella: voices only, no instruments.',
           voices.length ? `Vocals: ${voices.join('; ')}, ${this.voiceIntensityPhrase()}${regional ? `, ${regional}` : ''}${brief && !this.lyricsVowelsOnly ? `, ${brief.vocals}` : ''}.`
-              : brief && !this.lyricsVowelsOnly ? `Vocals: ${brief.vocals}.` : '',
+              : brief && !instrumental && !this.lyricsVowelsOnly ? `Vocals: ${brief.vocals}.` : '',
           // The sound notes name typical instruments: with a fixed lineup they only describe the feel
           brief ? `Sound: ${brief.sound}${instruments.length ? ' (describes the feel only, use just the instruments listed)' : ''}.` : this.genreReference ? `Sound: ${this.genreReference}.` : '',
           knobs.length ? `Playing style: ${knobs.join(', ')}.` : '',
           this.evolutionValue > 0 ? 'Arrangement: progressive, building and evolving.' : this.evolutionValue < 0 ? 'Arrangement: steady and minimal.' : '',
-          'Clear, memorable sung melody, clean high fidelity mix.'
+          instrumental ? 'Clear, memorable melody with a developing arrangement, clean high fidelity mix. No singing, no spoken words.' : 'Clear, memorable sung melody, clean high fidelity mix.'
       ];
       const lyrics = this.lyricsText.trim();
       let words: string;
-      if (this.lyricsVowelsOnly) words = 'Lyrics: wordless vocalise on open vowels (ah, oh, ooh), no words.';
+      if (instrumental) words = `Structure: ${formForLength('[Intro] -> [Theme A] -> [Theme B] -> [Development] -> [Theme A] -> [Outro]', minutes)}`;
+      else if (this.lyricsVowelsOnly) words = 'Lyrics: wordless vocalise on open vowels (ah, oh, ooh), no words.';
       else if (lyrics) words = `Language: ${this.lyricsLanguage}. Sing these lyrics exactly, clearly pronounced.\n\nLyrics:\n${lyrics}`;
       else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage}, sung clearly, fitting ${this.meter} time at ${this.bpm} BPM.\n`
           + `Structure: ${formForLength(brief?.form ?? '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', minutes)}`;
