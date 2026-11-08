@@ -5,6 +5,10 @@ import { customElement, property, state } from 'lit/decorators.js';
 const STORAGE_KEY_PRESETS = 'gamedj.djPresets.v3';
 const STORAGE_KEY_SELECTED = 'gamedj.djPresetSelected.v3';
 const STORAGE_KEY_APPLIED = 'gamedj.djPresetApplied.v3';
+/** The DJ on deck, by id (the index above is from before the Random DJ was added at the top of the list) */
+const STORAGE_KEY_ON_DECK = 'gamedj.djOnDeck';
+/** The Random DJ: a programmable android, first in the list and on deck the first time the app starts */
+export const RANDOM_DJ_ID = 'random';
 
 type ChannelMap = { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
 
@@ -13,7 +17,7 @@ export interface DjConfig {
   /** Portrait file (public/djs/<id>.jpg) and the key of the DJ's saved settings */
   id: string;
   name: string;
-  gender: 'woman' | 'man';
+  gender: 'woman' | 'man' | 'android';
   /** Where the DJ comes from and how old the DJ is (shown under the name) */
   country: string;
   age: number;
@@ -49,6 +53,15 @@ const ALL_CHANNELS: ChannelMap = { lead: true, alto: true, harmonic: true, bass:
 
 // Fictional people: the avatars were drawn for GameDJ (tools/make-dj-portraits.mjs) and show no real musician.
 const DEFAULT_DJS: DjConfig[] = [
+  {
+    // An aristocratic ancient android from the heavens (gold and silver, sapphire eyes): no country and no arranging
+    // habits, average settings you can change. Its "home" is the music it prefers: every Gaming and Ambient style
+    id: RANDOM_DJ_ID, name: 'Random', gender: 'android', country: 'Android', age: 0,
+    tagline: 'An aristocratic ancient android from the celestial spheres, with a silver face, sapphire eyes behind a tech visor, a light gold DJ helmet and rubies and topazes on his armour. Plain average settings; it prefers game and ambient music.',
+    homeStyles: [['Gaming', '8-Bit Retro'], ['Gaming', 'Epic Boss'], ['Gaming', 'RPG Adventure'], ['Gaming', 'Cyberpunk'], ['Gaming', 'Stealth'], ['Gaming', 'Dungeon Crawler'], ['Gaming', 'Racing Arcade'], ['Gaming', 'Cozy Simulation'], ['Gaming', 'Platformer Bounce'], ['Gaming', 'Survival Horror'], ['Gaming', 'Victory Theme'], ['Ambient', 'Deep Space'], ['Ambient', 'Lofi Chill'], ['Ambient', 'Cinematic'], ['Ambient', 'Nature Soundscape'], ['Ambient', 'Dark Ambient'], ['Ambient', 'Arctic Tundra'], ['Ambient', 'Solar Wind'], ['Ambient', 'Industrial Decay'], ['Ambient', 'Deep Forest'], ['Ambient', 'Australian Desert'], ['Ambient', 'African Jungle'], ['Ambient', 'Vast Ocean']], homeBias: 60,
+    arranging: [], habits: 50,
+    channels: { ...ALL_CHANNELS }, eagerness: 50, diversity: 50, complexity: 50, energy: 50, atmosphere: 50, warmup: 5, temperature: 1.1, maxKnobs: 6
+  },
   {
     id: 'diego', name: 'Diego', gender: 'man', country: 'Spain', age: 31,
     tagline: 'Rhythm first. Hot percussion, palmas and stabs, a finale that speeds up.',
@@ -118,6 +131,13 @@ const DEFAULT_DJS: DjConfig[] = [
     homeStyles: [['Jazz', 'Bebop'], ['Jazz', 'Cool Jazz'], ['Jazz', 'Jazz Fusion'], ['Jazz', 'Acid Jazz'], ['Jazz', 'Smooth Jazz'], ['Hawaiian', 'Island Reggae']], homeBias: 50,
     arranging: ['instrument trading', 'solo turns', 'surprise solo', 'fade out'], habits: 85,
     channels: { ...ALL_CHANNELS }, eagerness: 60, diversity: 80, complexity: 80, energy: 58, atmosphere: 55, warmup: 5, temperature: 1.3, maxKnobs: 7
+  },
+  {
+    id: 'hao', name: 'Hao', gender: 'man', country: 'Beijing, China', age: 23,
+    tagline: 'Sophisticated Beijing youngster with a conservatory ear and club taste. Guzheng meets deep house: layers enter one by one, instruments in dialog, a key lift and a polished drop.',
+    homeStyles: [['Oriental', 'Chinese Traditional'], ['Electronic', 'Deep House'], ['Pop', 'Synth-Pop'], ['Classic', 'Modern Classical']], homeBias: 40,
+    arranging: ['layers enter one by one', 'instrument dialog', 'key lift', 'build and drop'], habits: 80,
+    channels: { ...ALL_CHANNELS }, eagerness: 70, diversity: 65, complexity: 75, energy: 72, atmosphere: 60, warmup: 4, temperature: 1.2, maxKnobs: 7
   }
 ];
 
@@ -136,11 +156,17 @@ const SLIDERS: { key: keyof DjConfig; label: string; hint: string; min: number; 
 
 const NUMERIC_KEYS = ['eagerness', 'diversity', 'complexity', 'energy', 'atmosphere', 'warmup', 'temperature', 'maxKnobs', 'homeBias', 'habits'] as const;
 
+const isAndroid = (d: DjConfig) => d.id === RANDOM_DJ_ID;
+/** Under the name: where the DJ comes from and the age (the android has neither) */
+const origin = (d: DjConfig) => isAndroid(d) ? 'Celestial android' : `${d.country} · ${d.age}`;
+
 const clone = (list: DjConfig[]): DjConfig[] => list.map(d => ({ ...d, channels: { ...d.channels }, homeStyles: d.homeStyles.map(h => [...h] as [string, string]), arranging: [...d.arranging] }));
 
+/** Raise when a portrait is redrawn: browsers keep the old picture in their cache otherwise */
+const PORTRAIT_VERSION = 9;
 /** The DJ's avatar (public/djs/<id>.jpg); the initial shows while it loads or when it is missing. */
 function portrait(d: DjConfig) {
-  return html`<div class="portrait" data-initial=${d.name[0]}><img src="/djs/${d.id}.jpg" alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
+  return html`<div class="portrait" data-initial=${d.name[0]}><img src="/djs/${d.id}.jpg?v=${PORTRAIT_VERSION}" alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
 }
 
 @customElement('dj-preset-dialog')
@@ -247,20 +273,26 @@ export class DjPresetDialog extends LitElement {
                   });
               }
           }
-          const idx = parseInt(localStorage.getItem(STORAGE_KEY_SELECTED) || '', 10);
-          if (idx >= 0 && idx < this.presets.length) this.appliedIndex = idx;
-          this.draft = clone(this.presets);
-          this.selectedIndex = this.appliedIndex;
-          // Re-engage the personality that was applied when the app was closed
-          if (localStorage.getItem(STORAGE_KEY_APPLIED) === '1') setTimeout(() => this.emitConfig(), 0);
+          // The DJ on deck when the app was closed; the first time, the Random DJ
+          let id = localStorage.getItem(STORAGE_KEY_ON_DECK);
+          if (!id && localStorage.getItem(STORAGE_KEY_APPLIED) === '1') {
+              // Saved before the Random DJ existed: the index counts the list without it
+              const old = DEFAULT_DJS.filter(d => !isAndroid(d))[parseInt(localStorage.getItem(STORAGE_KEY_SELECTED) || '', 10)];
+              id = old?.id ?? null;
+          }
+          const idx = this.presets.findIndex(d => d.id === (id || RANDOM_DJ_ID));
+          this.appliedIndex = idx >= 0 ? idx : 0;
       } catch { /* localStorage unavailable or corrupt: keep defaults */ }
+      this.draft = clone(this.presets);
+      this.selectedIndex = this.appliedIndex;
+      // The DJ on deck sends its personality at once (the app switches it on when it starts)
+      setTimeout(() => this.emitConfig(), 0);
   }
 
   private saveToStorage() {
       try {
           localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(this.presets));
-          localStorage.setItem(STORAGE_KEY_SELECTED, String(this.appliedIndex));
-          localStorage.setItem(STORAGE_KEY_APPLIED, '1');
+          localStorage.setItem(STORAGE_KEY_ON_DECK, this.presets[this.appliedIndex].id);
       } catch { /* ignore */ }
   }
 
@@ -280,20 +312,21 @@ export class DjPresetDialog extends LitElement {
               ${this.draft.map((d, i) => html`
                 <div class="dj-item ${i === this.selectedIndex ? 'selected' : ''}" @click=${() => { this.selectedIndex = i; }}>
                   <div class="thumb">${portrait(d)}</div>
-                  <div><div class="nm">${d.name}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : `${d.country} · ${d.age}`}</div></div>
+                  <div><div class="nm">${d.name}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : origin(d)}</div></div>
                 </div>`)}
             </div>
             <div class="detail">
               <div class="head">
                 <div class="big">${portrait(p)}</div>
-                <div><h3>${p.name}</h3><p>${p.country} · ${p.age}</p><p>${p.tagline}</p>
-                  <div class="home">Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b></div></div>
+                <div><h3>${p.name}</h3><p>${origin(p)}</p><p>${p.tagline}</p>
+                  <div class="home">${isAndroid(p) ? html`Prefers: <b>${[...new Set(p.homeStyles.map(h => h[0]))].join(' and ')}</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div></div>
               </div>
 
               <div>
                 <span class="label">PREFERRED CHANNELS</span>
                 <div class='channels'>${(Object.keys(p.channels) as (keyof ChannelMap)[]).map(c => html`<label class='chan-check ${p.channels[c] ? '' : 'off'}'><input type='checkbox' .checked=${p.channels[c]} @change=${() => this.toggleChan(c)}>${c.toUpperCase()}</label>`)}</div>
               </div>
+
 
               <div class='slider-grid'>${SLIDERS.map(s => this.renderSlider(s))}</div>
             </div>
@@ -309,12 +342,15 @@ export class DjPresetDialog extends LitElement {
 
   private renderSlider(s: typeof SLIDERS[number]) {
     const step = s.step ?? 1;
-    const val = this.draft[this.selectedIndex][s.key] as number;
+    const dj = this.draft[this.selectedIndex];
+    const val = dj[s.key] as number;
+    // The android's Homeland is the chance to play the genres it prefers
+    const android = isAndroid(dj) && s.key === 'homeBias';
     return html`<div class='control'>
-      <span class='label'>${s.label}<span>${step < 1 ? val.toFixed(1) : val}${s.unit ?? ''}</span></span>
+      <span class='label'>${android ? 'Favourites' : s.label}<span>${step < 1 ? val.toFixed(1) : val}${s.unit ?? ''}</span></span>
       <input type='range' .min=${String(s.min)} .max=${String(s.max)} .step=${String(step)} .value=${String(val)}
         @input=${(e: any) => this.updateValue(s.key, step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value))}>
-      <span class="hint">${s.hint}</span>
+      <span class="hint">${android ? 'Chance to play a Gaming or Ambient style' : s.hint}</span>
     </div>`;
   }
 
@@ -340,6 +376,16 @@ export class DjPresetDialog extends LitElement {
     this.show = false;
     // The DJ button stays selected: the app switches the DJ on
     this.dispatchEvent(new CustomEvent('dj-dialog-applied', { bubbles: true, composed: true }));
+  }
+
+  /** Put a DJ on deck without the dialog (the dice hand over to the Random DJ); saved like Apply. */
+  public putOnDeck(id: string) {
+    const idx = this.presets.findIndex(d => d.id === id);
+    if (idx < 0) return;
+    this.appliedIndex = idx;
+    this.selectedIndex = idx;
+    this.saveToStorage();
+    this.emitConfig();
   }
 
   private emitConfig() {

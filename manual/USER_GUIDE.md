@@ -57,7 +57,7 @@ The right sidebar has two tabs with five channels each:
 
 ## 6. The Dice (Random)
 
-The dice button (only while stopped) turns the DJ off if it is on (the label under the logo then reads **Active: Random**), then picks genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
+The dice button (only while stopped) hands the music to the **Random DJ** (the android; the label under the logo reads **Active: Random**), which conducts what the dice rolled from the next Record. The dice then pick genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
 
 ## 7. The knobs
 
@@ -84,7 +84,9 @@ Anything you have locked (channels, manifest, mood) is left alone.
 - brings sections in and out: solos, duets, trios, quartets, full band,
 - turns knobs, with a limit per genre: **6** knobs for modern genres, **4** for traditional, **2** for regional.
 
-**Your hands win.** When you turn a knob yourself, the DJ leaves it alone for **30 seconds** before touching it again.
+**Your hands win.** When you touch a knob or a channel yourself (instrument, weight, volume, on/off), the DJ leaves it exactly as you set it for **30 seconds** before touching it again.
+
+**There is always a DJ.** The DJ button opens the DJ dialog: Apply switches to the DJ you chose, Cancel keeps the current one. The DJ rests while a take is stopped, played back or rendered as a song, and takes the controls again when you press Record; its name stays under the logo.
 
 ## 9. Voices and lyrics
 
@@ -101,7 +103,11 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 10. DJ Presets (personalities)
 
-The **DJ Presets** dialog has ten DJs. They are fictional people, each drawn as a flat colour avatar with headphones, each from a country of their own:
+The **DJ Presets** dialog has twelve DJs. First in the list is **Random**, an aristocratic ancient android from the celestial spheres, with a silver face, sapphire eyes behind a tech visor, a light gold DJ helmet and rubies and topazes on his armour. It has plain average settings (most sliders at 50%), no arranging habits of its own, and it prefers game and ambient music: instead of home styles it has every **Gaming** and **Ambient** style, and its **Favourites** slider (60% at first) is the chance that it picks one of them when it plans a piece. You change its sliders and channels as for any DJ; they are saved in this browser.
+
+When the app starts it switches on the DJ that was on deck when you closed it. The first time, that is the Random DJ.
+
+The other eleven are fictional people, each drawn as a flat colour avatar with headphones, each from a country of their own:
 
 | DJ | From | Style | Home styles |
 |---|---|---|---|
@@ -114,6 +120,7 @@ The **DJ Presets** dialog has ten DJs. They are fictional people, each drawn as 
 | Siobhán | Ireland, 63 | Session elder. Tunes in sets, solo turns around the circle. | Air, Jig, Reel, Folk, Celtic Folk |
 | Imani | Chicago, USA, 38 | Blues lover. Slow-burning builds, call and response, stop-time breaks. | Chicago Blues, Delta Blues, Soul Blues, Texas Blues, Gospel |
 | Desmond | Jamaica, 33 | Jazz specialist. Heads and solos, trading fours, a surprise solo, a cool fade. | Bebop, Cool Jazz, Jazz Fusion, Acid Jazz, Smooth Jazz, Island Reggae |
+| Hao | Beijing, China, 23 | Sophisticated youngster with a conservatory ear and club taste. Layers enter one by one, instruments in dialog, a key lift and a polished drop. | Chinese Traditional, Deep House, Synth-Pop, Modern Classical |
 | Viktor | Russia, 66 | Conservatory veteran turned experimenter. Slow builds, key lifts, surprise solos. | Russian Folk, Romantic, Byzantine Chant |
 
 Each DJ has its own settings:

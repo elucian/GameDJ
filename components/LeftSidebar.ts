@@ -477,15 +477,10 @@ export class LeftSidebar extends LitElement {
     this.dispatch('theme-changed', this.isDarkTheme);
   }
 
-  /** DJ button: off -> opens the DJ dialog (Apply switches the DJ on, Cancel leaves it off); on -> switches the DJ off. */
+  /** DJ button: opens the DJ dialog. There is always a DJ: Apply switches to the chosen one, Cancel keeps the current one. */
   private toggleDj() {
     uiSounds.playButton();
-    if (this.isConductorActive) {
-      this.isConductorActive = false;
-      this.dispatch('dj-changed', false);
-    } else {
-      this.onPresetsClick();
-    }
+    this.onPresetsClick();
   }
 
   private cyclePrimaryMode() {

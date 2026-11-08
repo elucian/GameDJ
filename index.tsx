@@ -14,7 +14,7 @@ import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
-import { DjPresetDialog } from './components/DjPresetDialog';
+import { DjPresetDialog, RANDOM_DJ_ID } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
 import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
@@ -168,15 +168,14 @@ function main() {
       pdjMidi.setMessage(`DJ ${String(name).toUpperCase()} SELECTED`, "info");
   });
 
-  // Apply puts the DJ on deck (the button stays selected); Cancel leaves it off (the button is unselected)
+  // Apply puts the chosen DJ on deck and switches it on; Cancel keeps the DJ that is on (there is always a DJ)
   (djPresetDialog as any).addEventListener('dj-dialog-applied', () => {
       leftSidebar.isConductorActive = true;
       (leftSidebar as any).dispatchEvent(new CustomEvent('dj-changed', { detail: true }));
   });
 
   (djPresetDialog as any).addEventListener('dj-dialog-cancelled', () => {
-      leftSidebar.isConductorActive = false;
-      pdjMidi.setMessage(`DJ CONFIG CANCELLED`, "info");
+      pdjMidi.setMessage(`DJ CONFIG CANCELLED: DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} STAYS`, "info");
   });
 
   // The lyrics are written in the background (also with the dialog closed). Meanwhile the song settings and the recording
@@ -323,17 +322,28 @@ function main() {
   // Counts DJ activations so a stale async DJ setup can detect that a newer request superseded it
   let djRequest = 0;
 
+  // There is always a DJ: it rests (hands off the controls) while a take is played back, stopped or rendered, and
+  // takes the controls again on the next Record. The DJ button and the "Active:" name stay on.
   const deactivateDj = () => {
-    leftSidebar.isConductorActive = false;
     rightSidebar.conductorActive = false;
     liveMusicHelper.setConductorMode(false);
   };
+  const wakeDj = () => {
+    if (!leftSidebar.isConductorActive || liveMusicHelper.conductorMode) return;
+    liveMusicHelper.setConductorMode(true);
+    rightSidebar.conductorActive = true;
+  };
 
-  setTimeout(() => {
+  setTimeout(async () => {
       topToolbar.reset();
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
-      topToolbar.randomizeInstruments(); 
+      await topToolbar.randomizeInstruments();
+      // The app starts with a DJ on: the one on deck when it was closed, the Random DJ (the android) the first time
+      if (!leftSidebar.isConductorActive && liveMusicHelper.playbackState === 'stopped') {
+          leftSidebar.isConductorActive = true;
+          (leftSidebar as any).dispatchEvent(new CustomEvent('dj-changed', { detail: true }));
+      }
   }, 100);
 
   window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -602,6 +612,8 @@ function main() {
           pdjMidi.setMessage("ERROR: NO ACTIVE CHANNELS", "error");
           return;
       }
+      // The resting DJ takes the controls again (it plans the take: live, a song, or the vocal performance)
+      wakeDj();
       // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
       // as a whole song (instruments, singers and lyrics) by Lyria 3.5
       let kind: 'song' | 'live' = liveMusicHelper.usesSongModel && !forceLiveTake ? 'song' : 'live';
@@ -1012,8 +1024,8 @@ function main() {
           pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} ARRANGES THE VOCAL PERFORMANCE`, 'info');
           return;
       }
-      deactivateDj();
-      pdjMidi.setMessage(`DJ OFF: ${why} (NO SONGS LEFT)`, 'info');
+      // No songs left: the voices cannot stay (they are taken off the stage), the DJ stays
+      pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} STAYS: ${why} (NO SONGS LEFT, NO VOICES)`, 'info');
   };
 
   // DJ activated in the voice mode (songs left): a Voice dialog without voices is rolled with its dice (voices, choir,
@@ -1091,9 +1103,9 @@ function main() {
           }
           if (!(voiceOnStage() && rightSidebar.locks.channels)) stripVoicesForDj();
           if (voiceOnStage()) {
-              (window as any).isConductorActive = false;
+              // Locked channels with voices and no songs: the DJ stays on deck but leaves your locked setup alone
               deactivateDj();
-              pdjMidi.setMessage('DJ OFF: VOICES ON STAGE (THE DJ DOES NOT CONDUCT VOICES)', 'info');
+              pdjMidi.setMessage('DJ RESTS: LOCKED VOICES ON STAGE AND NO SONGS LEFT', 'info');
               return;
           }
           const rsLocks = (rightSidebar as any).locks;
@@ -1309,13 +1321,14 @@ function main() {
   (leftSidebar as any).addEventListener('randomize', async () => {
       cancelAutoLoop();
       if (liveMusicHelper.playbackState !== 'stopped') return;
-      // The dice make a random setup: the DJ on deck steps down (the top bar shows "Active: Random")
-      if (leftSidebar.isConductorActive || liveMusicHelper.conductorMode) {
-          djRequest++; // a DJ plan still being prepared is dropped
-          (window as any).isConductorActive = false;
-          deactivateDj();
-          pdjMidi.setMessage('DICE: DJ OFF, RANDOM SETUP', 'info');
-      }
+      // The dice make a random setup and hand it to the Random DJ (the android): it conducts what the dice rolled,
+      // without planning its own instruments, from the next Record
+      djRequest++; // a DJ plan still being prepared is dropped
+      deactivateDj();
+      djPresetDialog.putOnDeck(RANDOM_DJ_ID);
+      leftSidebar.isConductorActive = true;
+      (window as any).isConductorActive = true;
+      pdjMidi.setMessage('DICE: DJ RANDOM TAKES OVER', 'info');
       await liveMusicHelper.clearRecording(); 
       timeline.hasRecording = false; 
       leftSidebar.hasRecording = false;
@@ -1404,8 +1417,8 @@ function main() {
       leftSidebar.isResetting = true;
       if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
       await liveMusicHelper.stop(false, true); 
-      leftSidebar.isConductorActive = false;
-      rightSidebar.conductorActive = false;
+      // The DJ stays on deck (it rests until the next Record)
+      deactivateDj();
       djEngagingCountdown = false;
       rightSidebar.playbackState = 'stopped';
       topToolbar.playbackState = 'stopped';

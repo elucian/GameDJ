@@ -1963,9 +1963,12 @@ Prompt: ${text}`
       const currentSetup = { ...this.instruments };
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
 
+      const now = Date.now();
       channels.forEach(ch => {
           // If channel is not visible in manifest, ignore it
           if (currentSetup[ch].visible === false) return;
+          // A channel you touched in the last 30 seconds stays as you left it
+          if (now - (this.userInteractionCooldowns.get(ch) || 0) < USER_KNOB_HOLD_MS) return;
 
           const targetActive = currentStage.activeChannels[ch];
           
@@ -2001,7 +2004,8 @@ Prompt: ${text}`
           }
       }
 
-      const interactionCooldownMs = 10000 - (this.evolutionValue * 500);
+      // A channel you touched (instrument, weight, on/off) is also yours for 30 seconds
+      const interactionCooldownMs = USER_KNOB_HOLD_MS;
       // Dynamic base step based on evolution. Higher evolution = faster cuts.
       const baseStep = 0.05 + (this.evolutionValue > 5 ? 0.05 : 0);
       // Warm-up: right after the DJ takes over the knobs move slowly, then the DJ settles into its normal pace

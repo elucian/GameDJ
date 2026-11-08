@@ -11,7 +11,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 files = sorted(SRC.glob('*.png'))
 for f in files:
     img = Image.open(f).convert('RGB').resize((320, 320), Image.LANCZOS)
-    img.save(OUT / f'{f.stem}.jpg', quality=84, optimize=True, progressive=True)
+    img.save(OUT / f'{f.stem}.jpg', quality=84, optimize=True)
     print(f'{f.stem}.jpg', (OUT / f'{f.stem}.jpg').stat().st_size // 1024, 'KB')
 if '--sheet' in sys.argv and files:
     sheet = Image.new('RGB', (4 * 320, ((len(files) + 3) // 4) * 320))
