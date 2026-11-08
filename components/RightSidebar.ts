@@ -505,6 +505,8 @@ export class RightSidebar extends LitElement {
   @property({ type: Boolean }) isStereo = true;
   @property({ type: Boolean }) conductorActive = false;
   @property({ type: Number }) seed = 0;
+  /** Song length in bars, shown under EVL */
+  @property({ type: Number }) bars = 16;
   @property({ type: Boolean }) seedLocked = false;
   @property({ type: Boolean }) genreLocked = false;
   
@@ -1037,6 +1039,7 @@ export class RightSidebar extends LitElement {
           .durationIndex=${this.durationIndex}
           .isLocked=${isEvolutionLocked}
           .seed=${this.seed}
+          .bars=${this.bars}
           .seedLocked=${this.seedLocked}
           @seed-lock-changed=${(e: any) => this.dispatch('seed-lock-changed', e.detail)}
           @duration-changed=${(e: any) => { this.durationIndex = DURATION_STEPS.findIndex(s => s.value === e.detail); this.dispatch('duration-changed', e.detail); }}

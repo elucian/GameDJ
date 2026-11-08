@@ -1095,15 +1095,15 @@ function main() {
       syncBars();
   }));
 
-  // === Tempo slider (manifest panel) and the Bars box (top bar) ===
+  // === Tempo slider and the Bars read-out (both in the song manifest panel) ===
   // Quarter-note beats in one bar: 4/4 -> 4, 3/4 -> 3, 6/8 -> 3, free time -> 4
   const beatsPerBar = (meter: string) => {
       const m = /^(\d+)\/(\d+)$/.exec(meter);
       return m ? (Number(m[1]) * 4) / Number(m[2]) : 4;
   };
   const barSeconds = () => beatsPerBar(topToolbar.meter) * 60 / Math.max(20, topToolbar.bpm);
-  /** The Bars box shows the song length (DUR slider) in bars at the current tempo and meter. */
-  const syncBars = () => { topToolbar.bars = Math.max(1, Math.round(rightSidebar.durationMinutes * 60 / barSeconds())); };
+  /** The Bars read-out shows the song length (DUR slider) in bars at the current tempo and meter. */
+  const syncBars = () => { rightSidebar.bars = Math.max(1, Math.round(rightSidebar.durationMinutes * 60 / barSeconds())); };
   topToolbar.addEventListener('tempo-state', ((e: Event) => {
       const d = (e as CustomEvent<{ bpm: number; min: number; max: number; locked: boolean }>).detail;
       rightSidebar.bpm = d.bpm; rightSidebar.bpmMin = d.min; rightSidebar.bpmMax = d.max;

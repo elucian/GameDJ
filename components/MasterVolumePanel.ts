@@ -61,6 +61,7 @@ export class MasterVolumePanel extends LitElement {
     }
 
     .seed-chip { font-size: 9px; font-weight: bold; letter-spacing: 0.5px; color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 3px; padding: 1px 5px; cursor: pointer; white-space: nowrap; }
+    .bars-readout { display: flex; align-items: center; gap: 8px; user-select: none; cursor: default; }
     .seed-chip.locked { color: var(--accent-color); border-color: var(--accent-color); }
     .volume-label {
       font-size: 10.58px; 
@@ -275,6 +276,8 @@ export class MasterVolumePanel extends LitElement {
   @property({ type: Boolean }) isStereo = true;
   @property({ type: Boolean }) isLocked = false;
   @property({ type: Number }) seed = 0;
+  /** Song length in bars: a read-out that follows the DUR slider, the tempo and the meter */
+  @property({ type: Number }) bars = 16;
   @property({ type: Boolean }) seedLocked = false;
   
   @state() private smoothedLevelL = 0;
@@ -426,7 +429,7 @@ export class MasterVolumePanel extends LitElement {
           <div class="value-display">${this.evolution > 0 ? '+' : ''}${this.evolution}</div>
         </div>
         <div class="tools-row">
-          <span></span>
+          <div class="bars-readout" title="Song length in bars (follows DUR, the tempo and the meter)"><span class="volume-label">BARS</span><span class="value-display">${Math.min(999, this.bars)}</span></div>
           <div class="seed-chip ${this.seedLocked ? 'locked' : ''}" title="Lock the seed to repeat the same take on the next recording" @click=${this.toggleSeedLock}>SEED ${this.seedLocked ? '🔒 ' + this.seed : 'AUTO'}</div>
         </div>
       </div>

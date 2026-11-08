@@ -1058,8 +1058,8 @@ export class TopToolbar extends LitElement {
     /* MOOD and KEY widened a further 10%, taken from TEMPO */
     .control-group.group-mood { flex: 0 1 144px; min-width: 119px; max-width: 175px; }
     .control-group.group-key { flex: 0 1 140px; min-width: 119px; max-width: 167px; }
-    .control-group.group-meter { flex: 0 0 78px; min-width: 78px; }
-    .control-group.group-bars { flex: 0 0 56px; min-width: 56px; }
+    /* METER takes the room of the old BARS box (bars are a read-out, now under EVL in the song manifest) */
+    .control-group.group-meter { flex: 0 0 134px; min-width: 134px; }
 
     .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; width: 100%; }
     .label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
@@ -1105,8 +1105,7 @@ export class TopToolbar extends LitElement {
     .select-genre, .select-style, .select-10vw { width: 100%; min-width: 0; flex: 1; }
     .select-mood, .select-7vw { width: 100%; min-width: 0; flex: 1; }
     .select-key { width: 100%; min-width: 0; flex: 1; }
-    .bars-display { width: 100%; box-sizing: border-box; height: 25px; line-height: 23px; text-align: center; font-family: monospace; font-size: 15px; color: var(--accent-color); background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 2px; user-select: none; cursor: default; }
-    .select-meter { width: 70px; min-width: 70px; max-width: 75px; flex: 0 0 70px; padding: 0 4px; }
+    .select-meter { width: 100%; min-width: 0; flex: 1; padding: 0 4px; }
     .value-display { font-family: monospace; font-size: 16.73px; color: var(--accent-color); min-width: 28px; text-align: right; }
     .lock-btn { background: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); padding: 2px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #777; transition: all 0.15s ease-out; width: 18px; height: 18px; box-sizing: border-box; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
     .lock-btn:hover { background: rgba(255,255,255,0.1); color: #bbb; transform: translateY(-0.5px); }
@@ -1126,15 +1125,14 @@ export class TopToolbar extends LitElement {
       .brand-text { display: block; }
       .control-group, .control-group.fixed,
       .control-group.group-genre, .control-group.group-style, .control-group.group-mood,
-      .control-group.group-key, .control-group.group-meter, .control-group.group-bars {
+      .control-group.group-key, .control-group.group-meter {
         order: 3; flex: 0 0 auto; width: 100%; min-width: 0; max-width: none;
         flex-direction: row; align-items: center; gap: 8px; padding: 5px 10px; margin: 0;
         background: var(--surface-color);
       }
-      .control-group.group-bars { border-bottom: 1px solid var(--border-color); }
+      .control-group.group-meter { border-bottom: 1px solid var(--border-color); }
       .label-row { width: 92px; flex: 0 0 92px; margin: 0; }
       .row { flex: 1; min-width: 0; }
-      .select-meter { width: 100%; max-width: none; flex: 1; }
       select { height: 32px; }
     }
   `;
@@ -1171,8 +1169,6 @@ export class TopToolbar extends LitElement {
   @state() private locked = { genre: false, style: false, tempo: false, key: false, mood: false };
 
   @state() private bpmRange: [number, number] = [100, 120];
-  /** Song length in bars (shown and editable; the DUR slider and the tempo keep it in step) */
-  @state() public bars = 16;
 
   /** The tempo slider lives in the manifest panel: tell it the tempo, its range and the lock. */
   protected updated(changed: Map<string, unknown>) {
@@ -1596,17 +1592,6 @@ export class TopToolbar extends LitElement {
           <select class="select-meter" @change=${this.onMeterChange}>
             ${meters.map(m => html`<option value=${m} .selected=${live(m === this.meter)}>${m}</option>`)}
           </select>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="control-group group-bars">
-        <div class="label-row">
-          <span class="label">Bars</span>
-        </div>
-        <div class="row">
-          <div class="bars-display" title="Song length in bars (follows the DUR slider and the tempo)">${Math.min(999, this.bars)}</div>
         </div>
       </div>
     `;

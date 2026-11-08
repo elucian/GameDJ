@@ -18,7 +18,7 @@ GameDJ is a live AI music workstation built on Google's Lyria. You choose a genr
 | Right sidebar | Channels (instruments), Manifest switches, Duration, Evolution, Volume |
 | Bottom | Timeline with fades and seeking |
 
-On a phone (screens up to 700 px wide) the page is one scrolling column: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record), which stay at the top while you scroll; the master volume meters and the timeline; the Mode, Export format and Download buttons; the displays and knobs; the song manifest; and the sound tracks.
+On a phone (screens up to 700 px wide) the page is one scrolling column: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record), which stay at the top while you scroll; the master volume meters and the timeline; the Mode, Export format and Download buttons; the two displays; the song manifest; and the sound tracks. The knob panel is hidden on phones (the DJ can still turn the knobs).
 
 ## 3. Choosing the music
 
@@ -51,7 +51,7 @@ The right sidebar has two tabs with five channels each:
 ## 5. Recording and playback
 
 - **Record** starts a new take (it overwrites the previous one). **Stop** ends it. **Play Recording** replays it, including the automation of knobs and channels. **Loop** replays automatically after 5 seconds, and a finished recording auto-loops after a 20-second countdown unless you touch something.
-- **Duration** sets the target length. **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
+- **Duration** sets the target length; **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
 - **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when the DJ is off and you have songs left in your quota. Vocalization is selected automatically when a voice channel is used.
 - **Export** downloads the recording (choose the format with the format button).
 
