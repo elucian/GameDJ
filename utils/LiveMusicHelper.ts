@@ -2649,6 +2649,99 @@ Prompt: ${text}`
       ];
   }
 
+  /**
+   * The DJ's performance plan for a song with voices: how each section of the lyrics (or of the genre's form when
+   * Lyria writes the words) is sung and accompanied, shaped by the DJ's arranging habits (a cappella openings,
+   * call and response with the choir, instrumental solo breaks, key lifts, tag endings...). The DJ never changes the
+   * voices or the words: it only arranges how they are performed. Null without the DJ.
+   */
+  public djVocalPlan(minutes: number): string[] | null {
+      const dj = this.djPersonality;
+      if (!this.conductorMode || !dj) return null;
+      const keys = this.playingChannelKeys();
+      const voiceKeys = keys.filter(k => isVocalInstrument(this.instruments[k].instrument));
+      if (voiceKeys.length === 0) return null;
+      const instruments = keys.filter(k => !isVocalInstrument(this.instruments[k].instrument)).map(k => this.instruments[k].instrument);
+      const lead = this.instruments[voiceKeys[0]].instrument.toLowerCase();
+      const second = voiceKeys[1] ? this.instruments[voiceKeys[1]].instrument.toLowerCase() : '';
+      const chance = dj.habits ?? 80;
+      const habits = dj.arranging ?? [];
+      const has = (h: string) => habits.includes(h) && Math.random() * 100 < chance;
+      const soloist = instruments.length ? instruments[Math.floor(Math.random() * instruments.length)] : '';
+      const melodic = instruments.find(i => !/drum|percussion|shaker|cajon|tabla|bodhran|conga|bongo|timpani|snare|cowbell|clap/i.test(i)) || instruments[0] || '';
+      const light = instruments.filter(i => !/drum|percussion|snare|timpani/i.test(i)).slice(0, 2);
+
+      // The sections in singing order: the lyrics' own tags, else the genre's form trimmed to the length
+      let names: string[] = [];
+      if (this.lyricsText.trim() && !this.lyricsVowelsOnly) names = this.lyricsText.split(/\r?\n/).map(l => l.trim()).filter(l => /^\[.+\]$/.test(l)).map(l => l.slice(1, -1));
+      if (names.length === 0) {
+          const brief = GENRE_SONG_BRIEF[this.genre];
+          names = formForLength(brief?.form ?? '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', minutes)
+              .split('->').map(p => p.trim().replace(/^\[|\]$/g, ''));
+      }
+      const kind = (n: string) => /intro/i.test(n) ? 'intro' : /outro|coda|ending/i.test(n) ? 'outro'
+          : /chorus|refrain|hook|estribillo/i.test(n) ? 'chorus' : /pre-?chorus|build/i.test(n) ? 'pre'
+          : /bridge|middle/i.test(n) ? 'bridge' : /solo|instrumental|interlude|break|falseta/i.test(n) ? 'break' : 'verse';
+      const seen: Record<string, number> = {};
+      const sections = names.map(n => { seen[n] = (seen[n] || 0) + 1; return { label: seen[n] > 1 ? `[${n}] (time ${seen[n]})` : `[${n}]`, kind: kind(n), cues: [] as string[] }; });
+      const sung = sections.filter(s => !['intro', 'outro', 'break'].includes(s.kind));
+      const verses = sections.filter(s => s.kind === 'verse');
+      const choruses = sections.filter(s => s.kind === 'chorus');
+      const lastChorus = choruses[choruses.length - 1];
+      const bridge = sections.find(s => s.kind === 'bridge');
+      const band = instruments.length ? 'the band' : 'the voices';
+
+      // The default performance: sparse verses, the second voice joins on the choruses, the last one is the biggest
+      sections.forEach(s => {
+          if (s.kind === 'intro') s.cues.push(instruments.length ? `${melodic || band} alone, setting the mood, no vocals` : 'a hummed opening');
+          else if (s.kind === 'outro') s.cues.push(instruments.length ? 'the band winds down, resolving to the tonic' : 'the voices fade on a held chord');
+          else if (s.kind === 'break') s.cues.push(instruments.length ? `instrumental, ${soloist} leads, no vocals` : 'wordless humming');
+          else if (s.kind === 'verse') s.cues.push(`${lead}${light.length ? ` over ${light.join(' and ')}` : ''}, intimate`);
+          else if (s.kind === 'pre') s.cues.push('building, the band rises under the voice');
+          else if (s.kind === 'bridge') s.cues.push('stripped back, a new color');
+          else s.cues.push(`${lead}${second ? ` with the ${second} in harmony` : ''}, ${instruments.length ? 'full band' : 'full voices'}`);
+      });
+      if (lastChorus && choruses.length > 1) lastChorus.cues.push('the biggest chorus');
+
+      // The DJ's habits
+      const firstSung = sung[0];
+      let aCappella = false;
+      if ((has('a cappella opening') || has('unaccompanied verse')) && firstSung && instruments.length) { firstSung.cues = [`${lead} alone, a cappella, no instruments; the band enters at the next section`]; aCappella = true; }
+      else if (has('free rubato opening') && firstSung) firstSung.cues.push('free time (rubato), the steady beat starts at the next section');
+      if (has('hook first') && sections[0]?.kind === 'intro' && choruses.length) sections[0].cues = ['the intro already plays the chorus melody, the hook up front'];
+      if (has('long intro') && sections[0]?.kind === 'intro') sections[0].cues.push('long and patient');
+      // After an a cappella opening the layers build up under the next verse
+      const layered = verses.find(v => !(aCappella && v === firstSung));
+      if (has('layers enter one by one') && layered && instruments.length > 1) layered.cues.push('the instruments enter one at a time under the voice');
+      if (has('slow build')) sung.forEach((s, i) => { if (i > 0 && i < sung.length - 1) s.cues.push('a little fuller than before'); });
+      if (has('call and response') && choruses[0]) choruses.forEach(c => c.cues.push(second ? `call and response: the ${lead} sings each line, the ${second} answers` : instruments.length ? `call and response: the voice sings each line, ${melodic} answers` : 'call and response between the voices'));
+      if ((has('instrument dialog') || has('instrument trading')) && melodic) (bridge || verses[1] || verses[0])?.cues.push(`the voice and ${melodic} trade phrases`);
+      if (has('stop-time break') && instruments.length) (bridge || verses[verses.length - 1])?.cues.push('stop-time: the band hits only beat one while the voice sings the gaps');
+      if (has('no drums')) sections.forEach(s => s.cues = s.cues.map(c => c.replace('full band', 'full ensemble'))) ;
+      const inserts: { after: typeof sections[number]; text: string }[] = [];
+      if ((has('solo turns') || has('surprise solo')) && soloist && choruses[0] && !sections.some(s => s.kind === 'break'))
+          inserts.push({ after: choruses[0], text: `an 8-bar instrumental solo by ${soloist}, no vocals` });
+      if (has('percussion break') && lastChorus && instruments.some(i => /drum|percussion|cajon|tabla|conga|bongo|clap|bodhran/i.test(i)))
+          inserts.push({ after: sections[Math.max(0, sections.indexOf(lastChorus) - 1)], text: 'a 4-bar percussion break, hand claps, no vocals' });
+      if (has('build and drop') && lastChorus) lastChorus.cues.push('after a bar of silence everything drops in at once');
+      if (has('key lift') && lastChorus) lastChorus.cues.push('key change: up a whole step');
+      if (has('cinematic swell') && lastChorus) lastChorus.cues.push('a broad cinematic swell');
+      if (has('grand finale') && lastChorus) lastChorus.cues.push('grand and triumphant');
+      if (has('stabs') && choruses[0]) choruses.forEach(c => c.cues.push('short accented stabs from the band'));
+      if (has('soft dynamics')) sung.forEach(s => s.cues.push('soft'));
+      const end = sections[sections.length - 1];
+      if (has('tag ending') && lastChorus) lastChorus.cues.push('tag ending: the last line repeated three times');
+      else if (has('accelerando ending') && end) end.cues.push('accelerando to a fiery finish');
+      else if (has('fade out') && end) end.cues.push('slow fade out');
+
+      const out: string[] = [];
+      sections.forEach(s => {
+          out.push(`${s.label}: ${s.cues.join('; ')}.`);
+          inserts.filter(x => x.after === s).forEach(x => out.push(`Then ${x.text}.`));
+      });
+      return [`Performance plan by DJ ${dj.name}${dj.country ? ` (${dj.country})` : ''} (stage directions, never sung):`, ...out];
+  }
+
   /** The text prompt for Lyria 3.5: song description in labelled lines, then the lyrics with section tags. */
   public buildSongPrompt(): string {
       const keys = this.playingChannelKeys();
@@ -2668,6 +2761,8 @@ Prompt: ${text}`
       const lyricsGiven = !instrumental && !!this.lyricsText.trim() && !this.lyricsVowelsOnly;
       // An instrumental with the DJ on follows the DJ's arrangement instead of a generic form
       const djPlan = instrumental ? this.djSongPlan(minutes) : null;
+      // A song with voices and the DJ on: the DJ's performance plan for the singers and the band
+      const vocalPlan = instrumental ? null : this.djVocalPlan(minutes);
 
       const lines = [
           `Create a ${minutes}-minute ${styleTag} ${instrumental ? 'instrumental piece with no vocals' : 'song with vocals'}.`,
@@ -2692,8 +2787,9 @@ Prompt: ${text}`
       else if (lyrics) words = `Language: ${this.lyricsLanguage}. Sing these lyrics exactly, clearly pronounced.\n\nLyrics:\n${lyrics}`;
       else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage}, sung clearly, fitting ${this.meter} time at ${this.bpm} BPM.\n`
           + `Structure: ${formForLength(brief?.form ?? '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', minutes)}`;
-      if (lyricsGiven) lines.push('Follow the section order of the lyrics exactly; add a short instrumental intro and outro, and no extra lyrics.');
-      return [...lines.filter(Boolean), words].join('\n');
+      if (lyricsGiven) lines.push(vocalPlan ? 'Follow the section order of the lyrics exactly, with the instrumental parts of the performance plan; no extra lyrics.'
+          : 'Follow the section order of the lyrics exactly; add a short instrumental intro and outro, and no extra lyrics.');
+      return [...lines.filter(Boolean), ...(vocalPlan ? [vocalPlan.join('\n'), ''] : []), words].join('\n');
   }
 
   /** Asks the server to render the song (Lyria 3.5, then Lyria 3 Pro) and returns the interaction. */

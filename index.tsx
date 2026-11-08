@@ -615,9 +615,10 @@ function main() {
       if (liveMusicHelper.usesSongModel) {
           // A song with voices cannot be arranged by the DJ: it steps down (button unselected). An instrumental
           // Quality song is arranged by the DJ up front (renderSong asks it for a plan) and the DJ stays on.
-          if ((liveMusicHelper.conductorMode || leftSidebar.isConductorActive) && liveMusicHelper.songHasVoices) {
-              deactivateDj();
-              pdjMidi.setMessage('DJ OFF: THE DJ DOES NOT ARRANGE VOICES', 'info');
+          // With the DJ on, renderSong asks it for the plan: the arrangement of an instrumental, or the vocal
+          // performance of a song with voices. The DJ stays on.
+          if (liveMusicHelper.conductorMode && liveMusicHelper.songHasVoices) {
+              pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} ARRANGES THE VOCAL PERFORMANCE`, 'info');
           }
           // The dialog's lyrics and language are what gets sung, also when they were not applied yet
           if (liveMusicHelper.songHasVoices) {
@@ -934,7 +935,8 @@ function main() {
 
       rightSidebar.currentTab = 'Lyria';
       applyDialogVoices(e.detail.solos, e.detail.choir);
-      (window as any).applyVoiceKnobSettings();
+      // Never defined anywhere: the call threw on every Apply of the Voice dialog
+      (window as any).applyVoiceKnobSettings?.();
   });
 
   // Dice in voice mode: locked voice settings put exactly the dialog's voices on stage (and no other voices);
@@ -980,11 +982,18 @@ function main() {
       if (keepQuality) pdjMidi.setMessage('DJ: QUALITY MODE, THE DJ ARRANGES A LYRIA 3.5 SONG', 'info');
       else if (was !== 'DIVERSITY') pdjMidi.setMessage('DJ: VOICE OFF, MODE DIVERSITY', 'info');
   };
-  // Voices chosen while the DJ is on (voice mode, Voice dialog, a voice instrument): the DJ steps down
+  // Voices need a Lyria 3.5 song (the song quota and a key that may use it)
+  const songsAvailable = () => liveMusicHelper.songQuotaOk && !liveMusicHelper.songModelBlocked;
+  // Voices chosen while the DJ is on (voice mode, Voice dialog, a voice instrument): the DJ stays and arranges the
+  // vocal performance of the Lyria 3.5 song (it never changes the voices or the lyrics). Without songs left it steps down.
   const djStepsDownForVoices = (why: string) => {
       if (!leftSidebar.isConductorActive && !liveMusicHelper.conductorMode) return;
+      if (songsAvailable()) {
+          pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} ARRANGES THE VOCAL PERFORMANCE`, 'info');
+          return;
+      }
       deactivateDj();
-      pdjMidi.setMessage(`DJ OFF: ${why}`, 'info');
+      pdjMidi.setMessage(`DJ OFF: ${why} (NO SONGS LEFT)`, 'info');
   };
 
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
@@ -1000,6 +1009,17 @@ function main() {
           // Voices the DJ cannot take off the stage (locked channels): it does not start, and changes nothing.
           // Otherwise activation always turns the voice off and sets the primary mode to DIVERSITY.
           const voiceOnStage = () => (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
+          // Voice mode with songs left: the DJ keeps the user's voices, lyrics, style and instruments and arranges
+          // the vocal performance of the Lyria 3.5 song (no instrument planning, no home style: they would change the song)
+          if (liveMusicHelper.generationMode === 'VOCALIZATION' && songsAvailable()) {
+              if (liveMusicHelper.playbackState === 'stopped') {
+                  placeVoices();
+                  liveMusicHelper.setConductorMode(true);
+                  rightSidebar.conductorActive = true;
+                  pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} ARRANGES THE VOCAL PERFORMANCE`, 'info');
+                  return;
+              }
+          }
           if (!(voiceOnStage() && rightSidebar.locks.channels)) stripVoicesForDj();
           if (voiceOnStage()) {
               (window as any).isConductorActive = false;
