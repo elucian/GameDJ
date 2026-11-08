@@ -24,6 +24,92 @@ interface PerformancePlanStage {
     formation: Formation;
     featured: ChannelKey | null;
     type?: string;
+    /** What the DJ asks of this section (its arranging habits); written into the Lyria 3.5 song plan */
+    cue?: string;
+}
+type StorySection = { name: string; type: string; durationPct: number; cue?: string };
+
+/**
+ * A DJ's arranging habits reshape the narrative before the stages are built: they add, replace or rename sections and
+ * attach cues (the song plan for Lyria 3.5 reads them; the live conductor follows the sections). Each habit shows up
+ * with the DJ's Signature chance (default 80%), not always, so two takes by the same DJ differ.
+ */
+function applyArrangingHabits(story: StorySection[], habits: string[] | undefined, instrumental: boolean, chance = 80): StorySection[] {
+    if (!habits?.length || story.length === 0) return story;
+    const out = story.map(s => ({ ...s }));
+    const has = (h: string) => habits.includes(h) && Math.random() * 100 < chance;
+    const addCue = (s: StorySection | undefined, cue: string) => { if (s) s.cue = s.cue ? `${s.cue}; ${cue}` : cue; };
+    const first = () => out[0];
+    const last = () => out[out.length - 1];
+    const climax = () => [...out].reverse().find(s => s.type === 'climax') ?? out[Math.max(0, out.length - 2)];
+    const middleIdx = () => {
+        const mids = out.map((s, i) => ({ s, i })).filter(({ s, i }) => i > 0 && i < out.length - 1 && ['main', 'groove', 'verse', 'duet', 'trio'].includes(s.type));
+        return mids.length ? mids[Math.floor(mids.length / 2)].i : Math.floor(out.length / 2);
+    };
+    const insertBefore = (target: StorySection, sec: StorySection) => { out.splice(Math.max(1, out.indexOf(target)), 0, sec); };
+
+    // Openings (one at most)
+    if (has('a cappella opening') || has('unaccompanied verse')) {
+        Object.assign(first(), { name: instrumental ? 'Unaccompanied Opening' : 'A Cappella Opening', type: 'solo' });
+        addCue(first(), instrumental ? 'the lead instrument alone, unaccompanied, free and expressive' : 'voice alone, no instruments');
+    } else if (has('free rubato opening')) {
+        Object.assign(first(), { name: 'Rubato Opening', type: 'solo' });
+        addCue(first(), 'free time (rubato), no steady beat, the tempo sets in only at the next section');
+    } else if (has('hook first')) {
+        Object.assign(first(), { name: 'Hook Up Front', type: 'chorus' });
+        addCue(first(), 'open straight on the main hook, no intro');
+    } else if (has('layers enter one by one')) {
+        out.splice(1, 0, { name: 'Layers Enter', type: 'build', durationPct: 0.15, cue: 'instruments enter one at a time, every two bars a new layer' });
+    } else if (has('long intro')) {
+        first().durationPct *= 1.7;
+        addCue(first(), 'long, patient intro, nothing hurried');
+    }
+    if (has('slow build')) addCue(out[Math.min(1, out.length - 1)], 'a slow, gradual build, each phrase a little fuller than the last');
+
+    // Middle: dialogs and solo turns
+    if (has('call and response')) {
+        Object.assign(out[middleIdx()], { name: 'Call & Response', type: 'duet' });
+        addCue(out[middleIdx()], 'two-bar calls answered by a second instrument');
+    } else if (has('instrument dialog')) {
+        Object.assign(out[middleIdx()], { name: 'Instrument Dialog', type: 'duet' });
+        addCue(out[middleIdx()], 'two instruments in conversation, each phrase answered by the other');
+    } else if (has('instrument trading')) {
+        Object.assign(out[middleIdx()], { name: 'Trading Licks', type: 'duet' });
+        addCue(out[middleIdx()], 'two lead instruments trade four-bar solo breaks');
+    }
+    if (has('solo turns')) {
+        const i = middleIdx(); const share = out[i].durationPct / 3;
+        out.splice(i, 1, ...[1, 2, 3].map(n => ({ name: `Solo Turn ${n}`, type: 'solo', durationPct: share, cue: 'one instrument takes its turn alone, the others listen' })));
+    }
+    if (has('surprise solo')) insertBefore(climax(), { name: 'Surprise Solo', type: 'solo', durationPct: 0.1, cue: 'the band drops out suddenly, one unexpected instrument solos' });
+    if (has('tune set')) {
+        let n = 0;
+        out.forEach(s => { if (['main', 'groove', 'verse', 'chorus', 'climax'].includes(s.type)) { n++; s.name = `Tune ${n}`; } });
+        addCue(climax(), 'a change of tune, the set lifts');
+    }
+
+    // Breaks before the peak
+    if (has('percussion break')) insertBefore(climax(), { name: 'Percussion Break', type: 'percussion', durationPct: 0.1, cue: 'percussion only, hand claps and accents' });
+    else if (has('stop-time break')) insertBefore(climax(), { name: 'Stop-Time Break', type: 'trio', durationPct: 0.1, cue: 'stop-time: the band hits only beat one while the lead plays the gaps' });
+    if (has('build and drop')) {
+        insertBefore(climax(), { name: 'The Rise', type: 'build', durationPct: 0.12, cue: 'tension rises, filtered and thinning, then a short silence' });
+        Object.assign(climax(), { name: 'The Drop' });
+        addCue(climax(), 'the drop: everything hits at once');
+    }
+    if (has('stabs')) addCue(climax(), 'short accented ensemble stabs on the off-beats');
+    if (has('cinematic swell')) addCue(climax(), 'a long cinematic swell to the peak');
+    if (has('key lift')) addCue(climax(), 'key change: lift the key up a whole step');
+    if (has('grand finale')) { climax().name = 'Grand Finale'; addCue(climax(), 'everyone at full strength, broad and triumphant'); }
+
+    // Endings
+    if (has('accelerando ending')) addCue(last(), 'accelerando: the tempo speeds up to a fiery finish');
+    else if (has('tag ending')) addCue(last(), 'tag ending: the last phrase repeated three times, then one final hit');
+    else if (has('fade out')) addCue(last(), 'a slow fade out');
+    if (has('soft dynamics')) addCue(first(), 'soft dynamics throughout, never loud');
+
+    const total = out.reduce((sum, s) => sum + s.durationPct, 0);
+    out.forEach(s => { s.durationPct /= total; });
+    return out;
 }
 
 // === DJ RULES ===
@@ -158,6 +244,7 @@ export const STYLE_DESCRIPTORS: Record<string, string[]> = {
   'Indian': ['raga inspired melody with drone and tabla rhythm', 'rich Indian classical ornamentation with sitar', 'lively Bollywood style orchestral colour'],
   'Irish': ['spirited Irish folk with fiddle and tin whistle', 'lilting jig and reel rhythm', 'wistful Celtic melody'],
   'Oriental': ['delicate pentatonic melody with plucked strings', 'flowing East Asian instrumental colour', 'serene traditional oriental atmosphere'],
+  'European': ['heartfelt European folk with accordion and strings', 'lively village dance with mandolin and tambourine', 'nostalgic old-world street melody'],
   'Romanian': ['lively Balkan folk with fast violin and accordion', 'nostalgic folk melody with cimbalom shimmer', 'energetic hora dance rhythm'],
   'Western': ['dusty frontier ballad with acoustic guitar and harmonica', 'lonesome prairie atmosphere with twangy guitar', 'steady trail riding rhythm'],
   'Hawaiian': ['gentle island slack key guitar and ukulele', 'sunny tropical lilt with warm steel guitar', 'relaxed ocean breeze feel']
@@ -189,6 +276,7 @@ export const GENRE_SONG_BRIEF: Record<string, { form: string; vocals: string; so
   'Spanish': { form: '[Guitar Intro] -> [Verse 1] -> [Estribillo (Refrain)] -> [Verse 2] -> [Estribillo] -> [Guitar Falseta] -> [Final Refrain]', vocals: 'passionate, ornamented cante with rhythmic handclaps (palmas)', sound: 'nylon-string guitar rasgueado, compás rhythm, fiery and dramatic' },
   'Oriental': { form: '[Quiet Intro] -> [Verse 1] -> [Interlude] -> [Verse 2] -> [Closing Phrase]', vocals: 'gentle, delicate sung melody on a pentatonic scale', sound: 'plucked zither and flute, sparse space, flowing dynamics' },
   'Romanian': { form: '[Slow Doina Intro] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Fast Hora Dance] -> [Refrain]', vocals: 'heartfelt folk voice that opens into group singing', sound: 'fast violin, accordion, cimbalom, quick accelerating dance' },
+  'European': { form: '[Instrumental Intro] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Dance Interlude] -> [Final Refrain]', vocals: 'warm, open-throated folk voice with the whole room joining the refrain', sound: 'accordion, mandolin or balalaika, fiddle, double bass and tambourine, acoustic village-hall feel' },
   'Western': { form: '[Guitar Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Harmonica Solo] -> [Last Chorus]', vocals: 'plainspoken storytelling voice with a twang, sing-along chorus', sound: 'acoustic guitar, steady trail rhythm, harmonica and fiddle, open spaces' },
   'Hawaiian': { form: '[Ukulele Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', vocals: 'sweet, relaxed voice with gentle falsetto turns and group harmony', sound: 'ukulele, slack-key guitar, soft steel guitar, easy island sway' }
 };
@@ -205,6 +293,7 @@ export const GENRE_AUTHENTICITY: Record<string, string> = {
   'Spanish': 'Phrygian flamenco mode, compas rhythm cycles, rasgueado guitar, ornamented cante and palmas',
   'Oriental': 'traditional pentatonic or maqam scales, plucked and bowed traditional instruments, sparse space, no Western harmony',
   'Romanian': 'doina-style free rubato, lautareasca violin ornaments, hora and sarba dance rhythms, Balkan modes',
+  'European': 'living European folk traditions: Russian minor-key songs with balalaika tremolo, French bal-musette waltzes, Southern Italian tarantella in fast 6/8, Neapolitan serenades with mandolin tremolo',
   'Western': 'American frontier and country tradition: simple I-IV-V chords, open fifths, steady train-beat rhythm, storytelling melody',
   'Hawaiian': 'slack key guitar and ukulele strumming, steel guitar glides, gentle falsetto leaps, relaxed hula sway',
   'Spiritual': 'sacred tradition: modal chant lines, call and response, plain reverent harmony, church acoustics',
@@ -290,14 +379,14 @@ function formForLength(form: string, minutes: number): string {
     return form;
 }
 
-export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching'];
-export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
+export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian', 'Marching'];
+export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
 
 export function isTraditionalGenre(genre: string): boolean {
     return TRADITIONAL_GENRES.includes(genre);
 }
 
-export const REGIONAL_GENRES = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
+export const REGIONAL_GENRES = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian'];
 const TRADITIONAL_KNOB_GENRES = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual', 'Blues', 'Traditional'];
 
 /**
@@ -325,7 +414,7 @@ export function chooseDjTab(genre: string): 'Lyria' | 'Band' {
 // classical/liturgical languages for traditional ones, and the popular languages of the charts for modern music.
 const GENRE_LANGUAGES: Record<string, string[]> = {
     'African': ['Swahili', 'Zulu'], 'Indian': ['Hindi'], 'Irish': ['Irish Gaelic', 'English'], 'Spanish': ['Spanish'],
-    'Oriental': ['Mandarin Chinese', 'Japanese'], 'Romanian': ['Romanian'], 'Western': ['English'], 'Hawaiian': ['Hawaiian'],
+    'Oriental': ['Mandarin Chinese', 'Japanese'], 'Romanian': ['Romanian'], 'European': ['Russian', 'French', 'Italian'], 'Western': ['English'], 'Hawaiian': ['Hawaiian'],
     'Classic': ['Italian', 'German', 'Latin'], 'Opera': ['Italian', 'German', 'French'], 'Renascentist': ['Latin', 'Italian'],
     'Victorian': ['English'], 'Spiritual': ['Latin', 'English'], 'Marching': ['English', 'German'], 'Blues': ['English']
 };
@@ -334,7 +423,9 @@ const GENRE_LANGUAGES: Record<string, string[]> = {
 const STYLE_LANGUAGES: Record<string, string[]> = {
     // Oriental
     'Japanese Folk': ['Japanese'], 'Chinese Traditional': ['Mandarin Chinese'], 'Arabic Classical': ['Arabic'],
-    'Turkish Folk': ['Turkish'], 'Balinese Gamelan': ['Indonesian'],
+    'Turkish Folk': ['Turkish'], 'Balinese Gamelan': ['Indonesian'], 'Korean Folk': ['Korean'],
+    // European
+    'Russian Folk': ['Russian'], 'French Musette': ['French'], 'Tarantella': ['Italian'], 'Neapolitan Song': ['Italian'],
     // Indian
     'Hindustani': ['Hindi'], 'Bollywood': ['Hindi'], 'Bhangra': ['Punjabi'], 'Carnatic': ['Tamil'], 'Tabla Solo/Raga': ['Hindi'],
     // African
@@ -426,6 +517,15 @@ export interface DjPersonality {
     atmosphere?: number;
     /** Seconds the band is warmed up slowly after the DJ takes over. */
     warmup?: number;
+    /** Where the DJ comes from */
+    country?: string;
+    /** Folk styles of the DJ's own country ([genre, style]) and the chance (0-100) to play one */
+    homeStyles?: [string, string][];
+    homeBias?: number;
+    /** How the DJ likes to arrange a piece (solo turns, dialogs, stabs, breaks...) */
+    arranging?: string[];
+    /** 0-100: how often each arranging habit shows up in a plan */
+    habits?: number;
 }
 
 /** How a DJ personality leans on each knob (added to the genre value, in knob units; 50 = neutral). */
@@ -794,6 +894,7 @@ export class LiveMusicHelper extends EventTarget {
       if (g.includes('irish') || g.includes('celtic')) return 'traditional Irish folk vocal style';
       if (g.includes('spanish') || g.includes('flamenco')) return 'flamenco vocal style';
       if (g.includes('romanian')) return 'Romanian folk vocal style';
+      if (g.includes('european')) return 'European folk vocal style';
       return null;
   }
 
@@ -1367,7 +1468,8 @@ Prompt: ${text}`
       // --- STORY GENERATION MODE ---
       
       // 1. Get Narrative Structure (Randomized based on Genre)
-      const story = this.getNarrativeStructure(this.genre);
+      // The DJ's arranging habits reshape it (solo turns, dialogs, breaks, openings, endings)
+      const story = applyArrangingHabits(this.getNarrativeStructure(this.genre), this.djPersonality?.arranging, !this.songHasVoices, this.djPersonality?.habits ?? 80);
 
       // 2. Build Stages
       let currentTime = 0;
@@ -1375,6 +1477,7 @@ Prompt: ${text}`
           // Normalize duration to avoid rounding gaps, though addStage handles timing
           const dur = seg.durationPct * totalSec;
           this.addStage(currentTime, seg.name, availableKeys, seg.type);
+          if (seg.cue) this.currentPlan[this.currentPlan.length - 1].cue = seg.cue;
           currentTime += dur;
       });
       
@@ -1545,6 +1648,14 @@ Prompt: ${text}`
           'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.3, 0.7, 0.5],
           'Attack': [0.3, 0.7, 0.5], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.4, 0.9, 0.6]
       },
+      'European': {
+          'Guidance': [0.9, 1.6, 1.3], 'Authenticity': [1.2, 1.8, 1.5], 'Organic': [1.1, 1.7, 1.4],
+          'Dynamics': [0.6, 1.3, 0.9], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.7, 1.3, 1.0],
+          'Width': [0.4, 0.9, 0.6], 'Brightness': [0.4, 0.9, 0.6], 'Texture': [0.4, 0.9, 0.6],
+          'Atmosphere': [0.6, 1.2, 0.9], 'Groove': [0.7, 1.3, 1.0], 'Complexity': [0.5, 1.0, 0.7],
+          'Ornamentation': [0.5, 1.0, 0.7], 'Variation': [0.4, 0.9, 0.6], 'Density': [0.3, 0.7, 0.5],
+          'Attack': [0.3, 0.7, 0.5], 'Staccato': [0.2, 0.6, 0.4], 'Glide': [0.4, 0.9, 0.6]
+      },
       'Victorian': {
           'Guidance': [1.0, 1.7, 1.4], 'Authenticity': [1.3, 1.9, 1.6], 'Organic': [1.0, 1.6, 1.3],
           'Dynamics': [0.6, 1.3, 0.9], 'Presence': [0.7, 1.3, 1.0], 'Space': [0.8, 1.4, 1.1],
@@ -1606,7 +1717,8 @@ Prompt: ${text}`
       'Celtic Folk': { Atmosphere: +0.2, Organic: +0.2 }, 'Celtic Punk/Rock': { Dynamics: +0.4, Attack: +0.4, Density: +0.3, Organic: -0.3 },
       'Salsa': { Groove: +0.4, Dynamics: +0.3, Density: +0.2 }, 'Bossa Nova': { Dynamics: -0.3, Staccato: +0.1, Space: +0.2 }, 'Tango': { Staccato: +0.2, Dynamics: +0.2, Ornamentation: +0.2 },
       'Reggaeton': { Groove: +0.4, Attack: +0.2, Organic: -0.3 }, 'Flamenco': { Attack: +0.3, Ornamentation: +0.3, Dynamics: +0.3 }, 'Bolero': { Dynamics: -0.2, Glide: +0.2 }, 'Paso Doble': { Dynamics: +0.3, Staccato: +0.3 },
-      'Manele': { Ornamentation: +0.3, Groove: +0.3, Brightness: +0.2 }, 'Doina': { Space: +0.4, Groove: -0.4, Ornamentation: +0.3, Glide: +0.2, Dynamics: -0.2 },
+      'Manele': { Ornamentation: +0.3, Groove: +0.3, Brightness: +0.2 }, 'Russian Folk': { Ornamentation: +0.2, Dynamics: +0.2, Glide: +0.1 }, 'French Musette': { Groove: +0.2, Staccato: +0.2, Brightness: +0.1 }, 'Tarantella': { Groove: +0.3, Attack: +0.2, Staccato: +0.2 }, 'Neapolitan Song': { Glide: +0.3, Space: +0.2, Groove: -0.2 }, 'Korean Folk': { Ornamentation: +0.3, Glide: +0.3, Space: +0.2 },
+      'Doina': { Space: +0.4, Groove: -0.4, Ornamentation: +0.3, Glide: +0.2, Dynamics: -0.2 },
       'Hora': { Groove: +0.3, Dynamics: +0.2 }, 'Sârbă': { Groove: +0.3, Staccato: +0.3, Attack: +0.2 }, 'Colinde': { Space: +0.2, Atmosphere: +0.2, Groove: -0.2 },
       'Bluegrass': { Attack: +0.3, Staccato: +0.2, Density: +0.3, Groove: +0.2 }, 'Honky Tonk': { Groove: +0.2, Attack: +0.2 }, 'Spaghetti Western': { Space: +0.3, Atmosphere: +0.3, Dynamics: +0.2 },
       'Cowboy Ballad': { Dynamics: -0.2, Space: +0.2, Groove: -0.2 }, 'Rockabilly': { Groove: +0.3, Attack: +0.3, Staccato: +0.2 },
@@ -1805,6 +1917,8 @@ Prompt: ${text}`
   
   private updateConductor() {
       if (!this.conductorMode || (this.playbackState !== 'playing' && this.playbackState !== 'recording' && this.playbackState !== 'warmup' && this.playbackState !== 'preparing')) return;
+      // A Lyria 3.5 song is finished audio: the DJ arranged it up front, there is nothing to conduct while it plays
+      if (this.songTake && this.playbackState === 'playing') return;
       if (Date.now() - this.conductorActivationTime < 5000) return;
       
       const elapsed = this.elapsedSeconds;
@@ -2101,6 +2215,7 @@ Prompt: ${text}`
     this.prepareSeed();
     this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0;
     this.automationLog = [];
+    this.songTake = false;
     this.dispatchEvent(new CustomEvent('recording-cleared'));
     this.audioContext.resume();
     this.currentStatusMessage = '';
@@ -2460,14 +2575,17 @@ Prompt: ${text}`
   /** A voice or choir is on stage in the voice mode: takes are rendered by Lyria 3.5 (unless the API key may not use it). */
   public get usesSongModel(): boolean {
       if (this.songModelBlocked) return false;
-      // Quality mode without the DJ: a finished song by Lyria 3.5 whenever the song quota allows it, with or without voices
-      if (this.generationMode === 'QUALITY' && !this.conductorMode && this.songQuotaOk) return true;
+      // Quality mode: a finished song by Lyria 3.5 whenever the song quota allows it, with or without voices.
+      // With the DJ on, the DJ arranges it (djSongPlan): the song cannot be steered while it plays.
+      if (this.generationMode === 'QUALITY' && this.songQuotaOk) return true;
       return this.songHasVoices;
   }
   /** The rendered song will have singers (voice mode on, a voice or choir on stage); otherwise it is instrumental. */
   public get songHasVoices(): boolean {
       return this.voiceMode && this.playingChannelKeys().some(k => isVocalInstrument(this.instruments[k].instrument));
   }
+  /** The take on the timeline is a rendered Lyria 3.5 song (not a live recording). */
+  public songTake = false;
   /** The user still has songs in the quota (kept up to date by index.tsx). */
   public songQuotaOk = true;
   /** Set when the API refused the song model for quota / tier reasons (free tier: 0 requests). Live takes are used then. */
@@ -2489,10 +2607,46 @@ Prompt: ${text}`
       if (lines.length === 0) return null;
       if (sections === 0) sections = Math.ceil(lines.length / 4);
       const bars = 8 + sections * 2 + lines.reduce((sum, l) => sum + (l.split(/\s+/).length > 9 ? 3 : 2), 0);
-      const [num, den] = this.meter.split('/').map(n => parseInt(n, 10));
-      const quarters = (num > 0 && den > 0 ? num : 4) * (4 / (num > 0 && den > 0 ? den : 4));
-      const barSeconds = quarters * 60 / Math.max(40, this.bpm);
-      return Math.max(20, Math.min(600, Math.round(bars * barSeconds)));
+      return Math.max(20, Math.min(600, Math.round(bars * this.barSeconds())));
+  }
+
+  /**
+   * The DJ's arrangement of an instrumental Lyria 3.5 song: its performance plan in bars (whole four-bar phrases),
+   * with the instruments that play each section and the DJ's cues. Null without the DJ or without a plan.
+   */
+  public djSongPlan(minutes: number): string[] | null {
+      const dj = this.djPersonality;
+      if (!this.conductorMode || !dj || this.currentPlan.length === 0) return null;
+      const planSec = Math.max(1, this.maxDurationMinutes * 60);
+      const totalBars = Math.max(16, Math.round(minutes * 60 / this.barSeconds() / 4) * 4);
+      // Section boundaries on four-bar phrases; sections shorter than a phrase join the one before
+      const starts = this.currentPlan.map(s => Math.round(s.stageStartTimeSec / planSec * totalBars / 4) * 4);
+      const sections: { stage: PerformancePlanStage; from: number; to: number }[] = [];
+      this.currentPlan.forEach((stage, i) => {
+          const from = Math.min(starts[i], totalBars - 4);
+          const to = i + 1 < starts.length ? Math.min(starts[i + 1], totalBars) : totalBars;
+          if (to - from < 4 && sections.length) { sections[sections.length - 1].to = Math.max(sections[sections.length - 1].to, to); return; }
+          if (to > from) sections.push({ stage, from, to });
+      });
+      if (sections.length) sections[sections.length - 1].to = totalBars;
+      const typeCue: Record<string, string> = {
+          intro: 'quiet, setting the scene', outro: 'winding down, resolving to the tonic', solo: 'a solo, free and expressive',
+          duet: 'two instruments in dialog', trio: 'a small ensemble', groove: 'the rhythm section locks the groove',
+          main: 'the main theme', verse: 'the main theme', chorus: 'the hook, fuller and brighter', build: 'building tension',
+          breakdown: 'stripped back, a new melodic idea', percussion: 'percussion alone', climax: 'the full ensemble at its peak'
+      };
+      const lines = sections.map(({ stage, from, to }) => {
+          const name = stage.stageName.split(' · ')[0];
+          const players = (Object.keys(stage.activeChannels) as ChannelKey[]).filter(k => stage.activeChannels[k] && this.instruments[k]?.instrument)
+              .map(k => this.instruments[k].instrument);
+          const who = stage.formation === 'full' ? 'full ensemble' : stage.formation === 'solo' ? `${players[0]} alone` : players.length > 1 ? `${players.slice(0, -1).join(', ')} and ${players[players.length - 1]}` : players.join('');
+          const lead = stage.featured && stage.formation !== 'solo' && players.length > 1 ? `, ${this.instruments[stage.featured].instrument} leads` : '';
+          return `[${name}] bars ${from + 1}-${to}: ${who}${lead}; ${stage.cue || typeCue[stage.type || ''] || 'develop the theme'}.`;
+      });
+      return [
+          `Arrangement by DJ ${dj.name}${dj.country ? ` (${dj.country})` : ''}, ${totalBars} bars in total. Follow these sections in order, with clear changes between them:`,
+          ...lines
+      ];
   }
 
   /** The text prompt for Lyria 3.5: song description in labelled lines, then the lyrics with section tags. */
@@ -2512,6 +2666,8 @@ Prompt: ${text}`
       // Quality mode without any voice on stage: an instrumental piece, no singing and no lyrics
       const instrumental = voices.length === 0;
       const lyricsGiven = !instrumental && !!this.lyricsText.trim() && !this.lyricsVowelsOnly;
+      // An instrumental with the DJ on follows the DJ's arrangement instead of a generic form
+      const djPlan = instrumental ? this.djSongPlan(minutes) : null;
 
       const lines = [
           `Create a ${minutes}-minute ${styleTag} ${instrumental ? 'instrumental piece with no vocals' : 'song with vocals'}.`,
@@ -2525,12 +2681,13 @@ Prompt: ${text}`
           // The sound notes name typical instruments: with a fixed lineup they only describe the feel
           brief ? `Sound: ${brief.sound}${instruments.length ? ' (describes the feel only, use just the instruments listed)' : ''}.` : this.genreReference ? `Sound: ${this.genreReference}.` : '',
           knobs.length ? `Playing style: ${knobs.join(', ')}.` : '',
-          this.evolutionValue > 0 ? 'Arrangement: progressive, building and evolving.' : this.evolutionValue < 0 ? 'Arrangement: steady and minimal.' : '',
+          djPlan ? '' : this.evolutionValue > 0 ? 'Arrangement: progressive, building and evolving.' : this.evolutionValue < 0 ? 'Arrangement: steady and minimal.' : '',
           instrumental ? 'Clear, memorable melody with a developing arrangement, clean high fidelity mix. No singing, no spoken words.' : 'Clear, memorable sung melody, clean high fidelity mix.'
       ];
       const lyrics = this.lyricsText.trim();
       let words: string;
-      if (instrumental) words = `Structure: ${formForLength('[Intro] -> [Theme A] -> [Theme B] -> [Development] -> [Theme A] -> [Outro]', minutes)}`;
+      if (djPlan) words = djPlan.join('\n');
+      else if (instrumental) words = `Structure: ${formForLength('[Intro] -> [Theme A] -> [Theme B] -> [Development] -> [Theme A] -> [Outro]', minutes)}`;
       else if (this.lyricsVowelsOnly) words = 'Lyrics: wordless vocalise on open vowels (ah, oh, ooh), no words.';
       else if (lyrics) words = `Language: ${this.lyricsLanguage}. Sing these lyrics exactly, clearly pronounced.\n\nLyrics:\n${lyrics}`;
       else words = `Language: ${this.lyricsLanguage}. Write original lyrics in ${this.lyricsLanguage}, sung clearly, fitting ${this.meter} time at ${this.bpm} BPM.\n`
@@ -2579,6 +2736,8 @@ Prompt: ${text}`
       this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0; this.automationLog = [];
       this.dispatchEvent(new CustomEvent('recording-cleared'));
       this.audioContext.resume();
+      // The DJ arranges each song afresh, for the lineup and length of this take
+      if (this.conductorMode && !this.songHasVoices) this.generatePerformancePlan();
       const prompt = this.buildSongPrompt();
       this.dispatchEvent(new CustomEvent('song-render-started', { detail: { prompt } }));
       this.setPlaybackState('loading');
@@ -2598,6 +2757,7 @@ Prompt: ${text}`
           if (token !== this.renderToken) return false;
           this.segments = [{ startTime: 0, duration: buffer.duration, buffer }];
           this.recordedAudioBlob = blob;
+          this.songTake = true;
           // Lyria wrote the words itself: keep them so the Voice dialog shows what is sung
           if (this.songHasVoices && !this.lyricsText.trim() && text && !this.lyricsVowelsOnly) this.setLyrics(text, this.lyricsLanguage, false);
           this.setPlaybackState('stopped');

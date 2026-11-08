@@ -21,7 +21,7 @@ export class VocalDialog extends LitElement {
   @state() private langLocked = false;
   /** Locked: the dice put exactly these voices on stage. (The DJ never uses voices or this dialog.) */
   @property({ type: Boolean }) locked = false;
-  private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Punjabi', 'Tamil', 'Arabic', 'Turkish', 'Indonesian', 'Greek', 'Romanian', 'Swahili', 'Zulu', 'Yoruba', 'Irish Gaelic', 'Hawaiian'];
+  private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Punjabi', 'Tamil', 'Arabic', 'Turkish', 'Indonesian', 'Greek', 'Russian', 'Romanian', 'Swahili', 'Zulu', 'Yoruba', 'Irish Gaelic', 'Hawaiian'];
   @state() private activeSoloVoices = {
     'Soprano': false,
     'Alto': false,

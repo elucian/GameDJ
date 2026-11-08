@@ -37,6 +37,7 @@ export const GENRE_MOODS: Record<string, string[]> = {
   'Spanish': ['Emotional', 'Soulful', 'Dark', 'Upbeat', 'Nostalgic', 'Euphoric'],
   'Oriental': ['Relaxed', 'Ethereal', 'Dreamy', 'Melancholic', 'Ominous', 'Emotional'],
   'Romanian': ['Upbeat', 'Euphoric', 'Nostalgic', 'Melancholic', 'Soulful'],
+  'European': ['Nostalgic', 'Melancholic', 'Upbeat', 'Emotional', 'Euphoric', 'Whimsical'],
   'Western': ['Nostalgic', 'Melancholic', 'Ominous', 'Triumphant', 'Relaxed', 'Dark'],
   'Hawaiian': ['Relaxed', 'Chill', 'Bright', 'Dreamy', 'Nostalgic', 'Upbeat']
 };

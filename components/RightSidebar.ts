@@ -41,11 +41,13 @@ const DEFAULT_SLOT_TYPES: Record<TrackSource, Record<Slot, string>> = {
   Lyria: { lead: 'VOICE', alto: 'CHOIR', harmonic: 'ORCHESTRA', bass: 'FANFARE', rhythm: 'PERCUSSION' }
 };
 const MAX_TRACKS = 5;
+/** The voice track type each channel can turn into when a voice is put on it */
+const VOICE_TRACK_OF: Partial<Record<Slot, string>> = { lead: 'VOICE', alto: 'CHOIR' };
 /** How many tracks a dice roll switches on, per genre (min, max) */
 const DICE_TRACK_COUNT: Record<string, [number, number]> = {
   Pop: [3, 5], 'Hip Hop': [3, 5], Blues: [3, 4], Jazz: [3, 5], Electronic: [3, 5], Rock: [4, 5], Ambient: [2, 3], Gaming: [3, 5],
   Classic: [3, 5], Renascentist: [2, 4], Victorian: [3, 4], Spiritual: [2, 4], African: [3, 5], Indian: [3, 4], Irish: [3, 4],
-  Spanish: [3, 4], Oriental: [2, 4], Romanian: [3, 4], Western: [3, 4], Hawaiian: [2, 3], Marching: [4, 5], Opera: [3, 5]
+  Spanish: [3, 4], Oriental: [2, 4], Romanian: [3, 4], European: [3, 4], Western: [3, 4], Hawaiian: [2, 3], Marching: [4, 5], Opera: [3, 5]
 };
 /** Genres driven by rhythm and bass: the dice prefer those tracks for them */
 const RHYTHMIC_GENRES = ['Pop', 'Hip Hop', 'Electronic', 'Rock', 'Gaming', 'Marching', 'African', 'Western', 'Blues'];
@@ -524,6 +526,13 @@ export class RightSidebar extends LitElement {
 
   private slotSource(slot: Slot): TrackSource { return this.slotTypes[slot].source; }
 
+  /** A voice left a LEAD VOICE / BACKGROUND CHOIR track: the track goes back to the Band instrument of that channel. */
+  public releaseVoiceTrack(slot: Slot) {
+    if (TRACK_TYPES[this.slotTypes[slot].type]?.voice) {
+      this.slotTypes = { ...this.slotTypes, [slot]: { type: DEFAULT_SLOT_TYPES.Band[slot], source: 'Band' } };
+    }
+  }
+
   /**
    * 'Lyria' while any track on stage draws from the Lyria families (voice, choir, orchestra, fanfare), else 'Band'.
    * Setting it puts every channel on that family's default track types.
@@ -718,6 +727,11 @@ export class RightSidebar extends LitElement {
   public setVoiceInstruments(pick: Partial<Record<keyof InstrumentSet, string[]>>) {
     const newSettings = { ...this.settings };
     (Object.keys(pick) as Array<keyof InstrumentSet>).forEach(ch => {
+        // Band tracks offer no voices: the lead becomes a LEAD VOICE track, the alto a BACKGROUND CHOIR track
+        const voiceType = VOICE_TRACK_OF[ch];
+        if (voiceType && !this.getRecommendedInstruments(ch).some(i => isVocalInstrument(i))) {
+            this.slotTypes = { ...this.slotTypes, [ch]: { type: voiceType, source: TRACK_TYPES[voiceType].source } };
+        }
         const recommended = this.getRecommendedInstruments(ch);
         const candidates = (pick[ch] || []).filter(i => recommended.includes(i));
         const pool = candidates.length > 0 ? candidates : recommended.filter(i => isVocalInstrument(i));

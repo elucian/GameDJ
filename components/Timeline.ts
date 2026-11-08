@@ -65,6 +65,10 @@ export class Timeline extends LitElement {
         background: var(--text-color);
         margin-top: 3px;
     }
+    /* Phones: every second time label is hidden (its tick stays), so the labels do not run into each other */
+    @media (max-width: 700px) {
+      .ruler-marker.minor { color: transparent; }
+    }
     .tracks {
       display: flex;
       flex-direction: column;
@@ -535,7 +539,7 @@ export class Timeline extends LitElement {
       const duration = this.effectiveDuration;
       for (let i = 0; i <= 10; i++) {
           const left = (i / 10) * 100;
-          markers.push(html`<div class="ruler-marker" style="left: calc(120px + (100% - 140px) * ${left/100})">${this.formatTime((i/10)*duration)}</div>`);
+          markers.push(html`<div class="ruler-marker ${i % 2 ? 'minor' : ''}" style="left: calc(120px + (100% - 140px) * ${left/100})">${this.formatTime((i/10)*duration)}</div>`);
       }
       return markers;
   }

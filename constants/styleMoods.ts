@@ -65,6 +65,10 @@ export const STYLE_MOODS: Record<string, string[]> = {
   // Oriental
   'Arabic Classical': ['Emotional', 'Ethereal', 'Soulful'], 'Japanese Folk': ['Relaxed', 'Melancholic', 'Ethereal'], 'Chinese Traditional': ['Relaxed', 'Dreamy', 'Ethereal'],
   'Turkish Folk': ['Soulful', 'Emotional', 'Upbeat'], 'Balinese Gamelan': ['Ethereal', 'Ambient', 'Psychedelic'],
+  'Korean Folk': ['Melancholic', 'Soulful', 'Upbeat'],
+  // European
+  'Russian Folk': ['Melancholic', 'Soulful', 'Upbeat'], 'French Musette': ['Nostalgic', 'Whimsical', 'Bright'],
+  'Tarantella': ['Upbeat', 'Euphoric', 'Whimsical'], 'Neapolitan Song': ['Emotional', 'Nostalgic', 'Soulful'],
   // Romanian
   'Manele': ['Euphoric', 'Upbeat', 'Soulful'], 'Doina': ['Melancholic', 'Emotional', 'Soulful'], 'Hora': ['Upbeat', 'Euphoric', 'Bright'],
   'Sârbă': ['Upbeat', 'Euphoric', 'Bright'], 'Lautareasca': ['Soulful', 'Emotional', 'Nostalgic'], 'Bănățeană': ['Upbeat', 'Groovy', 'Whimsical'],

@@ -741,6 +741,11 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
         manifest: { lead: true, alto: true, harmonic: false, bass: true, rhythm: true },
         instrumentPools: { lead: ['Bağlama', 'Zurna'], alto: ['Bağlama', 'Zurna'], harmonic: [], bass: ['Double Bass', 'Electric Bass'], rhythm: ['Hand Drum', 'Tabla'] }
       },
+      'Korean Folk': {
+        bpm: 84, bpmRange: [55, 120], meters: ['3/4', '6/8', '12/8', '4/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Major', 'C Major', 'B Minor'], mode: 'Minor', mood: 'Melancholic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Haegeum', 'Daegeum', 'Piri'], alto: ['Gayageum', 'Daegeum', 'Haegeum'], harmonic: ['Gayageum', 'Geomungo'], bass: ['Geomungo', 'Double Bass'], rhythm: ['Janggu', 'Buk Drum'] }
+      },
       'Balinese Gamelan': {
         bpm: 120, bpmRange: [90, 140], meters: ['Free', '4/4'], keys: ['C Major', 'G Major', 'D Major', 'F Major', 'Bb Major'], mode: 'Natural', mood: 'Meditative',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
@@ -805,6 +810,31 @@ export const MUSIC_DATA: Record<string, GenreDefinition> = {
         bpm: 120, bpmRange: [100, 140], meters: ['2/4', '4/4'], keys: ['A Minor', 'E Minor', 'D Minor', 'G Major', 'C Major', 'B Minor', 'F# Minor'], mode: 'Minor', mood: 'Joyful',
         manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
         instrumentPools: { lead: ['Flute', 'Accordion', 'Violin', 'Caval', 'Harmonica', 'Pan Flute', 'Pipe Flute'], alto: ['Caval', 'Flute', 'Low Whistle', 'Pan Flute', 'Pipe Flute'], harmonic: ['Cimbalom', 'Acoustic Guitar'], bass: ['Double Bass'], rhythm: ['Hand Drum', 'Tambourine', 'Stomps'] }
+      }
+    }
+  },
+  'European': {
+    genre: 'European',
+    styles: {
+      'Russian Folk': {
+        bpm: 104, bpmRange: [70, 150], meters: ['2/4', '4/4', '3/4'], keys: ['A Minor', 'D Minor', 'E Minor', 'G Minor', 'B Minor', 'C Minor'], mode: 'Minor', mood: 'Melancholic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Balalaika', 'Accordion', 'Violin', 'Flute'], alto: ['Domra', 'Bayan Accordion', 'Balalaika'], harmonic: ['Balalaika', 'Accordion', 'Strings'], bass: ['Contrabass Balalaika', 'Double Bass'], rhythm: ['Tambourine', 'Hand Drum'] }
+      },
+      'French Musette': {
+        bpm: 150, bpmRange: [120, 185], meters: ['3/4'], keys: ['G Major', 'C Major', 'F Major', 'D Minor', 'A Minor', 'E Minor'], mode: 'Natural', mood: 'Nostalgic',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
+        instrumentPools: { lead: ['Accordion', 'Violin', 'Clarinet'], alto: ['Accordion', 'Acoustic Guitar', 'Clarinet'], harmonic: ['Acoustic Guitar', 'Banjo', 'Piano'], bass: ['Double Bass'], rhythm: ['Brushed Snare', 'Hand Drum'] }
+      },
+      'Tarantella': {
+        bpm: 168, bpmRange: [140, 195], meters: ['6/8', '12/8'], keys: ['A Minor', 'D Minor', 'E Minor', 'G Minor', 'C Major', 'G Major'], mode: 'Minor', mood: 'Upbeat',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: true },
+        instrumentPools: { lead: ['Mandolin', 'Accordion', 'Violin', 'Clarinet'], alto: ['Accordion', 'Mandolin', 'Acoustic Guitar'], harmonic: ['Acoustic Guitar', 'Accordion'], bass: ['Double Bass'], rhythm: ['Tambourine', 'Castanets'] }
+      },
+      'Neapolitan Song': {
+        bpm: 80, bpmRange: [60, 104], meters: ['4/4', '3/4', '6/8'], keys: ['C Minor', 'G Minor', 'A Minor', 'D Minor', 'F Major', 'Bb Major'], mode: 'Minor', mood: 'Emotional',
+        manifest: { lead: true, alto: true, harmonic: true, bass: true, rhythm: false },
+        instrumentPools: { lead: ['Mandolin', 'Violin', 'Classical Guitar'], alto: ['Mandolin', 'Classical Guitar', 'Accordion'], harmonic: ['Classical Guitar', 'Strings', 'Piano'], bass: ['Double Bass', 'Cello'], rhythm: ['Tambourine', 'Hand Drum'] }
       }
     }
   },
@@ -951,7 +981,7 @@ export function getBandPool(genre: string, channel: keyof InstrumentSet): string
 const NON_MIXING_MODERN = ['Ambient', 'Gaming'];
 const GENRE_MAP_MODERN = ['Hip Hop', 'Jazz', 'Pop', 'Blues', 'Electronic', 'Rock', 'Ambient', 'Gaming'];
 const GENRE_MAP_TRADITIONAL = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual'];
-const GENRE_MAP_REGIONAL = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'Western', 'Hawaiian'];
+const GENRE_MAP_REGIONAL = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian'];
 
 // Final Alto Replacement Audit
 // The default mood of a style is the first of its Lyria mood list (constants/styleMoods.ts); an old name is translated
@@ -981,6 +1011,7 @@ const FAVORITE_INSTRUMENTS: Record<string, string[]> = {
     'Irish': ['Mandocello', 'Whistle', 'Low Whistle'],
     'Spanish': ['Mandocello', 'Low Whistle'],
     'Romanian': ['Mandocello', 'Whistle', 'Low Whistle'],
+    'European': ['Mandocello', 'Harmonica'],
     'African': ['Harmonica', 'Accordion', 'Whistle'],
     'Hawaiian': ['Harmonica', 'Whistle', 'Low Whistle'],
     'Indian': ['Harmonica', 'Accordion', 'Low Whistle'],
@@ -1141,7 +1172,7 @@ export class TopToolbar extends LitElement {
   /** Lyrics are being written in the background: the song settings are frozen until they are ready. */
   @property({ type: Boolean, reflect: true }) lyricsBusy = false;
   @property({ type: Boolean }) hasRecording = false;
-  /** Name of the DJ on deck, shown under the logo while the DJ is active */
+  /** Name of the DJ on deck, shown under the logo while the DJ is active; "Random" otherwise (a dice setup) */
   @state() private djName = '';
   @state() private djActive = false;
   private onDjConfig = ((e: CustomEvent) => { this.djName = e.detail?.name || ''; }) as EventListener;
@@ -1232,8 +1263,30 @@ export class TopToolbar extends LitElement {
         if (!suppressEvents) this.dispatch('style-changed', this.musicStyle);
     }
 
-    const sig = genreData.styles[this.musicStyle];
-    if (!sig) return this.genre;
+    this.rollStyleSettings(suppressEvents);
+    return this.genre;
+  }
+
+  /**
+   * The DJ plays a folk style of its own country: one of `homes` ([genre, style]) becomes the genre and style,
+   * and mood, key, tempo and meter follow that style (each unless locked). Returns the pick, or null when
+   * the genre or style is locked or no home style exists in the app.
+   */
+  public djPickHomeStyle(homes: [string, string][]): [string, string] | null {
+    if (this.locked.genre || this.locked.style) return null;
+    const valid = homes.filter(([g, st]) => !!MUSIC_DATA[g]?.styles[st]);
+    if (valid.length === 0) return null;
+    const [genre, style] = valid[Math.floor(Math.random() * valid.length)];
+    this.genre = genre;
+    this.musicStyle = style;
+    this.rollStyleSettings(true);
+    return [genre, style];
+  }
+
+  /** Mood, key, tempo and meter from the current style's signature (steps 3 to 6 of the dice), each unless locked. */
+  private rollStyleSettings(suppressEvents: boolean) {
+    const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];
+    if (!sig) return;
 
     // 3. MOOD
     if (!this.locked.mood) {
@@ -1263,7 +1316,6 @@ export class TopToolbar extends LitElement {
     
     saveCachedGenreAndStyle(this.genre, this.musicStyle);
     (this as any).requestUpdate();
-    return this.genre;
   }
 
   /** DJ picks the master mood before the baton is raised (respects the mood lock). */
@@ -1518,7 +1570,7 @@ export class TopToolbar extends LitElement {
           <span class="brand-text">GameDJ</span>
           <span class="version-badge">V29</span>
         </div>
-        <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djActive && this.djName ? this.djName : 'Anonymous'}</div>
+        <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djActive ? (this.djName || 'DJ') : 'Random'}</div>
       </div>
       <div class="divider"></div>
 

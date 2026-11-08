@@ -22,7 +22,7 @@ On a phone (screens up to 700 px wide) the page is one scrolling column: the log
 
 ## 3. Choosing the music
 
-- **Genre** is grouped as Modern (Hip Hop, Jazz, Pop, Blues, Electronic, Rock, Ambient, Gaming), Traditional (Classic, Opera, Marching, Renascentist, Victorian, Spiritual) and Regional (African, Indian, Irish, Spanish, Oriental, Romanian, Western, Hawaiian).
+- **Genre** is grouped as Modern (Hip Hop, Jazz, Pop, Blues, Electronic, Rock, Ambient, Gaming), Traditional (Classic, Opera, Marching, Renascentist, Victorian, Spiritual) and Regional (African, Indian, Irish, Spanish, Oriental, Romanian, European, Western, Hawaiian). European holds Russian Folk, French Musette, Tarantella and Neapolitan Song; Oriental also has Korean Folk.
 - **Style** lists the styles of the genre. Hip Hop has Freestyle Rap, Boom Bap, Trap, Old School, Lo-Fi, G-Funk, Drill, Jazz Rap, Conscious Rap and Cloud Rap.
 - **Mood, Key, Tempo, Meter** default to the style's signature values.
 - **Locks.** Every toolbar item has a lock. Locked items are never changed by the Dice or the DJ.
@@ -52,12 +52,12 @@ The right sidebar has two tabs with five channels each:
 
 - **Record** starts a new take (it overwrites the previous one). **Stop** ends it. **Play Recording** replays it, including the automation of knobs and channels. **Loop** replays automatically after 5 seconds, and a finished recording auto-loops after a 20-second countdown unless you touch something.
 - **Duration** sets the target length; **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
-- **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when the DJ is off and you have songs left in your quota. Vocalization is selected automatically when a voice channel is used.
+- **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when you have songs left in your quota; with the DJ on, the DJ arranges it (see section 8). Vocalization is selected automatically when a voice channel is used.
 - **Export** downloads the recording (choose the format with the format button).
 
 ## 6. The Dice (Random)
 
-The dice button (only while stopped) picks genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked).
+The dice button (only while stopped) turns the DJ off if it is on (the label under the logo then reads **Active: Random**), then picks genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
 
 ## 7. The knobs
 
@@ -68,6 +68,7 @@ Knobs add musical qualities (Density, Dynamics, Groove, Space, Brightness and so
 Press **DJ** to let the conductor take charge.
 
 **Before recording (baton not raised)** the DJ plans the whole piece:
+- may play a **folk style of its own country** (its Homeland chance), when the genre, the style and the channels are not locked; the message log says so,
 - picks **Lyria or Band** (Lyria half the time for classical/regional genres, mostly Band for modern),
 - chooses the **instruments** and the **manifest**, and may switch some channels off entirely to work with 3 to 5 channels,
 - sets the **master mood** and the starting **evolution**,
@@ -75,7 +76,9 @@ Press **DJ** to let the conductor take charge.
 
 Anything you have locked (channels, manifest, mood) is left alone.
 
-**During recording** it conducts but never changes the instruments or manifest. At each new section it:
+**In Quality mode** (with songs left in your quota) the DJ arranges an instrumental Lyria 3.5 song instead of conducting live. At each Record it writes a plan for the whole song in bars: the sections in order, which instruments play each one, who leads, and its own habits (solo turns, call and response, a percussion break, a key lift, a tag ending...). The plan goes to Lyria with the song prompt, and the message panel shows it. A finished song cannot be steered, so the DJ does not turn knobs while it plays back. Each take gets a fresh plan, and each habit shows up with the DJ's Signature chance (section 10), not always, so two takes by the same DJ differ.
+
+**During recording** (Diversity mode) it conducts but never changes the instruments or manifest. At each new section it:
 - changes **volume** and **evolution** (even though those controls are locked for you while it conducts),
 - sometimes varies **tempo, key or rhythm (meter)** within what the style allows,
 - brings sections in and out: solos, duets, trios, quartets, full band,
@@ -88,13 +91,42 @@ Anything you have locked (channels, manifest, mood) is left alone.
 - The **Voice** button opens the Voice dialog: the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
 - The dialog's dice (🎲) randomize what is not locked: the voices (unless the dialog's lock is on) and the language (unless its own lock is on). They keep the lyrics and the song title, and only reach the channels when you press Apply.
 - The lyrics language has its own lock next to the dropdown. Unlocked, the dialog's dice pick a language that suits the style (Japanese for Japanese Folk) and show it in the dropdown; locked, the dice keep your language. Generate never changes the dropdown: it writes in the language shown (with Auto, a language that suits the style).
-- The DJ is for real-time music without voices: it never changes this dialog. Starting the DJ turns the voice off (voice instruments leave the channels) and sets the primary mode to Diversity, whatever mode was on; choosing voices (Vocalization mode, Apply in this dialog, or a voice instrument) while the DJ is on turns the DJ off. With locked channels that hold a voice, the DJ does not start.
+- The DJ is for real-time music without voices: it never changes this dialog. Starting the DJ turns the voice off (voice instruments leave the channels) and sets the primary mode to Diversity, except Quality with songs left in the quota, which stays (the DJ then arranges an instrumental Lyria 3.5 song); choosing voices (Vocalization mode, Apply in this dialog, or a voice instrument) while the DJ is on turns the DJ off. With locked channels that hold a voice, the DJ does not start.
 - With the language on Auto, lyrics are written in a language that suits the style and genre. A style tied to one culture always uses its own language (Japanese Folk is sung in Japanese, Chinese Traditional in Mandarin, Bossa Nova in Portuguese, Bhangra in Punjabi); otherwise the native language for regional music (for example Hindi, Swahili, Romanian, Hawaiian), Latin, Italian or German for traditional, and popular languages (mostly English) for modern. Lyrics are always real words, or open vowels (Ah, Oh, Ooh), never made-up syllables.
 - You can type or edit lyrics in the dialog; press Apply to use them.
 
 ## 10. DJ Presets (personalities)
 
-The **DJ Presets** dialog has four personalities: **Shadow, Tiësto, Krush, Daft**. Each has its own settings: bass, reverb, filter, BPM offset, active channels, warm-up, eagerness, diversity, pause, **Max Knobs** (0 to 10, default 6: the most knobs the DJ may hold in modern styles; above 6 traditional and regional styles get 1 to 3 more, below 6 modern styles lose knobs first, then the others, down to 0) and **Lyria Temp** (Lyria's temperature, 0.0 to 3.0, default 1.1: lower is more predictable, higher is more varied). The channel switches and eagerness change how the DJ works (benched channels are not used, higher eagerness moves knobs faster). Presets are saved in your browser and restored on restart, together with the last applied personality.
+The **DJ Presets** dialog has ten DJs. They are fictional people, each drawn as a flat colour avatar with headphones, each from a country of their own:
+
+| DJ | From | Style | Home styles |
+|---|---|---|---|
+| Diego | Spain, 31 | Rhythm first. Hot percussion, palmas and stabs, a finale that speeds up. | Flamenco, Paso Doble, Bolero, Guitar |
+| Ji-woo | Korea, 24 | Club energy. Hooks first, builds and drops. | Korean Folk, K-Pop |
+| Aria | Italy, 29 | Cinematic and operatic. Layers enter one by one, no drums (benches the rhythm channel). | Neapolitan Song, Tarantella, Romantic Opera, Baroque Opera, Spaghetti Western |
+| Ioana | Romania, 42 | Lautar spirit. A free doina opening, violin and cimbalom in dialog, a hora that runs faster. | Doina, Hora, Sârbă, Lautareasca, Bănățeană, Colinde |
+| Marcus | Texas, USA, 45 | Groove classicist. Tight pocket, guitar and fiddle trading licks (benches the alto channel). | Country, Honky Tonk, Texas Swing, Bluegrass, Cowboy Ballad, Western Swing |
+| Luc | France, 58 | Smooth, warm and patient. Musette waltzes, long intros, slow fades. | French Musette, Impressionist, Parlour Waltz |
+| Siobhán | Ireland, 63 | Session elder. Tunes in sets, solo turns around the circle. | Air, Jig, Reel, Folk, Celtic Folk |
+| Imani | Chicago, USA, 38 | Blues lover. Slow-burning builds, call and response, stop-time breaks. | Chicago Blues, Delta Blues, Soul Blues, Texas Blues, Gospel |
+| Desmond | Jamaica, 33 | Jazz specialist. Heads and solos, trading fours, a surprise solo, a cool fade. | Bebop, Cool Jazz, Jazz Fusion, Acid Jazz, Smooth Jazz, Island Reggae |
+| Viktor | Russia, 66 | Conservatory veteran turned experimenter. Slow builds, key lifts, surprise solos. | Russian Folk, Romantic, Byzantine Chant |
+
+Each DJ has its own settings:
+
+- **Preferred channels:** a checkbox per channel; an unchecked (benched) channel is not used by that DJ.
+- **Eagerness:** how fast the DJ turns knobs and changes sections.
+- **Diversity:** solos, duets and trios instead of the full band.
+- **Complexity:** bigger ensembles, ornaments, rich arrangements.
+- **Energy:** sets the evolution slider and the dynamics, brightness and groove knobs.
+- **Atmosphere:** space, texture and organic colour.
+- **Warm-up:** seconds the band is warmed up slowly (0 to 30).
+- **Lyria temperature:** 0.0 to 3.0 (Lyria's default is 1.1); lower is more predictable, higher is more varied.
+- **Homeland:** the chance (0 to 100%) that the DJ plays one of its home styles when it plans a piece (see section 8).
+- **Signature:** how often (0 to 100%) each of the DJ's arranging habits (solo turns, breaks, key lifts...) shows up when it plans a piece.
+- **Max knobs:** 0 to 10, default 6, the most knobs the DJ may hold in modern styles; above 6 traditional and regional styles get 1 to 3 more, below 6 modern styles lose knobs first, then the others, down to 0.
+
+Presets are saved in your browser and restored on restart, together with the last applied personality.
 
 ## 11. Tips
 

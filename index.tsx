@@ -160,7 +160,8 @@ function main() {
       if (config) {
           liveMusicHelper.setDjPersonality({
               name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6,
-              diversity: config.diversity, complexity: config.complexity, energy: config.energy, atmosphere: config.atmosphere, warmup: config.warmup
+              diversity: config.diversity, complexity: config.complexity, energy: config.energy, atmosphere: config.atmosphere, warmup: config.warmup,
+              country: config.country, homeStyles: config.homeStyles, homeBias: config.homeBias, arranging: config.arranging, habits: config.habits
           });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
       }
@@ -612,10 +613,11 @@ function main() {
       }
       take = { kind, soundAt: null, localRecorded: false };
       if (liveMusicHelper.usesSongModel) {
-          // A song with voices is rendered whole by Lyria 3.5 and cannot be conducted: the DJ steps down (button unselected)
-          if (liveMusicHelper.conductorMode || leftSidebar.isConductorActive) {
+          // A song with voices cannot be arranged by the DJ: it steps down (button unselected). An instrumental
+          // Quality song is arranged by the DJ up front (renderSong asks it for a plan) and the DJ stays on.
+          if ((liveMusicHelper.conductorMode || leftSidebar.isConductorActive) && liveMusicHelper.songHasVoices) {
               deactivateDj();
-              pdjMidi.setMessage('DJ OFF: A LYRIA 3.5 SONG CANNOT BE CONDUCTED', 'info');
+              pdjMidi.setMessage('DJ OFF: THE DJ DOES NOT ARRANGE VOICES', 'info');
           }
           // The dialog's lyrics and language are what gets sung, also when they were not applied yet
           if (liveMusicHelper.songHasVoices) {
@@ -735,6 +737,8 @@ function main() {
       Object.keys(settings).forEach((ch) => {
           const channel = ch as keyof InstrumentSet;
           if (keep.includes(channel) || !isVocalInstrument(settings[channel].instrument)) return;
+          // A LEAD VOICE / CHOIR track becomes an instrument track again before it gets its instrument
+          rightSidebar.releaseVoiceTrack(channel);
           const used = Object.values(settings).map(s => s.instrument);
           const allNonVocal = (rightSidebar as any).getRecommendedInstruments(channel).filter((i: string) => !isVocalInstrument(i));
           const unused = allNonVocal.filter((i: string) => !used.includes(i));
@@ -747,15 +751,14 @@ function main() {
       if (changed) (rightSidebar as any).auditAndCommit(settings);
   };
 
-  // Voice master mode on: the dice put a voice on the solo-voice channel when no channel has one
-  // (Band: alto, solo / duet / quartet. Lyria: VOICE/LEAD, solo / duet).
+  // Voice master mode on: the dice put a voice on the lead channel when no channel has one
+  // (it becomes a LEAD VOICE track, also when the other tracks are Band tracks).
   const ensureVoiceChannels = () => {
       if (liveMusicHelper.generationMode !== 'VOCALIZATION' || rightSidebar.locks.channels) return;
       const hasVoice = (Object.values(rightSidebar.settings) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
       if (hasVoice) return;
       const kinds = ['Solo Male', 'Solo Female', 'Duet Mix', 'Quartet Mix'];
-      const ch: keyof InstrumentSet = rightSidebar.currentTab === 'Lyria' ? LYRIA_VOICE_CHANNELS.solo : 'alto';
-      rightSidebar.setVoiceInstruments({ [ch]: [kinds[Math.floor(Math.random() * kinds.length)]] });
+      rightSidebar.setVoiceInstruments({ [LYRIA_VOICE_CHANNELS.solo]: [kinds[Math.floor(Math.random() * kinds.length)]] });
   };
 
   // Right-hand panel: the prompt last sent to Lyria first, then the instruments it names (voices and lyrics in voice mode)
@@ -902,10 +905,9 @@ function main() {
   // The Voice dialog's voices go onto the voice channels as a matching random voice instrument.
   // Returns the channels that got a voice (empty when the dialog has none).
   const applyDialogVoices = (solos: string[], choir: string): (keyof InstrumentSet)[] => {
-      // Band: solo voices on alto, choir on harmonic. Lyria: solo voices on VOICE/LEAD, choir on VOICE/HARMONY.
-      const lyria = rightSidebar.currentTab === 'Lyria';
-      const soloCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.solo : 'alto';
-      const choirCh: keyof InstrumentSet = lyria ? LYRIA_VOICE_CHANNELS.choir : 'harmonic';
+      // Solo voices on the lead (LEAD VOICE track), the choir on the alto (BACKGROUND CHOIR track), whatever the other tracks are
+      const soloCh: keyof InstrumentSet = LYRIA_VOICE_CHANNELS.solo;
+      const choirCh: keyof InstrumentSet = LYRIA_VOICE_CHANNELS.choir;
       const pick: Partial<Record<keyof InstrumentSet, string[]>> = {};
       if (choir !== 'None') pick[choirCh] = CHOIR_CANDIDATES[choir] || [];
       const isFemale = (v: string) => v === 'Soprano' || v === 'Alto';
@@ -950,10 +952,11 @@ function main() {
 
   // Voice off and primary mode DIVERSITY (DJ activation, power button): voice instruments leave the channels,
   // the voice tracks are no longer offered and the Voice dialog closes. Lyrics and song title are kept.
-  const voiceOffToDiversity = (ignoreLock = false) => {
-      liveMusicHelper.setGenerationMode('DIVERSITY');
-      leftSidebar.primaryMode = 'DIVERSITY';
-      (window as any).primaryMode = 'DIVERSITY';
+  const voiceOffToDiversity = (ignoreLock = false, keepQuality = false) => {
+      const mode: MusicGenerationMode = keepQuality ? 'QUALITY' : 'DIVERSITY';
+      liveMusicHelper.setGenerationMode(mode);
+      leftSidebar.primaryMode = mode;
+      (window as any).primaryMode = mode;
       rightSidebar.voiceEnabled = false;
       window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: false } }));
       vocalDialog.show = false;
@@ -966,12 +969,16 @@ function main() {
       // model; Lyria 3.5 is a song model that renderSong() calls on its own, it cannot stream (the take is silent).
       pdjMidi.setMessage(e.detail === 'Lyria' ? 'LYRIA TAB: ORCHESTRA CHANNELS' : 'BAND TAB: BAND CHANNELS', 'info');
   });
-  // The DJ is for real-time music without voices: it never touches the Voice dialog. Activating it turns the voice
-  // off and sets the primary mode to DIVERSITY (from any mode); voice channels leave the stage.
-  const stripVoicesForDj = () => {
+  // The DJ plays music without voices: it never touches the Voice dialog. Activating it turns the voice off and sets
+  // the primary mode to DIVERSITY (the DJ conducts live), except QUALITY with songs left in the quota: the DJ then
+  // arranges each take as a Lyria 3.5 song. Voice channels leave the stage either way.
+  const stripVoicesForDj = (quiet = false) => {
       const was = liveMusicHelper.generationMode;
-      voiceOffToDiversity();
-      if (was !== 'DIVERSITY') pdjMidi.setMessage('DJ: VOICE OFF, MODE DIVERSITY', 'info');
+      const keepQuality = was === 'QUALITY' && liveMusicHelper.songQuotaOk && !liveMusicHelper.songModelBlocked;
+      voiceOffToDiversity(false, keepQuality);
+      if (quiet) return;
+      if (keepQuality) pdjMidi.setMessage('DJ: QUALITY MODE, THE DJ ARRANGES A LYRIA 3.5 SONG', 'info');
+      else if (was !== 'DIVERSITY') pdjMidi.setMessage('DJ: VOICE OFF, MODE DIVERSITY', 'info');
   };
   // Voices chosen while the DJ is on (voice mode, Voice dialog, a voice instrument): the DJ steps down
   const djStepsDownForVoices = (why: string) => {
@@ -1006,6 +1013,21 @@ function main() {
           
           const canPlan = liveMusicHelper.playbackState === 'stopped';
           if (canPlan) {
+              // The DJ may play a folk style of its own country (its Homeland chance), only with the channels free
+              // to follow the new genre; locked genre or style keep the user's choice
+              const dj = liveMusicHelper.djPersonalityInfo;
+              if (dj?.homeStyles?.length && !rsLocks.channels && Math.random() * 100 < (dj.homeBias ?? 0)) {
+                  const home = topToolbar.djPickHomeStyle(dj.homeStyles);
+                  if (home) {
+                      syncMainBar();
+                      rightSidebar.genre = topToolbar.genre;
+                      rightSidebar.musicStyle = topToolbar.musicStyle;
+                      vocalDialog.genre = topToolbar.genre;
+                      vocalDialog.musicStyle = topToolbar.musicStyle;
+                      syncBars();
+                      pdjMidi.setMessage(`DJ ${dj.name.toUpperCase()} PLAYS FROM HOME (${(dj.country || '').toUpperCase()}): ${home[1].toUpperCase()}`, 'info');
+                  }
+              }
               if (!rsLocks.channels) {
                   await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, false);
                   if (superseded()) return;
@@ -1017,7 +1039,7 @@ function main() {
               }
 
               // The DJ plays real-time music without voices: voice instruments leave the channels and the voice mode ends
-              stripVoicesForDj();
+              stripVoicesForDj(true);
               rightSidebar.finalizeDiceChannels();
 
               const mood = topToolbar.djPickMood();
@@ -1192,6 +1214,13 @@ function main() {
   (leftSidebar as any).addEventListener('randomize', async () => {
       cancelAutoLoop();
       if (liveMusicHelper.playbackState !== 'stopped') return;
+      // The dice make a random setup: the DJ on deck steps down (the top bar shows "Active: Random")
+      if (leftSidebar.isConductorActive || liveMusicHelper.conductorMode) {
+          djRequest++; // a DJ plan still being prepared is dropped
+          (window as any).isConductorActive = false;
+          deactivateDj();
+          pdjMidi.setMessage('DICE: DJ OFF, RANDOM SETUP', 'info');
+      }
       await liveMusicHelper.clearRecording(); 
       timeline.hasRecording = false; 
       leftSidebar.hasRecording = false;

@@ -201,13 +201,13 @@ export class MasterVolumePanel extends LitElement {
     .meters-container {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 0; /* the two meters sit right on top of each other */
       width: 100%;
     }
 
     .vu-meter {
       width: 100%;
-      height: 22px; 
+      height: 17.5px; /* 12%, then 8% lower than the old 22px */
       background: #050505;
       border-radius: 1px;
       display: flex;
@@ -221,11 +221,6 @@ export class MasterVolumePanel extends LitElement {
       padding: 1px;
       box-sizing: border-box;
       gap: 3px; /* space between the LEDs */
-      transition: height 0.2s ease;
-    }
-
-    .vu-meter.mono-expanded {
-      height: 48px; 
     }
 
     .led-segment {
@@ -397,7 +392,7 @@ export class MasterVolumePanel extends LitElement {
             </div>
           </div>
           <div class="meters-container">
-            <div class="vu-meter ${!this.isStereo ? 'mono-expanded' : ''}">
+            <div class="vu-meter">
               ${this.renderLeds(this.isStereo ? visualLevelL : (visualLevelL + visualLevelR) / 2)}
             </div>
             ${this.isStereo ? html`
