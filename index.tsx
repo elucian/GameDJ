@@ -190,10 +190,10 @@ function main() {
       if (busy) pdjMidi.setMessage('WORKING: WRITING LYRICS...', 'info'); else updatePlayerStatus();
   };
 
-  (vocalDialog as any).addEventListener('request-lyrics-generation', async (e: CustomEvent) => {
-    const { genre } = e.detail;
+  // Lyrics and title for a new song (the dialog's Generate button, or the DJ setting up a song with voices)
+  const generateDialogLyrics = async (genre: string, dialogLang: string) => {
     // Auto: the style's own language first (Japanese Folk sings Japanese), then the genre's
-    const lang: string = e.detail.lang === 'Auto' ? chooseLyricsLanguage(genre, topToolbar.musicStyle) : e.detail.lang;
+    const lang: string = dialogLang === 'Auto' ? chooseLyricsLanguage(genre, topToolbar.musicStyle) : dialogLang;
     pdjMidi.setMessage(`GENERATING LYRICS FOR ${genre} (${lang.toUpperCase()})...`, "info");
     vocalDialog.generating = true;
     setLyricsBusy(true);
@@ -219,6 +219,9 @@ function main() {
     updateSongDuration();
     refreshPromptPanel();
     pdjMidi.setMessage(title ? `LYRICS READY: ${title.toUpperCase()} (${lang.toUpperCase()})` : `LYRICS READY: ${lang.toUpperCase()}`, 'info');
+  };
+  (vocalDialog as any).addEventListener('request-lyrics-generation', (e: CustomEvent) => {
+    generateDialogLyrics(e.detail.genre, e.detail.lang);
   });
 
   (vocalDialog as any).addEventListener('request-song-translation', async (e: CustomEvent) => {
@@ -278,8 +281,11 @@ function main() {
   };
   const liveMusicHelper = new LiveMusicHelper(ai, model);
   // Song quota used up: the voice dialog button is forbidden until the month ends
-  const syncVoiceBlocked = () => { const ok = quotaStatus('song').ok; leftSidebar.voiceBlocked = !ok; liveMusicHelper.songQuotaOk = ok; }; // local count or a remembered server refusal
+  // local count or a remembered server refusal; a key that may not use Lyria 3.5 blocks the voice mode too
+  const syncVoiceBlocked = () => { const ok = quotaStatus('song').ok; leftSidebar.voiceBlocked = !ok || !!liveMusicHelper.songModelBlocked; liveMusicHelper.songQuotaOk = ok; };
   syncVoiceBlocked();
+  // Voices need a Lyria 3.5 song (the song quota and a key that may use it)
+  const songsAvailable = () => liveMusicHelper.songQuotaOk && !liveMusicHelper.songModelBlocked;
   // Fall back to the live model: Band tab selected, voice mode off (as when the voice dialog is cancelled)
   const fallBackToLive = () => {
       if (rightSidebar.currentTab !== 'Band') (rightSidebar as any).switchTab('Band');
@@ -571,6 +577,8 @@ function main() {
       pdjMidi.setMessage(t.kind === 'song' ? 'STOPPED WITHIN 15S: SONG GIVEN BACK' : 'STOPPED WITHIN 15S: TAKE GIVEN BACK', 'info');
   };
 
+  // A Quality song failed: the next take is recorded live once (the song model may work again for the take after)
+  let forceLiveTake = false;
   (leftSidebar as any).addEventListener('record', async () => {
       if (lyricsBusy) { pdjMidi.setMessage('WORKING: LYRICS ARE BEING WRITTEN', 'info'); return; }
       cancelAutoLoop();
@@ -596,7 +604,8 @@ function main() {
       }
       // Voice mode with a voice or choir on stage: Lyria RealTime cannot sing words, so the take is rendered
       // as a whole song (instruments, singers and lyrics) by Lyria 3.5
-      let kind: 'song' | 'live' = liveMusicHelper.usesSongModel ? 'song' : 'live';
+      let kind: 'song' | 'live' = liveMusicHelper.usesSongModel && !forceLiveTake ? 'song' : 'live';
+      forceLiveTake = false;
       if (kind === 'song') {
           const q = await reserveQuota('song');
           if (!q.ok) {
@@ -612,7 +621,7 @@ function main() {
           if (!q.ok) { quotaBlocked(q.message); return; }
       }
       take = { kind, soundAt: null, localRecorded: false };
-      if (liveMusicHelper.usesSongModel) {
+      if (kind === 'song') {
           // A song with voices cannot be arranged by the DJ: it steps down (button unselected). An instrumental
           // Quality song is arranged by the DJ up front (renderSong asks it for a plan) and the DJ stays on.
           // With the DJ on, renderSong asks it for the plan: the arrangement of an instrumental, or the vocal
@@ -699,9 +708,20 @@ function main() {
       refundQuota('song'); // nothing was delivered: the song goes back to the quota
       take = null;
       if (blocked) {
-          // The API key may not use Lyria 3.5 (free tier): record live instead, voices without words
-          pdjMidi.setMessage('LYRIA 3.5 NOT AVAILABLE ON THIS API KEY (PAID TIER NEEDED): RECORDING LIVE, NO WORDS', 'error');
-          liveMusicHelper.record();
+          // The API key may not use Lyria 3.5 (free tier): no songs, so no voice mode either. The take is recorded
+          // live with the band (as when the song quota is used up)
+          syncVoiceBlocked();
+          if (liveMusicHelper.generationMode === 'VOCALIZATION') fallBackToLive();
+          pdjMidi.setMessage('LYRIA 3.5 NOT AVAILABLE ON THIS API KEY (PAID TIER NEEDED): RECORDING LIVE', 'error');
+          leftSidebar.dispatchEvent(new CustomEvent('record'));
+          return;
+      }
+      // An instrumental Quality song failed: the real-time generator records the take instead (a live take cannot sing,
+      // so a song with voices only reports the error)
+      if (liveMusicHelper.generationMode === 'QUALITY' && !liveMusicHelper.songHasVoices) {
+          pdjMidi.setMessage(`SONG FAILED: RECORDING LIVE INSTEAD (${reason.slice(0, 50).toUpperCase()})`, 'error');
+          forceLiveTake = true;
+          leftSidebar.dispatchEvent(new CustomEvent('record'));
           return;
       }
       pdjMidi.setMessage(`SONG FAILED: ${reason.slice(0, 80).toUpperCase()}`, 'error');
@@ -916,6 +936,7 @@ function main() {
       else if (solos.length === 2) pick[soloCh] = [solos.every(isFemale) ? 'Duet Female' : solos.some(isFemale) ? 'Duet Mix' : 'Duet Male'];
       else if (solos.length >= 3) pick[soloCh] = ['Quartet Mix'];
       if (!pick[soloCh] && !pick[choirCh]) return [];
+      if (!songsAvailable()) { pdjMidi.setMessage('NO SONGS LEFT: VOICES NEED A LYRIA 3.5 SONG', 'error'); return []; }
       // Picking voices makes the voice the primary mode: without VOCALIZATION no voice reaches Lyria
       // (and the channels would not even offer voice instruments)
       if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
@@ -930,6 +951,7 @@ function main() {
 
   // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
   (vocalDialog as any).addEventListener('voices-applied', (e: CustomEvent<{ solos: string[]; choir: string }>) => {
+      if (!songsAvailable()) { pdjMidi.setMessage('NO SONGS LEFT: VOICE MODE NOT AVAILABLE', 'error'); return; }
       djStepsDownForVoices('THE DJ DOES NOT CONDUCT VOICES');
       liveMusicHelper.setGenerationMode('VOCALIZATION');
 
@@ -982,8 +1004,6 @@ function main() {
       if (keepQuality) pdjMidi.setMessage('DJ: QUALITY MODE, THE DJ ARRANGES A LYRIA 3.5 SONG', 'info');
       else if (was !== 'DIVERSITY') pdjMidi.setMessage('DJ: VOICE OFF, MODE DIVERSITY', 'info');
   };
-  // Voices need a Lyria 3.5 song (the song quota and a key that may use it)
-  const songsAvailable = () => liveMusicHelper.songQuotaOk && !liveMusicHelper.songModelBlocked;
   // Voices chosen while the DJ is on (voice mode, Voice dialog, a voice instrument): the DJ stays and arranges the
   // vocal performance of the Lyria 3.5 song (it never changes the voices or the lyrics). Without songs left it steps down.
   const djStepsDownForVoices = (why: string) => {
@@ -994,6 +1014,53 @@ function main() {
       }
       deactivateDj();
       pdjMidi.setMessage(`DJ OFF: ${why} (NO SONGS LEFT)`, 'info');
+  };
+
+  // DJ activated in the voice mode (songs left): a Voice dialog without voices is rolled with its dice (voices, choir,
+  // language) and gets new lyrics and a title; voices you chose and your lyrics are kept. The DJ then sets the
+  // instruments around the voices (unless the channels are locked): its home style only for a song it sets up itself.
+  const djSetsUpVoiceSong = async (superseded: () => boolean) => {
+      const dj = liveMusicHelper.djPersonalityInfo;
+      const rsLocks = rightSidebar.locks;
+      const newSong = !vocalDialog.hasVoiceSetup;
+      if (newSong && dj?.homeStyles?.length && !rsLocks.channels && Math.random() * 100 < (dj.homeBias ?? 0)) {
+          const home = topToolbar.djPickHomeStyle(dj.homeStyles);
+          if (home) {
+              syncMainBar();
+              rightSidebar.genre = topToolbar.genre; rightSidebar.musicStyle = topToolbar.musicStyle;
+              vocalDialog.genre = topToolbar.genre; vocalDialog.musicStyle = topToolbar.musicStyle;
+              syncBars();
+              pdjMidi.setMessage(`DJ ${dj.name.toUpperCase()} PLAYS FROM HOME (${(dj.country || '').toUpperCase()}): ${home[1].toUpperCase()}`, 'info');
+          }
+      }
+      if (newSong) {
+          vocalDialog.randomizeForDj();
+          pdjMidi.setMessage(`DJ ${(dj?.name || '').toUpperCase()} SETS UP THE VOICES`, 'info');
+      }
+      // Taken now: the new instruments mirror back into the dialog while they land on the channels
+      const { solos, choir } = vocalDialog.getVoices();
+      if (!rsLocks.channels) {
+          await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, rightSidebar.currentTab === 'Lyria');
+          if (superseded()) return;
+          if (!rsLocks.manifest) {
+              // The DJ's preferred channels, but the voice channels always stay on stage
+              const keep = chooseDjManifest(topToolbar.genre, liveMusicHelper.djPersonalityChannels, dj?.complexity);
+              if (solos.length && !keep.includes(LYRIA_VOICE_CHANNELS.solo)) keep.push(LYRIA_VOICE_CHANNELS.solo);
+              if (choir !== 'None' && !keep.includes(LYRIA_VOICE_CHANNELS.choir)) keep.push(LYRIA_VOICE_CHANNELS.choir);
+              rightSidebar.applyDjManifest(keep);
+          }
+          vocalDialog.setVoices(solos, choir);
+          const voiced = applyDialogVoices(solos, choir);
+          replaceVocalInstruments(voiced, true);
+          liveMusicHelper.setVoiceCast(solos);
+          rightSidebar.finalizeDiceChannels();
+          vocalDialog.setVoices(solos, choir);
+      } else placeVoices();
+      rightSidebar.voiceEnabled = true;
+      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: true } }));
+      refreshPromptPanel();
+      // A new song gets its words (in the background: Record waits while lyrics are being written)
+      if (newSong && !vocalDialog.vocalText.trim()) generateDialogLyrics(topToolbar.genre, vocalDialog.language);
   };
 
   (leftSidebar as any).addEventListener('dj-changed', async (e: Event) => {
@@ -1012,13 +1079,15 @@ function main() {
           // Voice mode with songs left: the DJ keeps the user's voices, lyrics, style and instruments and arranges
           // the vocal performance of the Lyria 3.5 song (no instrument planning, no home style: they would change the song)
           if (liveMusicHelper.generationMode === 'VOCALIZATION' && songsAvailable()) {
+              const djName = (liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase();
               if (liveMusicHelper.playbackState === 'stopped') {
-                  placeVoices();
-                  liveMusicHelper.setConductorMode(true);
-                  rightSidebar.conductorActive = true;
-                  pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} ARRANGES THE VOCAL PERFORMANCE`, 'info');
-                  return;
+                  await djSetsUpVoiceSong(superseded);
+                  if (superseded()) return;
               }
+              liveMusicHelper.setConductorMode(true);
+              rightSidebar.conductorActive = true;
+              pdjMidi.setMessage(`DJ ${djName} ARRANGES THE VOCAL PERFORMANCE`, 'info');
+              return;
           }
           if (!(voiceOnStage() && rightSidebar.locks.channels)) stripVoicesForDj();
           if (voiceOnStage()) {
@@ -1100,7 +1169,13 @@ function main() {
 
   (leftSidebar as any).addEventListener('mode-changed', ((e: Event) => {
       cancelAutoLoop();
-      const mode = (e as CustomEvent<MusicGenerationMode>).detail;
+      let mode = (e as CustomEvent<MusicGenerationMode>).detail;
+      // No songs left: neither you nor the DJ can switch to the voice mode (a live take cannot sing)
+      if (mode === 'VOCALIZATION' && !songsAvailable()) {
+          mode = 'DIVERSITY';
+          leftSidebar.primaryMode = mode;
+          pdjMidi.setMessage('NO SONGS LEFT: VOICE MODE NOT AVAILABLE', 'error');
+      }
       if (mode === 'VOCALIZATION') djStepsDownForVoices('THE DJ DOES NOT CONDUCT VOICES');
       (window as any).primaryMode = mode; // Keep global in sync
       liveMusicHelper.setGenerationMode(mode);
@@ -1379,12 +1454,19 @@ function main() {
       // A voice just came on stage (preset, locked channels, Voice dialog): the voice becomes the primary mode.
       // Only on the change, so switching the mode off yourself afterwards is respected.
       const voiceOnStage = (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
-      if (voiceOnStage && !hadVoiceOnStage) djStepsDownForVoices('A VOICE IS ON STAGE');
-      if (voiceOnStage && !hadVoiceOnStage && liveMusicHelper.generationMode !== 'VOCALIZATION') {
-          liveMusicHelper.setGenerationMode('VOCALIZATION');
-          pdjMidi.setMessage('VOICE ON STAGE: MODE VOCALIZATION', 'info');
+      if (voiceOnStage && !songsAvailable()) {
+          // No songs left: a voice cannot be sung, it leaves the stage
+          hadVoiceOnStage = false;
+          if (liveMusicHelper.generationMode === 'VOCALIZATION') fallBackToLive(); else replaceVocalInstruments([], true);
+          pdjMidi.setMessage('NO SONGS LEFT: VOICES NOT AVAILABLE', 'error');
+      } else {
+          if (voiceOnStage && !hadVoiceOnStage) djStepsDownForVoices('A VOICE IS ON STAGE');
+          if (voiceOnStage && !hadVoiceOnStage && liveMusicHelper.generationMode !== 'VOCALIZATION') {
+              liveMusicHelper.setGenerationMode('VOCALIZATION');
+              pdjMidi.setMessage('VOICE ON STAGE: MODE VOCALIZATION', 'info');
+          }
+          hadVoiceOnStage = voiceOnStage;
       }
-      hadVoiceOnStage = voiceOnStage;
 
       timeline.visibleChannels = { 
         lead: detail.lead?.visible !== false, 

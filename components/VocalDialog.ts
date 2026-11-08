@@ -19,7 +19,7 @@ export class VocalDialog extends LitElement {
   @state() private lyricsLang = 'Auto';
   /** Language locked: the voice dice keep the language. Unlocked: the dice pick one that suits the style. Generate never changes it. */
   @state() private langLocked = false;
-  /** Locked: the dice put exactly these voices on stage. (The DJ never uses voices or this dialog.) */
+  /** Locked: the dice put exactly these voices on stage. (The DJ only rolls the dialog when it has no voices at all.) */
   @property({ type: Boolean }) locked = false;
   private languages = ['Auto', 'English', 'Spanish', 'French', 'Portuguese', 'Italian', 'German', 'Latin', 'Korean', 'Japanese', 'Mandarin Chinese', 'Hindi', 'Punjabi', 'Tamil', 'Arabic', 'Turkish', 'Indonesian', 'Greek', 'Russian', 'Romanian', 'Swahili', 'Zulu', 'Yoruba', 'Irish Gaelic', 'Hawaiian'];
   @state() private activeSoloVoices = {
@@ -183,7 +183,7 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
-            <button class="close-x-btn" style="right: 160px" @click=${this.randomizeFormation} title="Randomize what is not locked (voices, language); keeps lyrics and title">🎲</button>
+            <button class="close-x-btn" style="right: 160px" @click=${() => this.randomizeFormation()} title="Randomize what is not locked (voices, language); keeps lyrics and title">🎲</button>
             <button class="close-x-btn" style="right: 130px" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
             <button class="close-x-btn" style="right: 100px" @click=${this.saveSongFile} title="Download Settings">⬇</button>
             <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" style="right: 70px" @click=${() => this.toggleLock()}
@@ -234,8 +234,14 @@ export class VocalDialog extends LitElement {
    * locked; the language changes unless the language is locked. Lyrics and song title are never touched, and the
    * voice mode is not switched on or off (the formation only reaches the channels with Apply).
    */
-  private randomizeFormation() {
-      if (!this.locked) {
+  /** The DJ found no voices: it rolls the whole dialog (voices, choir, language), also when the settings are locked. */
+  public randomizeForDj() { this.randomizeFormation(true); }
+
+  /** Voices or a choir are chosen in the dialog. */
+  public get hasVoiceSetup() { const v = this.getVoices(); return v.solos.length > 0 || v.choir !== 'None'; }
+
+  private randomizeFormation(force = false) {
+      if (!this.locked || force) {
           // Randomize individual voices (the grid items), at least one selected
           const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
           const next = { ...this.activeSoloVoices };

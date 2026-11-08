@@ -492,7 +492,9 @@ export class LeftSidebar extends LitElement {
     uiSounds.playTick();
     const modes: MusicGenerationMode[] = ['DIVERSITY', 'QUALITY', 'VOCALIZATION'];
     const currentIdx = modes.indexOf(this.primaryMode);
-    const nextIdx = (currentIdx + 1) % modes.length;
+    let nextIdx = (currentIdx + 1) % modes.length;
+    // No songs left: voices need a Lyria 3.5 song, so the knob skips the voice mode
+    if (this.voiceBlocked && modes[nextIdx] === 'VOCALIZATION') nextIdx = (nextIdx + 1) % modes.length;
     this.primaryMode = modes[nextIdx];
     this.dispatch('mode-changed', this.primaryMode);
   }
@@ -637,7 +639,7 @@ export class LeftSidebar extends LitElement {
           <div class="status-dot dot-0 ${modeIdx === 0 ? 'active' : ''}"></div>
           <div class="status-dot dot-1 ${modeIdx === 1 ? 'active' : ''}"></div>
           <div class="status-dot dot-2 ${modeIdx === 2 ? 'active' : ''}"></div>
-          <button class="rotary-btn mode-btn" @click=${this.cyclePrimaryMode} ?disabled=${isRecording} data-pos="${modeIdx}" title="Primary Mode: ${this.primaryMode}">
+          <button class="rotary-btn mode-btn" @click=${this.cyclePrimaryMode} ?disabled=${isRecording} data-pos="${modeIdx}" title="Primary Mode: ${this.primaryMode}${this.voiceBlocked ? ' (voice mode needs songs: none left this month)' : ''}">
             <div class="rotary-inner">
               <div class="rotary-indicator"></div>
               <span class="rotary-text">${this.getModeChar()}</span>
