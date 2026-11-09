@@ -11,6 +11,7 @@ import { PromptGuard, type PromptImprovement } from './PromptGuard';
 import type { NoDetail } from './events';
 import { uiSounds } from './UISounds';
 import { StereoStage } from './StereoStage';
+import { channelsOf, encodeMp3InWorker, encodeWav, planExport, type ExportFormat } from './AudioExport';
 import { takeSongTicket } from './UserQuota';
 import { moodPhrase } from '../constants/moods';
 
@@ -2399,7 +2400,8 @@ Prompt: ${text}`
     this.mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.recordedChunks.push(e.data); };
     this.mediaRecorder.onstop = async () => { 
         if (this.recordedChunks.length > 0) { 
-            const blob = new Blob(this.recordedChunks, { type: 'audio/webm' }); 
+            // The browser's own format (WebM in Chrome and Firefox, MP4 in Safari), so the file gets the right extension
+            const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' }); 
             const arrayBuffer = await blob.arrayBuffer();
             const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
             this.segments = [{ startTime: 0, duration: audioBuffer.duration, buffer: audioBuffer }];
@@ -2904,15 +2906,27 @@ Prompt: ${text}`
       .map(part).filter(Boolean).join('-');
   }
 
-  public async download(format: 'webm' | 'mp3' | 'wav' = 'mp3', songName = '') {
-    if (this.segments.length === 0) return;
-    const url = URL.createObjectURL(this.recordedAudioBlob!);
-    const a = document.createElement('a');
-    a.href = url;
+  /**
+   * Saves the take in the chosen format (see utils/AudioExport.ts): the file the app has when it already is in that
+   * format, otherwise WAV or MP3 encoded from the decoded take. Returns the file name and a note when the format
+   * could not be honoured (WebM of a song), or null when there is nothing to save.
+   */
+  public async download(format: ExportFormat = 'mp3', songName = '', onProgress?: (done: number) => void): Promise<{ filename: string; note?: string } | null> {
+    const take = this.segments[0]?.buffer;
+    if (!take || !this.recordedAudioBlob) return null;
+    const plan = planExport(format, this.recordedAudioBlob.type);
+    let blob: Blob;
+    if (plan.kind === 'original') blob = this.recordedAudioBlob;
+    else if (plan.format === 'wav') blob = new Blob([encodeWav(channelsOf(take), take.sampleRate)], { type: 'audio/wav' });
+    else blob = new Blob(await encodeMp3InWorker(channelsOf(take), take.sampleRate, onProgress), { type: 'audio/mpeg' });
     // A named song (Voice dialog) is saved under its name, spaces replaced by underscores
-    const named = songName.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
-    const filename = `${named || this.defaultSongName()}.${format}`;
-    a.download = filename; a.click();
-    window.URL.revokeObjectURL(url);
+    const named = songName.trim().replace(/[\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+    const filename = `${named || this.defaultSongName()}.${plan.ext}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    // Revoked a moment later: some browsers start the download after the click returns
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return { filename, note: plan.note };
   }
 }

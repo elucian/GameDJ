@@ -42,6 +42,7 @@ export class AboutDialog extends LitElement {
     .quota .n { font-family: monospace; color: var(--accent-color); }
     .quota-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
     .copy { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    .copy.credits { font-size: 10.5px; margin-top: -4px; }
     a { color: var(--accent-color); text-decoration: none; }
     a:hover { text-decoration: underline; }
   `;
@@ -60,6 +61,7 @@ export class AboutDialog extends LitElement {
             <div class="quota-sub">Live takes this week: ${this.liveUsed}/${this.liveLimit}</div>
           </div>
           <div class="copy">Copyright (c) 2026 Sage-Code<br>(<a href="https://sagecode.org" target="_blank" rel="noopener">https://sagecode.org</a>)</div>
+          <div class="copy credits">MP3 export uses <a href="https://lame.sourceforge.io" target="_blank" rel="noopener">LAME</a> (lamejs, <a href="/licenses/lamejs-LICENSE.txt" target="_blank" rel="noopener">LGPL</a>)</div>
         </div>
       </div>
     `;

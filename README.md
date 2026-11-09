@@ -20,5 +20,9 @@ This contains everything you need to deploy this app.
 
 See the [User Guide](manual/USER_GUIDE.md) and the other documents in the [manual](manual) folder.
 
+## Third-party software
+
+MP3 export uses [LAME](https://lame.sourceforge.io) through [@breezystack/lamejs](https://www.npmjs.com/package/@breezystack/lamejs), unmodified, under the LGPL ([license](public/licenses/lamejs-LICENSE.txt)). It is built as its own file (`assets/lamejs-*.js`) and loaded only when an MP3 is exported.
+
 THIS APP IS DESIGNED USING AI STUDIO & GEMINI AI.
 

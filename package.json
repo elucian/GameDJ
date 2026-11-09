@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@google/genai": "^2.32.0",
     "@vercel/analytics": "^2.0.1",
     "lit": "^3.3.0"

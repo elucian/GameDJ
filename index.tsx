@@ -766,11 +766,24 @@ function main() {
   on(leftSidebar, 'loop-changed', (e) => { cancelAutoLoop(); liveMusicHelper.setLoop(e.detail); });
   on(leftSidebar, 'play-recording', () => { cancelAutoLoop(); liveMusicHelper.playRecording(); });
   on(leftSidebar, 'back-to-start', () => { cancelAutoLoop(); liveMusicHelper.startRewind(); });
+  let exporting = false;
   on(leftSidebar, 'download', (e) => {
     cancelAutoLoop();
     // Download counter in Vercel Web Analytics (custom event, no personal data), only when there is something to save
     if (leftSidebar.hasRecording) track('download', { format: String(e.detail) });
-    liveMusicHelper.download(e.detail, vocalDialog.songName);
+    // One export at a time: an MP3 is encoded in the background and takes a few seconds per minute of music
+    if (exporting) { pdjMidi.setMessage('EXPORT IN PROGRESS...', 'info'); return; }
+    const format = e.detail;
+    exporting = true;
+    if (format !== 'webm') pdjMidi.setMessage(`EXPORTING ${format.toUpperCase()}...`, 'info');
+    let shown = -1;
+    liveMusicHelper.download(format, vocalDialog.songName, done => {
+        const pct = Math.floor(done * 10) * 10; // every 10%
+        if (pct !== shown && pct < 100) { shown = pct; pdjMidi.setMessage(`EXPORTING ${format.toUpperCase()}... ${pct}%`, 'info'); }
+    }).then(r => {
+        if (r) pdjMidi.setMessage(`SAVED ${r.filename}${r.note ? ` (${r.note.toUpperCase()})` : ''}`, 'info');
+    }).catch(err => pdjMidi.setMessage(`EXPORT FAILED: ${String(err?.message || err).toUpperCase()}`, 'error'))
+      .finally(() => { exporting = false; });
   });
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre

@@ -25,10 +25,14 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      // The MP3 export worker (utils/mp3.worker.ts) loads the encoder on demand, so it is built as an ES module
+      worker: { format: 'es' },
       build: {
         rollupOptions: {
           output: {
             manualChunks(id) {
+              // The MP3 encoder (LGPL-3.0) stays its own file, loaded only when an MP3 is exported
+              if (id.includes('@breezystack/lamejs')) return 'lamejs';
               if (id.includes('node_modules')) {
                 return 'vendor';
               }
