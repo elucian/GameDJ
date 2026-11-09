@@ -1283,6 +1283,23 @@ export class TopToolbar extends LitElement {
     return [genre, style];
   }
 
+  /**
+   * The Robot DJ studies humanity: any genre (every genre equally likely), then any style of it, becomes the genre and
+   * style; mood, key, tempo and meter follow that style (each unless locked). Null when the genre or style is locked.
+   */
+  public djPickAnyStyle(): [string, string] | null {
+    if (this.locked.genre || this.locked.style) return null;
+    const genres = Object.keys(MUSIC_DATA).filter(g => Object.keys(MUSIC_DATA[g].styles).length > 0);
+    if (genres.length === 0) return null;
+    const genre = genres[Math.floor(Math.random() * genres.length)];
+    const styles = Object.keys(MUSIC_DATA[genre].styles);
+    const style = styles[Math.floor(Math.random() * styles.length)];
+    this.genre = genre;
+    this.musicStyle = style;
+    this.rollStyleSettings(true);
+    return [genre, style];
+  }
+
   /** Mood, key, tempo and meter from the current style's signature (steps 3 to 6 of the dice), each unless locked. */
   private rollStyleSettings(suppressEvents: boolean) {
     const sig = MUSIC_DATA[this.genre]?.styles[this.musicStyle];

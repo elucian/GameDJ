@@ -522,6 +522,8 @@ export interface DjPersonality {
     /** Folk styles of the DJ's own country ([genre, style]) and the chance (0-100) to play one */
     homeStyles?: [string, string][];
     homeBias?: number;
+    /** The Robot DJ studies humanity: instead of home styles, homeBias is the chance to pick any genre (all equally) and a style of it */
+    curious?: boolean;
     /** How the DJ likes to arrange a piece (solo turns, dialogs, stabs, breaks...) */
     arranging?: string[];
     /** 0-100: how often each arranging habit shows up in a plan */

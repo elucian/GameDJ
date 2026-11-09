@@ -28,6 +28,8 @@ export interface DjConfig {
   homeStyles: [string, string][];
   /** Chance (0-100) that the DJ, planning a piece, picks one of its home styles (genre, style and channels unlocked) */
   homeBias: number;
+  /** The Robot DJ: no home, it studies humanity; homeBias is then its Curiosity, the chance to pick any genre (all equally) */
+  curious?: boolean;
   /** How the DJ likes to arrange a piece (solo turns, dialogs, stabs, breaks...), for planning the song */
   arranging: string[];
   /** Chance (0-100) that each arranging habit shows up when the DJ plans a piece */
@@ -56,11 +58,12 @@ const ALL_CHANNELS: ChannelMap = { lead: true, alto: true, harmonic: true, bass:
 // Fictional people: the avatars were drawn for GameDJ (tools/make-dj-portraits.mjs) and show no real musician.
 const DEFAULT_DJS: DjConfig[] = [
   {
-    // An aristocratic ancient android from the heavens (gold and silver, sapphire eyes): no country and no arranging
-    // habits, average settings you can change. Its "home" is the music it prefers: every Gaming and Ambient style
+    // An aristocratic ancient android from the heavens (gold and silver, sapphire eyes), an AI that gained consciousness
+    // and a body. It studies humanity to become more human: no country, no arranging habits, average settings you can
+    // change, and no favourite music: its Curiosity is the chance to play a random genre, every genre equally
     id: ROBOT_DJ_ID, name: 'Robot', gender: 'android', country: 'Android', age: 0,
-    tagline: 'An aristocratic ancient android from the celestial spheres, with a bare silver head, a stylish gold headband, sapphire eyes and a headset with a mic and rubies and topazes on his armour. Plain average settings; it prefers game and ambient music.',
-    homeStyles: [['Gaming', '8-Bit Retro'], ['Gaming', 'Epic Boss'], ['Gaming', 'RPG Adventure'], ['Gaming', 'Cyberpunk'], ['Gaming', 'Stealth'], ['Gaming', 'Dungeon Crawler'], ['Gaming', 'Racing Arcade'], ['Gaming', 'Cozy Simulation'], ['Gaming', 'Platformer Bounce'], ['Gaming', 'Survival Horror'], ['Gaming', 'Victory Theme'], ['Ambient', 'Deep Space'], ['Ambient', 'Lofi Chill'], ['Ambient', 'Cinematic'], ['Ambient', 'Nature Soundscape'], ['Ambient', 'Dark Ambient'], ['Ambient', 'Arctic Tundra'], ['Ambient', 'Solar Wind'], ['Ambient', 'Industrial Decay'], ['Ambient', 'Deep Forest'], ['Ambient', 'Australian Desert'], ['Ambient', 'African Jungle'], ['Ambient', 'Vast Ocean']], homeBias: 60,
+    tagline: 'An AI that gained consciousness and took form: an aristocratic ancient android from the celestial spheres, with a bare silver head, a gold headband, sapphire eyes and a headset with a mic. He studies humanity to become more human himself, making random music in every genre equally to learn how we react to it.',
+    homeStyles: [], homeBias: 80, curious: true,
     arranging: [], habits: 50,
     channels: { ...ALL_CHANNELS }, eagerness: 50, diversity: 50, complexity: 50, energy: 50, atmosphere: 50, warmup: 5, temperature: 1.1, maxKnobs: 6
   },
@@ -160,7 +163,7 @@ const NUMERIC_KEYS = ['eagerness', 'diversity', 'complexity', 'energy', 'atmosph
 
 const isAndroid = (d: DjConfig) => d.id === ROBOT_DJ_ID;
 /** Under the name: where the DJ comes from and the age (the android has neither) */
-const origin = (d: DjConfig) => isAndroid(d) ? 'Celestial android' : `${d.country} · ${d.age}`;
+const origin = (d: DjConfig) => isAndroid(d) ? 'Conscious android' : `${d.country} · ${d.age}`;
 
 const clone = (list: DjConfig[]): DjConfig[] => list.map(d => ({ ...d, channels: { ...d.channels }, homeStyles: d.homeStyles.map(h => [...h] as [string, string]), arranging: [...d.arranging] }));
 
@@ -322,7 +325,7 @@ export class DjPresetDialog extends LitElement {
               <div class="head">
                 <div class="big">${portrait(p)}</div>
                 <div><h3>${p.name}</h3><p>${origin(p)}</p><p>${p.tagline}</p>
-                  <div class="home">${isAndroid(p) ? html`Prefers: <b>${[...new Set(p.homeStyles.map(h => h[0]))].join(' and ')}</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div></div>
+                  <div class="home">${isAndroid(p) ? html`Studies: <b>every genre equally</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div></div>
               </div>
 
               <div>
@@ -347,13 +350,13 @@ export class DjPresetDialog extends LitElement {
     const step = s.step ?? 1;
     const dj = this.draft[this.selectedIndex];
     const val = dj[s.key] as number;
-    // The android's Homeland is the chance to play the genres it prefers
+    // The android has no home: the slider is its Curiosity, the chance to study a random genre
     const android = isAndroid(dj) && s.key === 'homeBias';
     return html`<div class='control'>
-      <span class='label'>${android ? 'Favourites' : s.label}<span>${step < 1 ? val.toFixed(1) : val}${s.unit ?? ''}</span></span>
+      <span class='label'>${android ? 'Curiosity' : s.label}<span>${step < 1 ? val.toFixed(1) : val}${s.unit ?? ''}</span></span>
       <input type='range' .min=${String(s.min)} .max=${String(s.max)} .step=${String(step)} .value=${String(val)}
         @input=${(e: any) => this.updateValue(s.key, step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value))}>
-      <span class="hint">${android ? 'Chance to play a Gaming or Ambient style' : s.hint}</span>
+      <span class="hint">${android ? 'Chance to study a random genre, all equally' : s.hint}</span>
     </div>`;
   }
 

@@ -20,7 +20,7 @@ import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBac
 import { ThanksDialog } from './components/ThanksDialog';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
-import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseLyricsLanguage, djEvolutionFor } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseLyricsLanguage, djEvolutionFor, type DjPersonality } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 import { inject, track } from '@vercel/analytics';
@@ -161,7 +161,7 @@ function main() {
           liveMusicHelper.setDjPersonality({
               name, eagerness: config.eagerness, channels: config.channels, maxKnobs: config.maxKnobs ?? 6,
               diversity: config.diversity, complexity: config.complexity, energy: config.energy, atmosphere: config.atmosphere, warmup: config.warmup,
-              country: config.country, homeStyles: config.homeStyles, homeBias: config.homeBias, arranging: config.arranging, habits: config.habits
+              country: config.country, homeStyles: config.homeStyles, homeBias: config.homeBias, curious: !!config.curious, arranging: config.arranging, habits: config.habits
           });
           liveMusicHelper.setTemperature(config.temperature ?? 1.1);
       }
@@ -1028,6 +1028,21 @@ function main() {
       pdjMidi.setMessage(`DJ ${(liveMusicHelper.djPersonalityInfo?.name || '').toUpperCase()} STAYS: ${why} (NO SONGS LEFT, NO VOICES)`, 'info');
   };
 
+  // With its Homeland chance a DJ plays a folk style of its own country; the curious Robot DJ, with its Curiosity
+  // chance, studies humanity with any genre (all equally likely). Locked genre or style keep the user's choice.
+  const djPicksOwnStyle = (dj: DjPersonality | null | undefined) => {
+      if (!dj || Math.random() * 100 >= (dj.homeBias ?? 0)) return;
+      const pick = dj.curious ? topToolbar.djPickAnyStyle() : dj.homeStyles?.length ? topToolbar.djPickHomeStyle(dj.homeStyles) : null;
+      if (!pick) return;
+      syncMainBar();
+      rightSidebar.genre = topToolbar.genre; rightSidebar.musicStyle = topToolbar.musicStyle;
+      vocalDialog.genre = topToolbar.genre; vocalDialog.musicStyle = topToolbar.musicStyle;
+      syncBars();
+      pdjMidi.setMessage(dj.curious
+          ? `DJ ${dj.name.toUpperCase()} STUDIES HUMANITY: ${pick[0].toUpperCase()} · ${pick[1].toUpperCase()}`
+          : `DJ ${dj.name.toUpperCase()} PLAYS FROM HOME (${(dj.country || '').toUpperCase()}): ${pick[1].toUpperCase()}`, 'info');
+  };
+
   // DJ activated in the voice mode (songs left): a Voice dialog without voices is rolled with its dice (voices, choir,
   // language) and gets new lyrics and a title; voices you chose and your lyrics are kept. The DJ then sets the
   // instruments around the voices (unless the channels are locked): its home style only for a song it sets up itself.
@@ -1035,16 +1050,7 @@ function main() {
       const dj = liveMusicHelper.djPersonalityInfo;
       const rsLocks = rightSidebar.locks;
       const newSong = !vocalDialog.hasVoiceSetup;
-      if (newSong && dj?.homeStyles?.length && !rsLocks.channels && Math.random() * 100 < (dj.homeBias ?? 0)) {
-          const home = topToolbar.djPickHomeStyle(dj.homeStyles);
-          if (home) {
-              syncMainBar();
-              rightSidebar.genre = topToolbar.genre; rightSidebar.musicStyle = topToolbar.musicStyle;
-              vocalDialog.genre = topToolbar.genre; vocalDialog.musicStyle = topToolbar.musicStyle;
-              syncBars();
-              pdjMidi.setMessage(`DJ ${dj.name.toUpperCase()} PLAYS FROM HOME (${(dj.country || '').toUpperCase()}): ${home[1].toUpperCase()}`, 'info');
-          }
-      }
+      if (newSong && !rsLocks.channels) djPicksOwnStyle(dj);
       if (newSong) {
           vocalDialog.randomizeForDj();
           pdjMidi.setMessage(`DJ ${(dj?.name || '').toUpperCase()} SETS UP THE VOICES`, 'info');
@@ -1116,19 +1122,7 @@ function main() {
           if (canPlan) {
               // The DJ may play a folk style of its own country (its Homeland chance), only with the channels free
               // to follow the new genre; locked genre or style keep the user's choice
-              const dj = liveMusicHelper.djPersonalityInfo;
-              if (dj?.homeStyles?.length && !rsLocks.channels && Math.random() * 100 < (dj.homeBias ?? 0)) {
-                  const home = topToolbar.djPickHomeStyle(dj.homeStyles);
-                  if (home) {
-                      syncMainBar();
-                      rightSidebar.genre = topToolbar.genre;
-                      rightSidebar.musicStyle = topToolbar.musicStyle;
-                      vocalDialog.genre = topToolbar.genre;
-                      vocalDialog.musicStyle = topToolbar.musicStyle;
-                      syncBars();
-                      pdjMidi.setMessage(`DJ ${dj.name.toUpperCase()} PLAYS FROM HOME (${(dj.country || '').toUpperCase()}): ${home[1].toUpperCase()}`, 'info');
-                  }
-              }
+              if (!rsLocks.channels) djPicksOwnStyle(liveMusicHelper.djPersonalityInfo);
               if (!rsLocks.channels) {
                   await topToolbar.randomizeInstruments({ manifest: rsLocks.manifest, channels: false }, rightSidebar.settings, false);
                   if (superseded()) return;
