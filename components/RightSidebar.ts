@@ -69,6 +69,8 @@ export interface RightSidebarEvents {
   'seed-lock-changed': boolean;
   'volume-changed': number;
   'stereo-changed': boolean;
+  /** Stereo width (0 to 1.5, 1 = Lyria's original image) */
+  'width-changed': number;
 }
 
 @customElement('right-sidebar')
@@ -517,6 +519,8 @@ export class RightSidebar extends LitElement {
   @property({ type: Number }) audioLevelL = 0;
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
+  /** Stereo width shown on the WID slider (0 to 1.5) */
+  @property({ type: Number }) stereoWidth = 1;
   @property({ type: Boolean }) conductorActive = false;
   @property({ type: Number }) seed = 0;
   /** Song length in bars, shown under EVL */
@@ -1109,9 +1113,11 @@ export class RightSidebar extends LitElement {
           .audioLevelL=${this.audioLevelL}
           .audioLevelR=${this.audioLevelR}
           .isStereo=${this.isStereo}
+          .stereoWidth=${this.stereoWidth}
           .isLocked=${isEvolutionLocked}
           @volume-changed=${(e: any) => { this.volume = e.detail; this.dispatch('volume-changed', this.volume); }}
-          @stereo-changed=${(e: any) => { this.isStereo = e.detail; this.dispatch('stereo-changed', e.detail); }}>
+          @stereo-changed=${(e: CustomEvent<boolean>) => { this.isStereo = e.detail; this.dispatch('stereo-changed', e.detail); }}
+          @width-changed=${(e: CustomEvent<number>) => { this.stereoWidth = e.detail; this.dispatch('width-changed', e.detail); }}>
       </master-volume-panel>
     `;
   }

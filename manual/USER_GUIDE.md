@@ -54,6 +54,7 @@ The right sidebar has two tabs with five channels each:
 - **Duration** sets the target length (you can also drag the time ruler at the top of the timeline: right for longer, left for shorter, from 1:00 to 3:00 in 10-second steps; not while recording, and not when the length is locked); **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
 - **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when you have songs left in your quota; with the DJ on, the DJ arranges it (see section 8). Vocalization is selected automatically when a voice channel is used.
 - **Export** downloads the recording (choose the format with the format button).
+- **Mono / Stereo and WID** (master volume panel): Lyria always sends one stereo mix, and GameDJ shapes it in your browser. **MONO** sends the same sound to both speakers. In **STEREO**, **WID** sets the stereo width: 0% sounds like mono, 100% is Lyria's original mix, and up to 150% is wider. Only the sides change; the centre (voice, bass, kick) stays as it is. Very wide settings can make loud passages clip. The setting applies to what you hear, the meters and the live recording, and it is kept in this browser. It is locked while the DJ records, like the other master controls. A Lyria 3.5 song file is downloaded as the server rendered it.
 
 ## 6. The Dice (Random)
 

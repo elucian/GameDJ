@@ -28,6 +28,7 @@ import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 import { uiSounds } from './utils/UISounds';
 import { on } from './utils/events';
+import { loadStereoSettings, saveStereoSettings } from './utils/StereoStage';
 import { inject, track } from '@vercel/analytics';
 
 // Vercel Web Analytics: page views only (it does nothing on localhost)
@@ -469,6 +470,20 @@ function main() {
       const vol = e.detail;
       liveMusicHelper.setVolume(vol);
   }));
+  // Mono / stereo and stereo width: done in the browser on Lyria's stereo mix (speakers, meters and recording),
+  // kept in this browser
+  const stereo = loadStereoSettings();
+  liveMusicHelper.stereo.setMono(stereo.mono); liveMusicHelper.stereo.setWidth(stereo.width);
+  rightSidebar.isStereo = !stereo.mono; rightSidebar.stereoWidth = stereo.width;
+  on(rightSidebar, 'stereo-changed', (e) => {
+      liveMusicHelper.stereo.setMono(!e.detail);
+      saveStereoSettings(liveMusicHelper.stereo.settings);
+      pdjMidi.setMessage(e.detail ? `STEREO (WIDTH ${Math.round(liveMusicHelper.stereo.settings.width * 100)}%)` : 'MONO', 'info');
+  });
+  on(rightSidebar, 'width-changed', (e) => {
+      liveMusicHelper.stereo.setWidth(e.detail);
+      saveStereoSettings(liveMusicHelper.stereo.settings);
+  });
 
   // A song with voices (Lyria 3.5) is as long as its lyrics, tempo and meter make it: the duration slider follows
   // that estimate until the rendered song tells the exact length.

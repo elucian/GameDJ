@@ -7,10 +7,26 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
 import { DURATION_STEPS } from '../constants/durations';
+import { MAX_WIDTH, MIN_WIDTH } from '../utils/StereoStage';
 
+
+export interface MasterVolumePanelEvents {
+  'volume-changed': number;
+  /** true = stereo, false = mono */
+  'stereo-changed': boolean;
+  /** Stereo width (0 to 1.5, 1 = Lyria's original image) */
+  'width-changed': number;
+  'bpm-input': number;
+  'evolution-changed': number;
+  /** Minutes */
+  'duration-changed': number;
+  'seed-lock-changed': boolean;
+}
 
 @customElement('master-volume-panel')
 export class MasterVolumePanel extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: MasterVolumePanelEvents;
   static styles = css`
     :host {
       display: flex;
@@ -265,6 +281,8 @@ export class MasterVolumePanel extends LitElement {
   @property({ type: Number }) audioLevelL = 0;
   @property({ type: Number }) audioLevelR = 0;
   @property({ type: Boolean }) isStereo = true;
+  /** Stereo width: 0 to 1.5 (1 = Lyria's original image); ignored in mono */
+  @property({ type: Number }) stereoWidth = 1;
   @property({ type: Boolean }) isLocked = false;
   @property({ type: Number }) seed = 0;
   /** Song length in bars: a read-out that follows the DUR slider, the tempo and the meter */
@@ -298,6 +316,16 @@ export class MasterVolumePanel extends LitElement {
     uiSounds.playSwitch();
     this.isStereo = !this.isStereo;
     (this as any).dispatchEvent(new CustomEvent('stereo-changed', { detail: this.isStereo }));
+  }
+
+  private onWidthChange(e: Event) {
+    if (this.isLocked || !this.isStereo) return;
+    const pct = parseInt((e.target as HTMLInputElement).value, 10);
+    if (pct !== Math.round(this.stereoWidth * 100)) {
+        uiSounds.playTick();
+        this.stereoWidth = pct / 100;
+        this.dispatchEvent(new CustomEvent('width-changed', { detail: this.stereoWidth }));
+    }
   }
 
   private onVolumeChange(e: Event) {
@@ -376,6 +404,12 @@ export class MasterVolumePanel extends LitElement {
             <div class="volume-label">VOL</div>
             <input type="range" min="0" max="100" step="1" .value=${String(Math.round(this.volume * 100))} @input=${this.onVolumeChange} />
             <div class="value-display">${Math.round(this.volume * 100)}</div>
+          </div>
+          <div class="srow ${this.isLocked || !this.isStereo ? 'blocked' : ''}" title=${this.isStereo ? 'Stereo width: 0% is mono, 100% is the original, up to 150% wider. The centre (voice, bass) stays.' : 'Stereo width (switch to STEREO to use it)'}>
+            <div class="volume-label">WID</div>
+            <input type="range" min=${Math.round(MIN_WIDTH * 100)} max=${Math.round(MAX_WIDTH * 100)} step="5" .value=${String(Math.round(this.stereoWidth * 100))}
+              @input=${this.onWidthChange} tabindex=${this.isLocked || !this.isStereo ? '-1' : '0'} />
+            <div class="value-display">${this.isStereo ? `${Math.round(this.stereoWidth * 100)}%` : '--'}</div>
           </div>
           <div class="tools-row">
             <span></span>

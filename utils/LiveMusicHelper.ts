@@ -10,6 +10,7 @@ import { throttle } from './throttle';
 import { PromptGuard, type PromptImprovement } from './PromptGuard';
 import type { NoDetail } from './events';
 import { uiSounds } from './UISounds';
+import { StereoStage } from './StereoStage';
 import { takeSongTicket } from './UserQuota';
 import { moodPhrase } from '../constants/moods';
 
@@ -608,6 +609,8 @@ export class LiveMusicHelper extends EventTarget {
   private rawGain: GainNode;
   private masterGain: GainNode;
   private recordingDestination: MediaStreamAudioDestinationNode;
+  /** Mono / stereo and stereo width, between the raw mix and both the speakers and the recording */
+  public readonly stereo: StereoStage;
   public playbackState: PlaybackState = 'stopped';
   private prompts: Map<string, Prompt>;
   private bpm = 120; private key = 'C Major';
@@ -780,7 +783,10 @@ export class LiveMusicHelper extends EventTarget {
     this.rawGain = this.audioContext.createGain(); this.masterGain = this.audioContext.createGain(); 
     this.masterGain.gain.value = this.userVolume;
     this.recordingDestination = this.audioContext.createMediaStreamDestination();
-    this.rawGain.connect(this.recordingDestination); this.rawGain.connect(this.masterGain);
+    // raw mix -> stereo stage -> recording (before the volume) and master volume -> speakers
+    this.stereo = new StereoStage(this.audioContext);
+    this.rawGain.connect(this.stereo.input);
+    this.stereo.output.connect(this.recordingDestination); this.stereo.output.connect(this.masterGain);
     this.masterGain.connect(this.audioContext.destination);
   }
 
