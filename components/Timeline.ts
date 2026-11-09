@@ -5,12 +5,7 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
-import { DURATION_STEPS } from './MasterVolumePanel';
-
-/** Song length range and step of the ruler drag (same as the Duration slider), in seconds */
-const MIN_SONG_SECS = DURATION_STEPS[0].value * 60;
-const MAX_SONG_SECS = DURATION_STEPS[DURATION_STEPS.length - 1].value * 60;
-const SONG_STEP_SECS = 10;
+import { dragSongSeconds } from '../constants/durations';
 
 interface TimeSegment {
   start: number;
@@ -26,8 +21,18 @@ interface ChannelHistory {
   ghost: TimeSegment[]; 
 }
 
+export interface TimelineEvents {
+  /** Ruler drag: the new song length in minutes */
+  'duration-changed-manually': number;
+  /** Seconds */
+  'seek': number;
+  'fade-changed': { fadeIn: number; fadeOut: number };
+}
+
 @customElement('bottom-timeline')
 export class Timeline extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: TimelineEvents;
   static styles = css`
     :host {
       display: block;
@@ -511,10 +516,9 @@ export class Timeline extends LitElement {
     else if (this.dragTarget === 'duration') {
         // Drag right for a longer song, left for a shorter one: the lane's width spans the whole range,
         // in the Duration slider's 10 s steps (the app answers with the length it applied, the ruler redraws)
-        const width = Math.max(1, this.laneElement.getBoundingClientRect().width - 40);
+        const width = this.laneElement.getBoundingClientRect().width - 40;
         const d = this.durationDrag;
-        const raw = d.startSecs + ((e.clientX - d.startX) / width) * (MAX_SONG_SECS - MIN_SONG_SECS);
-        const secs = Math.max(MIN_SONG_SECS, Math.min(MAX_SONG_SECS, Math.round(raw / SONG_STEP_SECS) * SONG_STEP_SECS));
+        const secs = dragSongSeconds(d.startSecs, e.clientX - d.startX, width);
         if (secs !== d.lastSecs) {
             d.lastSecs = secs;
             (this as any).dispatchEvent(new CustomEvent('duration-changed-manually', { detail: secs / 60 }));

@@ -2,6 +2,7 @@ import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { djVotes, starsFor } from '../utils/DjRatings';
 
+import type { NoDetail } from '../utils/events';
 // v3: the DJ roster changed (countries and portraits); settings saved for the old DJs no longer apply
 const STORAGE_KEY_PRESETS = 'gamedj.djPresets.v3';
 const STORAGE_KEY_SELECTED = 'gamedj.djPresetSelected.v3';
@@ -184,8 +185,17 @@ function stars(d: DjConfig, withCounts: boolean) {
   return html`<span class="stars" title="${n} of 5 stars (${v.up} likes, ${v.down} dislikes)"><span class="bg">★★★★★</span><span class="fg" style="width:${n * 20}%">★★★★★</span></span>${withCounts ? html`<span class="votes">${n.toFixed(1)} · 👍 ${v.up} · 👎 ${v.down}</span>` : ''}`;
 }
 
+export interface DjPresetDialogEvents {
+  'dj-dialog-applied': NoDetail;
+  'dj-dialog-cancelled': NoDetail;
+  /** The DJ on deck and its settings (bubbles to window) */
+  'send-dj-config': { name: string; config: DjConfig };
+}
+
 @customElement('dj-preset-dialog')
 export class DjPresetDialog extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: DjPresetDialogEvents;
   @property({ type: Boolean, reflect: true }) show = false;
   /** The saved DJs (what Apply wrote). */
   private presets: DjConfig[] = clone(DEFAULT_DJS);

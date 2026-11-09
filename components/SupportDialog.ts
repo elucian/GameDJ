@@ -7,8 +7,15 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { creditsLeft, freeSongsPerMonth, getSupportEmail } from '../utils/UserQuota';
 
 /** Opened by the Ko-fi button: explains the support packs and asks for the e-mail used on Ko-fi, so the songs find their way back. */
+export interface SupportDialogEvents {
+  /** The buyer's e-mail ('' without one) */
+  'continue-support': string;
+}
+
 @customElement('support-dialog')
 export class SupportDialog extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: SupportDialogEvents;
   @property({ type: Boolean, reflect: true }) show = false;
   @state() private email = getSupportEmail();
 

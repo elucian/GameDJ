@@ -7,8 +7,15 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { getSupportEmail } from '../utils/UserQuota';
 
 /** Opened by the Ko-fi custom URL (/thanks): shows the bought songs and lets the buyer claim them with the Ko-fi e-mail. */
+export interface ThanksDialogEvents {
+  /** The e-mail used on Ko-fi */
+  'claim-support': string;
+}
+
 @customElement('thanks-dialog')
 export class ThanksDialog extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: ThanksDialogEvents;
   @property({ type: Boolean, reflect: true }) show = false;
   /** Extra songs available (null while the server has not answered) */
   @property({ type: Number }) credits: number | null = null;

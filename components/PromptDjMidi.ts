@@ -9,8 +9,16 @@ import './PromptController';
 import type { PlaybackState, Prompt } from '../types';
 
 /** The grid of prompt inputs. */
+export interface PromptDjMidiEvents {
+  'prompts-changed': Map<string, Prompt>;
+  /** The id of the knob the user touched */
+  'prompt-interacted': string;
+}
+
 @customElement('prompt-dj-midi')
 export class PromptDjMidi extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: PromptDjMidiEvents;
   static styles = css`
     :host {
       height: 100%;

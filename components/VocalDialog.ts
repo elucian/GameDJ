@@ -3,8 +3,22 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
 import { chooseLyricsLanguage } from '../utils/LiveMusicHelper';
 
+import type { NoDetail } from '../utils/events';
+export interface VocalDialogEvents {
+  'vocal-dialog-cancelled': NoDetail;
+  'request-lyrics-generation': { genre: string; lang: string; verseCount: number; lineCount: number };
+  'voice-lock-changed': boolean;
+  /** A short notice for the toast */
+  'toast': string;
+  'voices-applied': { solos: string[]; choir: string };
+  'send-vocal-command': string;
+  'lyrics-set': string;
+}
+
 @customElement('vocal-dialog')
 export class VocalDialog extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: VocalDialogEvents;
   @property({ type: Boolean, reflect: true }) show = false;
   @property({ type: String }) genre = 'Pop';
   /** Style of the main bar: the voice dice pick the lyrics language for it (Japanese Folk sings Japanese). */
@@ -345,7 +359,7 @@ export class VocalDialog extends LitElement {
           lyricsLang: this.lyricsLang,
           langLocked: this.langLocked,
           genre: this.genre,
-          style: (window as any).topToolbar?.musicStyle || 'Synth-Pop',
+          style: window.topToolbar?.musicStyle || 'Synth-Pop',
           songName: this.songName
       });
       const blob = new Blob([data], { type: 'application/json' });
@@ -369,8 +383,8 @@ export class VocalDialog extends LitElement {
           if (typeof data.langLocked === 'boolean') this.langLocked = data.langLocked;
           this.genre = data.genre;
           this.songName = data.songName;
-          if (data.style && (window as any).topToolbar) {
-              (window as any).topToolbar.musicStyle = data.style;
+          if (data.style && window.topToolbar) {
+              window.topToolbar.musicStyle = data.style;
           }
           this.requestUpdate();
       };

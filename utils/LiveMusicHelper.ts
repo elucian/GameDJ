@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, PlaybackSnapshot } from '../types';
-import { AudioChunk, GoogleGenAI, LiveMusicSession } from '@google/genai';
+import { AudioChunk, GoogleGenAI, LiveMusicSession, type LiveMusicFilteredPrompt } from '@google/genai';
 import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
-import { PromptGuard } from './PromptGuard';
+import { PromptGuard, type PromptImprovement } from './PromptGuard';
+import type { NoDetail } from './events';
 import { uiSounds } from './UISounds';
 import { takeSongTicket } from './UserQuota';
 import { moodPhrase } from '../constants/moods';
@@ -563,7 +564,40 @@ export function chooseDjManifest(genre: string, allowed?: Partial<Record<Channel
     return chosen;
 }
 
+/** A weighted prompt as sent to Lyria */
+export interface SentPrompt { text: string; weight: number }
+
+export interface LiveMusicHelperEvents {
+  'playback-state-changed': PlaybackState;
+  'loop-changed-internal': boolean;
+  'mode-changed-internal': MusicGenerationMode;
+  'handshake-result': boolean;
+  /** The vocal direction being sung, null when it ends */
+  'vocal-signal-received': string | null;
+  'seed-changed': { seed: number | null; locked: boolean };
+  'prompt-improved': PromptImprovement;
+  'prompt-filtered': LiveMusicFilteredPrompt & { payload: unknown; config: unknown };
+  'config-applied': { guidance: number } & Record<string, unknown>;
+  'config-failed': string;
+  'prompts-sent': { prompts: SentPrompt[] } & Record<string, unknown>;
+  'conductor-knobs-update': Map<string, Prompt>;
+  'conductor-anticipation': { msg: string };
+  'conductor-stage-changed': { name: string; isAi: boolean; type?: string; index?: number };
+  'conductor-instruments-update': InstrumentSet;
+  'recording-cleared': NoDetail;
+  'recording-available': NoDetail;
+  'recording-finished-auto': NoDetail;
+  'warmup-started': { durationMs: number; warmupMs: number };
+  'dj-vocal-message': { text: string; type: 'error' | 'info' };
+  'song-render-started': { prompt: string };
+  'song-render-progress': { seconds: number };
+  'song-rendered': { duration: number; lyrics: string; prompt: string };
+  'song-render-failed': { reason: string; blocked: boolean };
+}
+
 export class LiveMusicHelper extends EventTarget {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: LiveMusicHelperEvents;
   private ai: GoogleGenAI;
   private session: LiveMusicSession | null = null;
   private sessionPromise: Promise<LiveMusicSession> | null = null;
@@ -2766,7 +2800,7 @@ Prompt: ${text}`
 
   /** Asks the server to render the song (Lyria 3.5, then Lyria 3 Pro) and returns the interaction. */
   private static async fetchSong(prompt: string): Promise<any> {
-      const devSecret = (import.meta as any).env?.VITE_DEV_SONG_SECRET as string | undefined;
+      const devSecret = import.meta.env.VITE_DEV_SONG_SECRET;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), SONG_RENDER_TIMEOUT_MS);
       try {

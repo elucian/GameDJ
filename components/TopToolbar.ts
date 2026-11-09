@@ -5,6 +5,7 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { pickAnyStyle, pickHomeStyle } from '../utils/DjPicks';
 import { live } from 'lit/directives/live.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { isVocalInstrument } from '../utils/LiveMusicHelper';
@@ -15,6 +16,7 @@ import { STYLE_MOODS, moodsFor, pickStyleMood } from '../constants/styleMoods';
 
 import { uiSounds } from '../utils/UISounds';
 
+import type { NoDetail } from '../utils/events';
 export { MOODS };
 
 
@@ -1062,8 +1064,34 @@ export function saveCachedGenreAndStyle(genre: string, style: string) {
   }
 }
 
+/** A new instrument setup for the genre and style (the Band channels follow it) */
+export interface StyleMatrixUpdate {
+  manifest: StyleSignature['manifest'];
+  instruments: Record<string, string>;
+  weights: Record<string, number>;
+  style: string;
+  pools: StyleSignature['instrumentPools'];
+  locks?: { manifest: boolean; channels: boolean };
+}
+
+export interface TopToolbarEvents {
+  'tempo-state': { bpm: number; min: number; max: number; locked: boolean };
+  'locks-changed': { genre: boolean; style: boolean; tempo: boolean; key: boolean; mood: boolean };
+  'genre-changed': string;
+  'style-changed': string;
+  'mood-changed': string;
+  'key-changed': { key: string; mode: 'Natural' | 'Minor' };
+  'bpm-changed': number;
+  'meter-changed': string;
+  'style-matrix-update': StyleMatrixUpdate;
+  /** Bubbles to window */
+  'show-about': NoDetail;
+}
+
 @customElement('top-toolbar')
 export class TopToolbar extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: TopToolbarEvents;
   static styles = css`
     :host { display: flex; align-items: center; justify-content: space-between; height: 100%; background: var(--surface-color); border-bottom: 1px solid var(--border-color); padding: 0; box-sizing: border-box; color: var(--text-color); user-select: none; gap: 0; font-family: 'Google Sans', sans-serif; width: 100%; overflow: hidden; transition: background-color 0.3s ease, border-color 0.3s ease; }
     .logo { font-weight: bold; font-size: 16px; color: var(--accent-color); display: flex; align-items: center; gap: 5px; padding: 0 8px; flex-shrink: 0; transition: padding 0.2s; }
@@ -1176,7 +1204,7 @@ export class TopToolbar extends LitElement {
   @state() private djName = '';
   private onDjConfig = ((e: CustomEvent) => { this.djName = e.detail?.name || ''; }) as EventListener;
   private onDjActive = (() => {
-      if (!this.djName) this.djName = (window as any).liveMusicHelper?.djPersonalityInfo?.name || '';
+      if (!this.djName) this.djName = window.liveMusicHelper?.djPersonalityInfo?.name || '';
   }) as EventListener;
   connectedCallback() {
     super.connectedCallback();
@@ -1271,9 +1299,9 @@ export class TopToolbar extends LitElement {
    */
   public djPickHomeStyle(homes: [string, string][]): [string, string] | null {
     if (this.locked.genre || this.locked.style) return null;
-    const valid = homes.filter(([g, st]) => !!MUSIC_DATA[g]?.styles[st]);
-    if (valid.length === 0) return null;
-    const [genre, style] = valid[Math.floor(Math.random() * valid.length)];
+    const pick = pickHomeStyle(MUSIC_DATA, homes);
+    if (!pick) return null;
+    const [genre, style] = pick;
     this.genre = genre;
     this.musicStyle = style;
     this.rollStyleSettings(true);
@@ -1286,11 +1314,9 @@ export class TopToolbar extends LitElement {
    */
   public djPickAnyStyle(): [string, string] | null {
     if (this.locked.genre || this.locked.style) return null;
-    const genres = Object.keys(MUSIC_DATA).filter(g => Object.keys(MUSIC_DATA[g].styles).length > 0);
-    if (genres.length === 0) return null;
-    const genre = genres[Math.floor(Math.random() * genres.length)];
-    const styles = Object.keys(MUSIC_DATA[genre].styles);
-    const style = styles[Math.floor(Math.random() * styles.length)];
+    const pick = pickAnyStyle(MUSIC_DATA);
+    if (!pick) return null;
+    const [genre, style] = pick;
     this.genre = genre;
     this.musicStyle = style;
     this.rollStyleSettings(true);
@@ -1567,8 +1593,8 @@ export class TopToolbar extends LitElement {
       this.dispatch('mood-changed', this.currentMood);
   }
 
-  private dispatch(name: string, detail?: any) {
-    (this as any).dispatchEvent(new CustomEvent(name, { detail }));
+  private dispatch<K extends keyof TopToolbarEvents>(name: K, detail?: TopToolbarEvents[K]) {
+    this.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
   render() {

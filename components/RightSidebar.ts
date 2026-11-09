@@ -8,7 +8,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
 import type { PlaybackState, InstrumentSet } from '../types';
 import { uiSounds } from '../utils/UISounds';
-import { DURATION_STEPS } from './MasterVolumePanel';
+import { DURATION_STEPS, durationStepIndex } from '../constants/durations';
+import './MasterVolumePanel'; // registers <master-volume-panel>
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
@@ -55,8 +56,25 @@ const TRACK_LABELS: Record<string, string> = {
   BASS: 'BASS INSTRUMENT', PERCUSSION: 'RHYTHM INSTRUMENT', ORCHESTRA: 'ORCHESTRA INSTRUMENTS', FANFARE: 'BRASS INSTRUMENTS'
 };
 
+export interface RightSidebarEvents {
+  'locks-changed': { channels: boolean; manifest: boolean; duration: boolean };
+  'evolution-changed': number;
+  /** Minutes */
+  'duration-changed': number;
+  'channels-changed': InstrumentSet;
+  /** The channel the user touched */
+  'instrument-interacted': string;
+  'tab-changed': 'Band' | 'Lyria';
+  'bpm-input': number;
+  'seed-lock-changed': boolean;
+  'volume-changed': number;
+  'stereo-changed': boolean;
+}
+
 @customElement('right-sidebar')
 export class RightSidebar extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: RightSidebarEvents;
   @property({ type: String }) genre: string = 'Pop';
   @property({ type: String }) musicStyle: string = 'Synth-Pop';
 
@@ -65,7 +83,7 @@ export class RightSidebar extends LitElement {
   // Voice instruments are only offered while the voice master mode is on
   @property({ type: Boolean }) voiceEnabled: boolean = false;
 
-  private getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
+  public getRecommendedInstruments(channel: keyof InstrumentSet): string[] {
       const base = this.getBaseRecommended(channel);
       if (!this.voiceEnabled) {
           const plain = base.filter(i => !isVocalInstrument(i));
@@ -557,7 +575,7 @@ export class RightSidebar extends LitElement {
 
   public get locks() { return { channels: this.channelsLocked, manifest: this.manifestLocked, duration: this.manifestLocked }; }
 
-  private auditAndCommit(newSettings: InstrumentSet, channelToValidate?: keyof InstrumentSet) {
+  public auditAndCommit(newSettings: InstrumentSet, channelToValidate?: keyof InstrumentSet) {
       if (channelToValidate) {
           const st = newSettings[channelToValidate];
           const instName = (st.instrument || "").trim().toLowerCase();
@@ -651,8 +669,7 @@ export class RightSidebar extends LitElement {
 
   /** Puts the duration slider on the first step that holds `mins` (the longest step when it is longer than all). `force` ignores the lock. */
   public setDuration(mins: number, force = false): number {
-      const idx = DURATION_STEPS.findIndex(s => s.value >= mins - 1e-6);
-      const i = idx === -1 ? DURATION_STEPS.length - 1 : idx;
+      const i = durationStepIndex(mins);
       if (this.manifestLocked && !force) return DURATION_STEPS[this.durationIndex].value;
       this.durationIndex = i;
       (this as any).requestUpdate();
@@ -824,7 +841,7 @@ export class RightSidebar extends LitElement {
   }
 
   private dispatchChannelsChanged() { (this as unknown as HTMLElement).dispatchEvent(new CustomEvent('channels-changed', { detail: this.settings })); }
-  private dispatch(name: string, detail: any) { (this as unknown as HTMLElement).dispatchEvent(new CustomEvent(name, { detail })); }
+  private dispatch<K extends keyof RightSidebarEvents>(name: K, detail: RightSidebarEvents[K]) { this.dispatchEvent(new CustomEvent(name, { detail })); }
 
   private onInstrumentChange(channel: keyof InstrumentSet, e: Event) {
     if (this.playbackState === 'playing') return;

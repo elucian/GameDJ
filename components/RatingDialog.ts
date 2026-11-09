@@ -1,9 +1,7 @@
 import { css, html, LitElement, svg } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { djPortraitUrl } from './DjPresetDialog';
-
-/** What the listener rates: the DJ that conducted the take and what it played */
-export interface RatedTake { djId: string; djName: string; genre: string; style: string }
+import type { RatedTake } from '../utils/TakeRating';
 
 const thumb = svg`<path d="M2 21h3V9H2v12zm19.8-10.6c0-1.1-.9-2-2-2h-6.3l1-4.6v-.3c0-.4-.2-.8-.4-1.1L13 1.4 6.6 7.8c-.4.4-.6.9-.6 1.4V19c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.1-.5.1-.7v-1.6z"/>`;
 
@@ -11,8 +9,14 @@ const thumb = svg`<path d="M2 21h3V9H2v12zm19.8-10.6c0-1.1-.9-2-2-2h-6.3l1-4.6v-
  * "Like this?" pops up when the music stops after a DJ's take: a thumb up or down counts for that DJ (its stars in the
  * DJ dialog) and for the genre and style. Closing it (✕, Esc or a click outside) skips the vote.
  */
+export interface RatingDialogEvents {
+  'take-rated': { take: RatedTake; like: boolean };
+}
+
 @customElement('rating-dialog')
 export class RatingDialog extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: RatingDialogEvents;
   @property({ type: Boolean, reflect: true }) show = false;
   @property({ attribute: false }) take: RatedTake | null = null;
 

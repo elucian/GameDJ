@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 /** Simple class for getting the current audio levels for Left and Right channels. */
+export interface AudioAnalyserEvents {
+  /** Levels of the left and right channel (0..1) */
+  'audio-levels-changed': { left: number; right: number };
+}
+
 export class AudioAnalyser extends EventTarget {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: AudioAnalyserEvents;
   readonly node: AudioNode;
   private readonly splitter: ChannelSplitterNode;
   private readonly analyserL: AnalyserNode;

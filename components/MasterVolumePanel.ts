@@ -6,12 +6,8 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { uiSounds } from '../utils/UISounds';
+import { DURATION_STEPS } from '../constants/durations';
 
-/** 13 stops: 12 equal intervals of 10 seconds from 1:00 to 3:00 (values in minutes) */
-export const DURATION_STEPS = Array.from({ length: 13 }, (_, i) => {
-    const secs = 60 + i * 10;
-    return { label: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, value: secs / 60 };
-});
 
 @customElement('master-volume-panel')
 export class MasterVolumePanel extends LitElement {

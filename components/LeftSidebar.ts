@@ -10,8 +10,27 @@ import { uiSounds } from '../utils/UISounds';
 
 
 
+import type { NoDetail } from '../utils/events';
+export interface LeftSidebarEvents {
+  'theme-changed': boolean;
+  'mode-changed': MusicGenerationMode;
+  'reset': NoDetail; 'randomize': NoDetail; 'record': NoDetail; 'stop': NoDetail;
+  'pause': NoDetail; 'resume': NoDetail; 'back-to-start': NoDetail;
+  /** Play the recording from this second */
+  'play-recording': number;
+  'loop-changed': boolean;
+  'download': 'mp3' | 'wav' | 'webm';
+  'toggle-vocal-dialog': NoDetail;
+  /** Bubbles to window */
+  'toggle-dj-preset-dialog': NoDetail;
+  /** Bubbles to window */
+  'show-support': NoDetail;
+}
+
 @customElement('left-sidebar')
 export class LeftSidebar extends LitElement {
+  /** The events it sends (a type only: see utils/events.ts) */
+  declare readonly __events?: LeftSidebarEvents;
   private _handleModeChange = ((e: CustomEvent) => {
       this.primaryMode = e.detail.mode;
   }) as EventListener;
@@ -502,7 +521,7 @@ export class LeftSidebar extends LitElement {
 
   private onDownloadClick() { uiSounds.playButton(); this.dispatch('download', this.downloadFormat); }
 
-  private dispatch(name: string, detail?: any) { (this as any).dispatchEvent(new CustomEvent(name, { detail })); }
+  private dispatch<K extends keyof LeftSidebarEvents>(name: K, detail?: LeftSidebarEvents[K]) { this.dispatchEvent(new CustomEvent(name, { detail })); }
 
   private renderRecordButton() {
     const isRecording = this.playbackState === 'recording';
