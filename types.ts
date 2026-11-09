@@ -12,12 +12,6 @@ export interface Prompt {
   color: string;
 }
 
-export interface ControlChange {
-  channel: number;
-  cc: number;
-  value: number;
-}
-
 export type PlaybackState = 'stopped' | 'playing' | 'loading' | 'paused' | 'recording' | 'warmup' | 'preparing' | 'loop-waiting' | 'rewinding';
 
 export type MusicGenerationMode = 'QUALITY' | 'DIVERSITY' | 'VOCALIZATION';

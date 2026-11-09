@@ -152,9 +152,7 @@ const ACCOMPANIMENT_SCALE = 0.6;
 // The Guidance knob only raises it; voices and locked channels raise the floor further.
 const GUIDANCE_FLOOR = 4.0;
 const VOICE_GUIDANCE_FLOOR = 4.5;
-// Lyria 3 song models (Interactions API), tried in order: an unknown model id falls back to the next one.
-const SONG_MODELS = ['lyria-3.5', 'lyria-3-pro-preview'];
-// The only model that streams live music (record, DJ, play). The song models above only render finished files.
+// The only model that streams live music (record, DJ, play). The Lyria 3 song models (api/song.ts) only render finished files.
 const REALTIME_MODEL = 'models/lyria-realtime-exp';
 // A full song takes a while to render
 const SONG_RENDER_TIMEOUT_MS = 300000;
@@ -370,7 +368,7 @@ function formForLength(form: string, minutes: number): string {
     if (parts.length <= 4) return form;
     if (minutes <= 1.25) {
         // intro, first verse, the first hook-like section after it, and the outro
-        const verseAt = Math.max(1, parts.findIndex((p, k) => k > 0 && k < parts.length - 1));
+        const verseAt = Math.max(1, parts.findIndex((_, k) => k > 0 && k < parts.length - 1));
         const hookAt = parts.findIndex((p, k) => k > verseAt && /^\[(final )?(chorus|hook|refrain|drop|estribillo)|theme b|main march/i.test(p));
         const keep = [parts[0], parts[verseAt], ...(hookAt > 0 ? [parts[hookAt]] : []), parts[parts.length - 1]];
         return [...new Set(keep)].join(' -> ');
@@ -379,7 +377,6 @@ function formForLength(form: string, minutes: number): string {
     return form;
 }
 
-export const LYRIA_GENRES = ['Ambient', 'Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian', 'Marching'];
 export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
 
 export function isTraditionalGenre(genre: string): boolean {
@@ -400,14 +397,6 @@ export function getDjKnobLimit(genre: string, maxKnobs = DJ_KNOBS_MODERN): numbe
     if (REGIONAL_GENRES.includes(genre)) return Math.min(DJ_KNOBS_REGIONAL, max) + extra;
     if (TRADITIONAL_KNOB_GENRES.includes(genre)) return Math.min(DJ_KNOBS_TRADITIONAL, max) + extra;
     return max;
-}
-
-/**
- * DJ pick between Lyria (orchestra) and Band. Lyria-native genres split evenly; modern genres
- * mostly go to the Band so the DJ doesn't default to Lyria.
- */
-export function chooseDjTab(genre: string): 'Lyria' | 'Band' {
-    return Math.random() < (LYRIA_GENRES.includes(genre) ? 0.5 : 0.2) ? 'Lyria' : 'Band';
 }
 
 // Lyrics language for the Voice dialog (Auto, and its dice): the native language for regional genres,
@@ -575,7 +564,7 @@ export function chooseDjManifest(genre: string, allowed?: Partial<Record<Channel
 }
 
 export class LiveMusicHelper extends EventTarget {
-  private ai: GoogleGenAI; private model: string;
+  private ai: GoogleGenAI;
   private session: LiveMusicSession | null = null;
   private sessionPromise: Promise<LiveMusicSession> | null = null;
   private sessionCounter = 0; 
@@ -599,7 +588,7 @@ export class LiveMusicHelper extends EventTarget {
     rhythm: { instrument: 'Drum Kit', active: true, weight: 1.0, visible: true }
   };
   public conductorMode = false;
-  private soloMuted = false; private choirMuted = false;
+  private soloMuted = false;
   private evolutionValue = 0; 
   private conductorTimer: number | null = null;
   private currentPlan: PerformancePlanStage[] = [];
@@ -649,11 +638,6 @@ export class LiveMusicHelper extends EventTarget {
       for (const p of this.prompts.values()) if (isGuidanceKnob(p)) g = p.weight * 3;
       const floor = this.instrumentsLocked ? LOCKED_GUIDANCE_MIN : this.voiceMode && this.isVocalInstrumentActive() ? VOICE_GUIDANCE_FLOOR : GUIDANCE_FLOOR;
       return Math.round(Math.max(floor, Math.min(LYRIA_GUIDANCE_MAX, g)) * 10) / 10;
-  }
-  public setVoiceIntensity(value: number) {
-      this.voiceIntensity = Math.max(0, Math.min(1, value));
-      this.dispatchEvent(new CustomEvent('voice-intensity-changed', { detail: this.voiceIntensity }));
-      this.scheduleRefresh();
   }
   private voiceIntensityPhrase(): string {
       const v = this.voiceIntensity;
@@ -750,8 +734,8 @@ export class LiveMusicHelper extends EventTarget {
   private currentStatusMessage: string = '';
   private lastAppliedStatusMessage: string = '';
 
-  constructor(ai: GoogleGenAI, model: string) {
-    super(); this.ai = ai; this.model = model.startsWith('models/') ? model : `models/${model}`; this.prompts = new Map();
+  constructor(ai: GoogleGenAI) {
+    super(); this.ai = ai; this.prompts = new Map();
     this.audioContext = new AudioContext({ sampleRate: 48000 });
     
     document.addEventListener('visibilitychange', () => {
@@ -1215,7 +1199,7 @@ Prompt: ${text}`
           if (!ch.active || ch.visible === false || ch.weight <= 0.05 || !ch.instrument) return false;
           if (!isVocalInstrument(ch.instrument)) return true;
           if (!this.voiceMode) return false;
-          return !(ch.instrument.toLowerCase().includes('choir') ? this.choirMuted : this.soloMuted);
+          return ch.instrument.toLowerCase().includes('choir') || !this.soloMuted;
       });
   }
 
@@ -1250,7 +1234,6 @@ Prompt: ${text}`
   }
 
   public toggleSolo(active: boolean) { this.soloMuted = !active; this.scheduleRefresh(); }
-  public toggleChoir(active: boolean) { this.choirMuted = !active; this.scheduleRefresh(); }
 
   public isVocalInstrumentActive(): boolean {
       return Object.values(this.instruments).some(ch => {
@@ -1259,22 +1242,12 @@ Prompt: ${text}`
           const inst = ch.instrument.toLowerCase();
           const isChoir = inst.includes('choir');
           
-          if (isChoir && this.choirMuted) return false;
           if (!isChoir && this.soloMuted && isVocalInstrument(inst)) return false; // Simple heuristic for solo
           
           return isVocalInstrument(ch.instrument);
       });
   }
 
-
-  public resetKnobsToZero() {
-      this.prompts.forEach(p => {
-          p.weight = 0;
-          p.volume = 0;
-      });
-      this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts }));
-      this.scheduleRefresh();
-  }
 
   /**
    * Dice roll: instead of clearing the knobs, set them to what the genre and style on the main bar call for.
@@ -2137,7 +2110,7 @@ Prompt: ${text}`
                if (this.isLooping) {
                    this.setPlaybackState('loop-waiting');
                    this.loopWaitTimer = window.setTimeout(() => { this.elapsedSeconds = 0; this.playRecording(0); }, 5000);
-               } else this.stop(true, false);
+               } else this.stop();
                return; 
            }
         }
@@ -2217,7 +2190,7 @@ Prompt: ${text}`
   private stopTimeTracking() { if (this.timeTrackingFrame) cancelAnimationFrame(this.timeTrackingFrame); this.timeTrackingFrame = null; }
 
   public async record() {
-    await this.stop(false, true); 
+    await this.stop(true); 
     this.prepareSeed();
     this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0;
     this.automationLog = [];
@@ -2359,7 +2332,6 @@ Prompt: ${text}`
     this.nextStartTime += audioBuffer.duration;
   }
 
-  public get activePrompts() { return Array.from(this.prompts.values()).filter((p) => p.weight > 0.01); }
   public readonly setWeightedPrompts = (prompts: Map<string, Prompt>) => { this.prompts = prompts; this.scheduleRefresh(); };
   
   private pauseInternal() {
@@ -2401,7 +2373,7 @@ Prompt: ${text}`
     if (this.autoStopTimer) clearTimeout(this.autoStopTimer);
     const remainingTimeMs = Math.max(0, (this.maxDurationMinutes * 60) - this.elapsedSeconds) * 1000;
     this.autoStopTimer = window.setTimeout(() => { 
-        this.stop(true, false); 
+        this.stop(); 
         this.dispatchEvent(new CustomEvent('recording-finished-auto')); 
         if (this.isLooping) { this.elapsedSeconds = 0; this.playRecording(0); }
     }, remainingTimeMs + 5000);
@@ -2490,13 +2462,7 @@ Prompt: ${text}`
   }
 
   /** A title for lyrics that already exist (typed or written earlier), from the same model chain. */
-  public async generateTitle(lyrics: string, genre: string, lang: string): Promise<string> {
-      const text = await this.runLyricsModels(
-          `Lyrics of a ${genre} song in ${lang}:\n${lyrics}\n\nGive this song a short, catchy title (at most 5 words, in ${lang}). Output only the title.`);
-      return text.startsWith('Error') ? '' : text.split(/\r?\n/)[0].replace(/^\s*TITLE\s*:\s*/i, '').replace(/^["'“”*]+|["'“”*]+$/g, '').trim();
-  }
-
-  public async stop(saveRecording = true, resetToZero = false) {
+  public async stop(resetToZero = false) {
     this.stopTimeTracking(); uiSounds.stopRewindSound();
     this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
     if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }
@@ -2543,7 +2509,7 @@ Prompt: ${text}`
 
   public async clearRecording() { 
       this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
-      await this.stop(false, true); this.segments = []; this.recordedAudioBlob = null; this.automationLog = [];
+      await this.stop(true); this.segments = []; this.recordedAudioBlob = null; this.automationLog = [];
   }
   public get recordedDuration() { return this.segments.reduce((max, s) => Math.max(max, s.startTime + s.duration), 0); }
 
@@ -2833,7 +2799,7 @@ Prompt: ${text}`
    * Fires 'song-render-progress' while waiting, 'song-rendered' (with the sung lyrics) or 'song-render-failed'.
    */
   public async renderSong(): Promise<boolean> {
-      await this.stop(false, true);
+      await this.stop(true);
       const token = ++this.renderToken;
       this.segments = []; this.recordedAudioBlob = null; this.elapsedSeconds = 0; this.automationLog = [];
       this.dispatchEvent(new CustomEvent('recording-cleared'));

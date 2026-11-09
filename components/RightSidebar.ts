@@ -12,11 +12,9 @@ import { DURATION_STEPS } from './MasterVolumePanel';
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
-import { FALLBACK_POOLS, getLyriaPool, VOICE_CHANNEL_POOLS, LYRIA_INSTRUMENTAL_POOLS, LEAD_VOICE_OPTIONS } from '../constants/instruments';
+import { FALLBACK_POOLS, getLyriaPool, LYRIA_INSTRUMENTAL_POOLS, LEAD_VOICE_OPTIONS } from '../constants/instruments';
 import { isVocalInstrument, isTraditionalGenre } from '../utils/LiveMusicHelper';
 
-
-const FIBONACCI_SERIES = [1, 2, 3, 5, 8, 13, 21, 34];
 
 type Slot = keyof InstrumentSet;
 type TrackSource = 'Band' | 'Lyria';
@@ -76,11 +74,7 @@ export class RightSidebar extends LitElement {
           const instrumental = this.slotSource(channel) === 'Lyria' ? LYRIA_INSTRUMENTAL_POOLS[channel] : undefined;
           return instrumental || (FALLBACK_POOLS[channel] || []).filter(i => !isVocalInstrument(i));
       }
-      if (this.slotSource(channel) === 'Lyria') return base;
-      // Band also offers the voice instruments (solo / duet / quartet, choirs) on the alto and harmonic channels
-      // REMOVED: Band no longer offers voice instruments, only Lyria tab can have them.
-      // const voices = (VOICE_CHANNEL_POOLS[channel] || []).filter(v => !base.includes(v));
-      // return [...base, ...voices];
+      // Only the Lyria tab offers voice instruments; the Band keeps its instrument pools
       return base;
   }
 
@@ -1018,7 +1012,7 @@ export class RightSidebar extends LitElement {
     `;
   }
 
-  private switchTab(tab: 'Band' | 'Lyria') {
+  public switchTab(tab: 'Band' | 'Lyria') {
       if (this.channelsLocked) return;
       if (this.currentTab === tab) return;
       uiSounds.playTick();

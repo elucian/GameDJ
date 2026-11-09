@@ -31,12 +31,6 @@ export const LYRIA_INSTRUMENTAL_POOLS: Partial<Record<ChannelName, string[]>> = 
   alto: ['Piano', 'Harp', 'Acoustic Guitar', 'Organ', 'String Quartet']
 };
 
-// Voice instruments that can always be picked on the Band tab too, so the Voice dialog and the channels can stay in sync.
-export const VOICE_CHANNEL_POOLS: Partial<Record<ChannelName, string[]>> = {
-  alto: ['Solo Voice', 'Duet Voices', 'Quartet Voices'],
-  harmonic: ['Chamber Choir', 'Mixed Choir', 'Gospel Choir', 'Male Choir', 'Female Choir', 'Childrens Choir']
-};
-
 // Per-genre overrides: only the channels listed differ from the default pools.
 // lead = solo voices and the genre's solo instruments; alto = the genre's accompanying instruments and its choirs.
 export const LYRIA_GENRE_POOLS: Record<string, Partial<Record<ChannelName, string[]>>> = {

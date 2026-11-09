@@ -18,9 +18,11 @@ import { DjPresetDialog, ROBOT_DJ_ID } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
 import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
+import { RatingDialog, type RatedTake } from './components/RatingDialog';
+import { recordVote } from './utils/DjRatings';
 import { SupportDialog } from './components/SupportDialog';
 import { DURATION_STEPS } from './components/MasterVolumePanel';
-import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseDjTab, chooseLyricsLanguage, djEvolutionFor, type DjPersonality } from './utils/LiveMusicHelper';
+import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseLyricsLanguage, djEvolutionFor, type DjPersonality } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 import { inject, track } from '@vercel/analytics';
@@ -29,7 +31,6 @@ import { inject, track } from '@vercel/analytics';
 inject();
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
-const model = 'models/lyria-realtime-exp';
 
 function main() {
   const initialPrompts = buildInitialPrompts();
@@ -223,23 +224,16 @@ function main() {
     generateDialogLyrics(e.detail.genre, e.detail.lang);
   });
 
-  (vocalDialog as any).addEventListener('request-song-translation', async (e: CustomEvent) => {
-    const { genre, lang, songTitle } = e.detail;
-    pdjMidi.setMessage(`TRANSLATING ${songTitle.toUpperCase()}...`, "info");
-    // Pass default verseCount/lineCount for translation (or reasonable defaults)
-    const lyrics = await liveMusicHelper.generateLyrics(genre, lang, 2, 4, songTitle);
-    vocalDialog.vocalText = lyrics;
-  });
-
-  (vocalDialog as any).addEventListener('send-vocal-command', (e: CustomEvent) => {
-    // Lyria gets the voices as singer descriptions (one random artistic voice per selected voice), not this text
-    liveMusicHelper.setVoiceCast(vocalDialog.getVoices().solos);
-    pdjMidi.setMessage(`VOCAL DIRECTIVE SENT`, "info");
-    
-    // The voice master mode (VOC) is the user's switch: with it off the directive is kept but not sent to Lyria
-    if (e.detail !== 'VOCAL CONFIG: None' && liveMusicHelper.generationMode !== 'VOCALIZATION') {
-        pdjMidi.setMessage('VOICE MODE OFF: VOICES NOT SENT', 'info');
-    }
+  (vocalDialog as any).addEventListener('send-vocal-command', () => {
+    // Lyria gets the voices as singer descriptions (one random artistic voice per selected voice); the dialog's
+    // "VOCAL CONFIG" text itself goes nowhere. The message says which voices Lyria will sing with.
+    const { solos, choir } = vocalDialog.getVoices();
+    liveMusicHelper.setVoiceCast(solos);
+    const cast = [...solos, ...(choir !== 'None' ? [`${choir} choir`] : [])].join(', ').toUpperCase();
+    // The voice master mode (VOC) is the user's switch: with it off the voices are kept but not sent to Lyria
+    if (!cast) pdjMidi.setMessage('NO VOICES: LYRIA PLAYS INSTRUMENTAL', 'info');
+    else if (liveMusicHelper.generationMode !== 'VOCALIZATION') pdjMidi.setMessage(`VOICES KEPT, NOT SENT TO LYRIA (VOICE MODE OFF): ${cast}`, 'info');
+    else pdjMidi.setMessage(`VOICES SENT TO LYRIA: ${cast}`, 'info');
     
     // If we were waiting for the conductor or preparing, try to start
     if (liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing') {
@@ -271,6 +265,8 @@ function main() {
   document.body.appendChild(timeline as any);
   const toastMessage = new ToastMessage();
   document.body.appendChild(toastMessage as any);
+  // Short notices from the Voice dialog (e.g. lyrics copied)
+  (vocalDialog as any).addEventListener('toast', (e: CustomEvent<string>) => toastMessage.show(e.detail));
   // Every visitor gets a unique ID (kept in this browser); free quotas are counted under it
   (window as any).userId = getUserId();
   // Over the quota: the message dialog says so (the display panel keeps the line too)
@@ -278,7 +274,7 @@ function main() {
       toastMessage.show(message);
       pdjMidi.setMessage(message.toUpperCase(), 'error');
   };
-  const liveMusicHelper = new LiveMusicHelper(ai, model);
+  const liveMusicHelper = new LiveMusicHelper(ai);
   // Song quota used up: the voice dialog button is forbidden until the month ends
   // local count or a remembered server refusal; a key that may not use Lyria 3.5 blocks the voice mode too
   const syncVoiceBlocked = () => { const ok = quotaStatus('song').ok; leftSidebar.voiceBlocked = !ok || !!liveMusicHelper.songModelBlocked; liveMusicHelper.songQuotaOk = ok; };
@@ -287,11 +283,10 @@ function main() {
   const songsAvailable = () => liveMusicHelper.songQuotaOk && !liveMusicHelper.songModelBlocked;
   // Fall back to the live model: Band tab selected, voice mode off (as when the voice dialog is cancelled)
   const fallBackToLive = () => {
-      if (rightSidebar.currentTab !== 'Band') (rightSidebar as any).switchTab('Band');
+      if (rightSidebar.currentTab !== 'Band') rightSidebar.switchTab('Band');
       liveMusicHelper.setGenerationMode('DIVERSITY');
       leftSidebar.primaryMode = 'DIVERSITY';
       rightSidebar.voiceEnabled = false;
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: false } }));
       vocalDialog.show = false;
       replaceVocalInstruments();
       refreshPromptPanel();
@@ -361,7 +356,7 @@ function main() {
   liveMusicHelper.addEventListener('vocal-signal-received', (e: any) => {
     const sig = e.detail;
     if (sig) {
-      pdjMidi.setMessage(`VOCAL SIGNAL: ${sig}`, 'info');
+      pdjMidi.setMessage(`VOCAL DIRECTION SENT TO LYRIA: ${String(sig).toUpperCase()}`, 'info');
     } else {
       if (liveMusicHelper.generationMode === 'VOCALIZATION') {
           pdjMidi.setMessage(`VOCALIZATION READY`, 'info');
@@ -743,7 +738,7 @@ function main() {
     giveBackTake();
     cancelAutoLoop();
     liveMusicHelper.cancelSongRender();
-    liveMusicHelper.stop(true, false);
+    liveMusicHelper.stop();
     deactivateDj();
     if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
   });
@@ -758,7 +753,6 @@ function main() {
     if (leftSidebar.hasRecording) track('download', { format: String(e.detail) });
     liveMusicHelper.download(e.detail, vocalDialog.songName);
   });
-  (leftSidebar as any).addEventListener('send-vocal-command', (e: any) => { cancelAutoLoop(); liveMusicHelper.sendVocalSignal(e.detail, 4000); });
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
   // `keep` + `force`: also in voice mode, swap the voices on every channel except `keep` (locked voice settings)
@@ -875,7 +869,6 @@ function main() {
   liveMusicHelper.addEventListener('config-failed', ((e: Event) => {
       pdjMidi.setMessage(`LYRIA CONFIG REJECTED: ${(e as CustomEvent<string>).detail}`, 'error');
   }));
-  liveMusicHelper.addEventListener('voice-intensity-changed', () => refreshPromptPanel());
   liveMusicHelper.addEventListener('prompts-sent', ((e: Event) => {
       const { prompts } = (e as CustomEvent<{ prompts: { text: string; weight: number }[] }>).detail;
       panelsCleared = false;
@@ -994,7 +987,6 @@ function main() {
       leftSidebar.primaryMode = mode;
       (window as any).primaryMode = mode;
       rightSidebar.voiceEnabled = false;
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: false } }));
       vocalDialog.show = false;
       replaceVocalInstruments([], true, ignoreLock);
       refreshPromptPanel();
@@ -1075,7 +1067,6 @@ function main() {
           vocalDialog.setVoices(solos, choir);
       } else placeVoices();
       rightSidebar.voiceEnabled = true;
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { detail: { active: true } }));
       refreshPromptPanel();
       // A new song gets its words (in the background: Record waits while lyrics are being written)
       if (newSong && !vocalDialog.vocalText.trim()) generateDialogLyrics(topToolbar.genre, vocalDialog.language);
@@ -1137,7 +1128,7 @@ function main() {
               stripVoicesForDj(true);
               rightSidebar.finalizeDiceChannels();
 
-              const mood = topToolbar.djPickMood();
+              topToolbar.djPickMood();
               // The DJ's character sets the evolution slider
               const evo = djEvolutionFor(liveMusicHelper.djPersonalityInfo);
               rightSidebar.setEvolution(evo);
@@ -1361,9 +1352,6 @@ function main() {
       // 4. Update Instruments and Manifest based on Style Matrix for current tab
       const rsLocks = (rightSidebar as any).locks;
       // Dice roll will not change the TAB
-      // if (!rsLocks.channels) {
-      //     rightSidebar.currentTab = chooseDjTab(topToolbar.genre);
-      // }
       const isLyria = rightSidebar.currentTab === 'Lyria';
       
       // Pass genre/style explicitly (via topToolbar property) to randomizeInstruments
@@ -1410,7 +1398,9 @@ function main() {
       cancelAutoLoop();
       leftSidebar.isResetting = true;
       if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
-      await liveMusicHelper.stop(false, true); 
+      ratedTake = null; // Reset stops the music without asking
+      ratingDialog.show = false;
+      await liveMusicHelper.stop(true); 
       // The DJ stays on deck (it rests until the next Record)
       deactivateDj();
       djEngagingCountdown = false;
@@ -1500,8 +1490,46 @@ function main() {
       pdjMidi.setMessage(`MIXER OVERRIDE: ${ch.toUpperCase()}`, "info");
   }));
 
+  // "Like this?": when the music stops after a DJ's take was heard long enough, the listener rates it once (the take
+  // and all its playbacks); the vote counts for the DJ that conducted it (its stars) and for its genre and style
+  const RATE_AFTER_MS = 15000;
+  const ratingDialog = new RatingDialog();
+  document.body.appendChild(ratingDialog as any);
+  (ratingDialog as any).addEventListener('take-rated', ((e: CustomEvent<{ take: RatedTake; like: boolean }>) => {
+      const { take: t, like } = e.detail;
+      recordVote(t.djId, t.genre, t.style, like);
+      pdjMidi.setMessage(`${like ? '👍' : '👎'} DJ ${t.djName.toUpperCase()} ${like ? 'THANKS YOU' : 'WILL TRY HARDER'}`, 'info');
+  }) as EventListener);
+  let ratedTake: (RatedTake & { heardMs: number; asked: boolean }) | null = null;
+  let listenSince: number | null = null;
+  let lastPlaybackState: PlaybackState = 'stopped';
+  const trackListening = (state: PlaybackState) => {
+      const prev = lastPlaybackState;
+      lastPlaybackState = state;
+      if (listenSince !== null) {
+          if (ratedTake) ratedTake.heardMs += Date.now() - listenSince;
+          listenSince = null;
+      }
+      // A new take (not a resume from pause): credited to the DJ on deck, if the DJ is on
+      if (state === 'recording' && prev !== 'paused') {
+          ratedTake = leftSidebar.isConductorActive
+              ? { djId: djPresetDialog.onDeck.id, djName: djPresetDialog.onDeck.name, genre: topToolbar.genre, style: topToolbar.musicStyle, heardMs: 0, asked: false }
+              : null;
+      }
+      if (state === 'recording' || state === 'playing') listenSince = Date.now();
+      if (state === 'stopped') {
+          if (ratedTake && !ratedTake.asked && ratedTake.heardMs >= RATE_AFTER_MS) {
+              ratedTake.asked = true;
+              const { djId, djName, genre, style } = ratedTake;
+              ratingDialog.take = { djId, djName, genre, style };
+              ratingDialog.show = true;
+          }
+      }
+  };
+
   liveMusicHelper.addEventListener('playback-state-changed', ((e: Event) => {
     const playbackState = (e as CustomEvent<PlaybackState>).detail;
+    trackListening(playbackState);
     pdjMidi.playbackState = playbackState; topToolbar.playbackState = playbackState; leftSidebar.playbackState = playbackState;
     rightSidebar.playbackState = playbackState; timeline.playbackState = playbackState;
     
@@ -1535,12 +1563,6 @@ function main() {
       if (take && take.kind === 'live' && take.soundAt === null && e.detail?.type === 'error' && /^API Error/.test(String(e.detail?.text))) {
           failTake('LYRIA REALTIME STOPPED BEFORE THE TAKE STARTED (NOT COUNTED)');
       }
-  }) as EventListener);
-
-  (liveMusicHelper as any).addEventListener('vocal-signal-received', ((e: CustomEvent) => {
-    if (e.detail) {
-      pdjMidi.setMessage(`VOCAL DIRECTIVE: ${e.detail}`, "info");
-    }
   }) as EventListener);
 
   audioAnalyser.addEventListener('audio-levels-changed', ((e: Event) => {

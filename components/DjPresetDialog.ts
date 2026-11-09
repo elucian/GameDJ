@@ -1,5 +1,6 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { djVotes, starsFor } from '../utils/DjRatings';
 
 // v3: the DJ roster changed (countries and portraits); settings saved for the old DJs no longer apply
 const STORAGE_KEY_PRESETS = 'gamedj.djPresets.v3';
@@ -169,9 +170,18 @@ const clone = (list: DjConfig[]): DjConfig[] => list.map(d => ({ ...d, channels:
 
 /** Raise when a portrait is redrawn: browsers keep the old picture in their cache otherwise */
 const PORTRAIT_VERSION = 11;
+export const djPortraitUrl = (id: string) => `/djs/${id}.jpg?v=${PORTRAIT_VERSION}`;
 /** The DJ's avatar (public/djs/<id>.jpg); the initial shows while it loads or when it is missing. */
 function portrait(d: DjConfig) {
-  return html`<div class="portrait" data-initial=${d.name[0]}><img src="/djs/${d.id}.jpg?v=${PORTRAIT_VERSION}" alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
+  return html`<div class="portrait" data-initial=${d.name[0]}><img src=${djPortraitUrl(d.id)} alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
+}
+
+/** The DJ's stars from the listeners' likes (gold over grey, half stars); "Not rated yet" before the first vote */
+function stars(d: DjConfig, withCounts: boolean) {
+  const v = djVotes(d.id);
+  const n = starsFor(v);
+  if (n === null) return withCounts ? html`<span class="unrated">Not rated yet</span>` : '';
+  return html`<span class="stars" title="${n} of 5 stars (${v.up} likes, ${v.down} dislikes)"><span class="bg">★★★★★</span><span class="fg" style="width:${n * 20}%">★★★★★</span></span>${withCounts ? html`<span class="votes">${n.toFixed(1)} · 👍 ${v.up} · 👎 ${v.down}</span>` : ''}`;
 }
 
 @customElement('dj-preset-dialog')
@@ -225,6 +235,13 @@ export class DjPresetDialog extends LitElement {
     .portrait img { position: relative; width: 100%; height: 100%; object-fit: cover; display: block; }
     .head .home { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
     .head .home b { color: var(--text-color); font-weight: 600; }
+    .stars { position: relative; display: inline-block; line-height: 1; letter-spacing: 1px; font-size: 12px; vertical-align: middle; }
+    .stars .bg { color: #555; }
+    .stars .fg { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #ffc940; }
+    .dj-item .stars { font-size: 10px; display: block; margin-top: 2px; width: max-content; }
+    .rating { margin-top: 6px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+    .rating .stars { font-size: 15px; }
+    .unrated { font-style: italic; }
     .label { font-size: 11px; color: var(--text-muted); font-weight: bold; margin-bottom: 2px; display: flex; justify-content: space-between; }
     .hint { font-size: 9px; color: var(--text-muted); opacity: 0.8; margin-top: 0; }
     .slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; }
@@ -246,12 +263,23 @@ export class DjPresetDialog extends LitElement {
   connectedCallback() {
       super.connectedCallback();
       window.addEventListener('keydown', this.handleKeyDown);
+      window.addEventListener('dj-ratings-changed', this.onRatings);
       this.restoreFromStorage();
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       window.removeEventListener('keydown', this.handleKeyDown);
+      window.removeEventListener('dj-ratings-changed', this.onRatings);
+  }
+
+  /** A new vote: the stars are drawn again */
+  private onRatings = () => this.requestUpdate();
+
+  /** The DJ on deck (the one a take is credited to) */
+  public get onDeck(): { id: string; name: string } {
+      const p = this.presets[this.appliedIndex];
+      return { id: p.id, name: p.name };
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -318,14 +346,15 @@ export class DjPresetDialog extends LitElement {
               ${this.draft.map((d, i) => html`
                 <div class="dj-item ${i === this.selectedIndex ? 'selected' : ''}" @click=${() => { this.selectedIndex = i; }}>
                   <div class="thumb">${portrait(d)}</div>
-                  <div><div class="nm">${d.name}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : origin(d)}</div></div>
+                  <div><div class="nm">${d.name}${stars(d, false)}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : origin(d)}</div></div>
                 </div>`)}
             </div>
             <div class="detail">
               <div class="head">
                 <div class="big">${portrait(p)}</div>
                 <div><h3>${p.name}</h3><p>${origin(p)}</p><p>${p.tagline}</p>
-                  <div class="home">${isAndroid(p) ? html`Studies: <b>every genre equally</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div></div>
+                  <div class="home">${isAndroid(p) ? html`Studies: <b>every genre equally</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div>
+                  <div class="rating">${stars(p, true)}</div></div>
               </div>
 
               <div>

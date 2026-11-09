@@ -219,9 +219,6 @@ export class VocalDialog extends LitElement {
       this.selectedChoir = 'None';
       this.vocalText = '';
       this.songName = '';
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { 
-          detail: { active: false }
-      }));
       this.dispatchEvent(new CustomEvent('vocal-dialog-cancelled', { 
           bubbles: true, 
           composed: true 
@@ -321,8 +318,6 @@ export class VocalDialog extends LitElement {
 
   /** Language chosen for the lyrics ('Auto' = picked by genre). */
   public get language() { return this.lyricsLang; }
-  public setLanguage(language: string) { if (this.languages.includes(language)) this.lyricsLang = language; }
-
   private toggleSolo(voice: keyof typeof this.activeSoloVoices) {
       this.activeSoloVoices = { ...this.activeSoloVoices, [voice]: !this.activeSoloVoices[voice] };
   }
@@ -408,9 +403,6 @@ export class VocalDialog extends LitElement {
       this.dispatchEvent(new CustomEvent('voices-applied', { detail: this.getVoices() }));
       this.dispatchEvent(new CustomEvent('send-vocal-command', { detail: directive }));
       this.dispatchEvent(new CustomEvent('lyrics-set', { detail: this.vocalText, bubbles: true, composed: true }));
-      window.dispatchEvent(new CustomEvent('vocal-state-changed', { 
-          detail: { active: active }
-      }));
       this.show = false;
   }
 }

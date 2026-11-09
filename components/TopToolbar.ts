@@ -1174,10 +1174,8 @@ export class TopToolbar extends LitElement {
   @property({ type: Boolean }) hasRecording = false;
   /** Name of the DJ on deck, shown under the logo (there is always a DJ: the Robot after a dice roll) */
   @state() private djName = '';
-  @state() private djActive = false;
   private onDjConfig = ((e: CustomEvent) => { this.djName = e.detail?.name || ''; }) as EventListener;
-  private onDjActive = ((e: CustomEvent) => {
-      this.djActive = !!e.detail?.active;
+  private onDjActive = (() => {
       if (!this.djName) this.djName = (window as any).liveMusicHelper?.djPersonalityInfo?.name || '';
   }) as EventListener;
   connectedCallback() {
@@ -1210,7 +1208,6 @@ export class TopToolbar extends LitElement {
   }
 
   /** The tempo lock button is in the manifest panel now. */
-  public toggleTempoLock() { this.toggleLock('tempo'); }
 
 
   constructor() {
