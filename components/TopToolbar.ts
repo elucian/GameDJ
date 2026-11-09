@@ -1172,7 +1172,7 @@ export class TopToolbar extends LitElement {
   /** Lyrics are being written in the background: the song settings are frozen until they are ready. */
   @property({ type: Boolean, reflect: true }) lyricsBusy = false;
   @property({ type: Boolean }) hasRecording = false;
-  /** Name of the DJ on deck, shown under the logo while the DJ is active; "Random" otherwise (a dice setup) */
+  /** Name of the DJ on deck, shown under the logo (there is always a DJ: the Robot after a dice roll) */
   @state() private djName = '';
   @state() private djActive = false;
   private onDjConfig = ((e: CustomEvent) => { this.djName = e.detail?.name || ''; }) as EventListener;
@@ -1570,7 +1570,7 @@ export class TopToolbar extends LitElement {
           <span class="brand-text">GameDJ</span>
           <span class="version-badge">V29</span>
         </div>
-        <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djActive ? (this.djName || 'DJ') : 'Random'}</div>
+        <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djName || 'Robot'}</div>
       </div>
       <div class="divider"></div>
 

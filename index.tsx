@@ -14,7 +14,7 @@ import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
 import { AboutDialog } from './components/AboutDialog';
-import { DjPresetDialog, RANDOM_DJ_ID } from './components/DjPresetDialog';
+import { DjPresetDialog, ROBOT_DJ_ID } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
 import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
 import { ThanksDialog } from './components/ThanksDialog';
@@ -339,7 +339,7 @@ function main() {
       liveMusicHelper.setEvolution(0);
       rightSidebar.setEvolution(0);
       await topToolbar.randomizeInstruments();
-      // The app starts with a DJ on: the one on deck when it was closed, the Random DJ (the android) the first time
+      // The app starts with a DJ on: the one on deck when it was closed, the Robot DJ the first time
       if (!leftSidebar.isConductorActive && liveMusicHelper.playbackState === 'stopped') {
           leftSidebar.isConductorActive = true;
           (leftSidebar as any).dispatchEvent(new CustomEvent('dj-changed', { detail: true }));
@@ -1321,14 +1321,14 @@ function main() {
   (leftSidebar as any).addEventListener('randomize', async () => {
       cancelAutoLoop();
       if (liveMusicHelper.playbackState !== 'stopped') return;
-      // The dice make a random setup and hand it to the Random DJ (the android): it conducts what the dice rolled,
+      // The dice make a random setup and hand it to the Robot DJ: it conducts what the dice rolled,
       // without planning its own instruments, from the next Record
       djRequest++; // a DJ plan still being prepared is dropped
       deactivateDj();
-      djPresetDialog.putOnDeck(RANDOM_DJ_ID);
+      djPresetDialog.putOnDeck(ROBOT_DJ_ID);
       leftSidebar.isConductorActive = true;
       (window as any).isConductorActive = true;
-      pdjMidi.setMessage('DICE: DJ RANDOM TAKES OVER', 'info');
+      pdjMidi.setMessage('DICE: DJ ROBOT TAKES OVER', 'info');
       await liveMusicHelper.clearRecording(); 
       timeline.hasRecording = false; 
       leftSidebar.hasRecording = false;

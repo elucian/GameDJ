@@ -12,25 +12,17 @@ import { uiSounds } from '../utils/UISounds';
 
 @customElement('left-sidebar')
 export class LeftSidebar extends LitElement {
-  @state() private isVocalActive = false;
-
-  private _handleVocalStateChange = ((e: CustomEvent) => {
-      this.isVocalActive = e.detail.active;
-  }) as EventListener;
-
   private _handleModeChange = ((e: CustomEvent) => {
       this.primaryMode = e.detail.mode;
   }) as EventListener;
 
   connectedCallback() {
     super.connectedCallback();
-    window.addEventListener('vocal-state-changed', this._handleVocalStateChange);
     window.addEventListener('change-primary-mode', this._handleModeChange);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    window.removeEventListener('vocal-state-changed', this._handleVocalStateChange);
     window.removeEventListener('change-primary-mode', this._handleModeChange);
   }
 
@@ -44,18 +36,6 @@ export class LeftSidebar extends LitElement {
       box-shadow: 0 1px 2px rgba(0,0,0,0.6), inset 0 1px 3px rgba(0,0,0,0.4) !important;
     }
 
-    @keyframes blink {
-      0% { box-shadow: 0 0 5px #1e601e; }
-      50% { box-shadow: 0 0 20px #1e601e; }
-      100% { box-shadow: 0 0 5px #1e601e; }
-    }
-    .mic-btn.active {
-      animation: blink 1.5s infinite;
-      background: #1e601e !important;
-      color: #fff !important;
-      opacity: 1 !important;
-      border: 1px solid #000;
-    }
     .vocal-prompt-overlay {
       position: fixed;
       top: 80px;
@@ -222,6 +202,13 @@ export class LeftSidebar extends LitElement {
     }
 
     button.theme-btn { color: #ffdd28; }
+    /* No songs left this month: the voice mode needs a Lyria 3.5 song, so the Voice button shows a greyed, struck-out mic */
+    button.mic-btn.no-songs { color: #6a6a6a; position: relative; }
+    :host-context(body.light-theme) button.mic-btn.no-songs { color: #a0a0a0; }
+    button.mic-btn.no-songs::after {
+      content: ''; position: absolute; left: 50%; top: 50%; width: 62%; height: 2px; border-radius: 1px;
+      background: #d23030; transform: translate(-50%, -50%) rotate(-45deg); pointer-events: none;
+    }
     button.kofi-btn { color: #ff5e5b; }
     button.reset-btn { color: #aa0000; }
     button.shuffle-btn { color: #0088ff; }
@@ -247,15 +234,6 @@ export class LeftSidebar extends LitElement {
       pointer-events: none; 
     }
 
-    /* DJ on: looks pressed like the other active buttons, but stays clickable so it can be switched off
-       (while recording it is disabled: forbidden cursor) */
-    button.dj-on {
-      opacity: 1 !important;
-      background: #1e601e !important;
-      color: #fff !important;
-      border-color: #000;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.6), inset 0 1px 3px rgba(0,0,0,0.4) !important;
-    }
     /* Recording button is disabled while recording: let the forbidden cursor show */
     button.record-btn.active-recording { pointer-events: auto; }
 
@@ -599,11 +577,11 @@ export class LeftSidebar extends LitElement {
         <button class="shuffle-btn ${this.isShuffling ? 'active-blue' : ''}" @click=${this.onRandomizeClick} ?disabled=${isRecording} title="3D Dice Shuffle">
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01 20.73 6.96M12 22.08V12"/><circle cx="12" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="14" r="1" fill="currentColor"/><circle cx="17" cy="14" r="1" fill="currentColor"/></svg></span>
         </button>
-        <button class="dj-btn ${this.isConductorActive ? 'dj-on' : ''}" @click=${this.toggleDj} ?disabled=${isRecording} title="DJ/Conductor">
+        <button class="dj-btn" @click=${this.toggleDj} ?disabled=${isRecording} title="DJ/Conductor">
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></span>
         </button>
 
-        <button class="theme-btn mic-btn ${this.isVocalActive ? 'active' : ''}" ?disabled=${isRecording || this.voiceBlocked} @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog', { bubbles: true, composed: true }))} title=${this.voiceBlocked ? "Monthly free quota used up" : "Vocal Commands"}>
+        <button class="theme-btn mic-btn ${this.voiceBlocked ? 'no-songs' : ''}" ?disabled=${isRecording || this.voiceBlocked} @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog', { bubbles: true, composed: true }))} title=${this.voiceBlocked ? "No songs left this month: voices need a Lyria 3.5 song" : "Vocal Commands"}>
           <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
         </button>
         <button class="kofi-btn" @click=${() => this.dispatchEvent(new CustomEvent('show-support', { bubbles: true, composed: true }))} title="Support GameDJ on Ko-fi">

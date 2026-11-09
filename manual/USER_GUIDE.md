@@ -57,7 +57,7 @@ The right sidebar has two tabs with five channels each:
 
 ## 6. The Dice (Random)
 
-The dice button (only while stopped) hands the music to the **Random DJ** (the android; the label under the logo reads **Active: Random**), which conducts what the dice rolled from the next Record. The dice then pick genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
+The dice button (only while stopped) hands the music to the **Robot DJ** (the label under the logo reads **Active: Robot**), which conducts what the dice rolled from the next Record. The dice then pick genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
 
 ## 7. The knobs
 
@@ -90,7 +90,7 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 9. Voices and lyrics
 
-- The **Voice** button opens the Voice dialog: the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
+- The **Voice** button opens the Voice dialog (with no songs left this month it shows a greyed mic struck through in red and cannot be pressed): the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
 - The dialog's dice (🎲) randomize what is not locked: the voices (unless the dialog's lock is on) and the language (unless its own lock is on). They keep the lyrics and the song title, and only reach the channels when you press Apply.
 - The lyrics language has its own lock next to the dropdown. Unlocked, the dialog's dice pick a language that suits the style (Japanese for Japanese Folk) and show it in the dropdown; locked, the dice keep your language. Generate never changes the dropdown: it writes in the language shown (with Auto, a language that suits the style).
 - **The DJ and voices.** What the DJ does depends on the primary mode:
@@ -103,9 +103,9 @@ Anything you have locked (channels, manifest, mood) is left alone.
 
 ## 10. DJ Presets (personalities)
 
-The **DJ Presets** dialog has twelve DJs. First in the list is **Random**, an aristocratic ancient android from the celestial spheres, with a silver face, sapphire eyes behind a tech visor, a light gold DJ helmet and rubies and topazes on his armour. It has plain average settings (most sliders at 50%), no arranging habits of its own, and it prefers game and ambient music: instead of home styles it has every **Gaming** and **Ambient** style, and its **Favourites** slider (60% at first) is the chance that it picks one of them when it plans a piece. You change its sliders and channels as for any DJ; they are saved in this browser.
+The **DJ Presets** dialog has twelve DJs. First in the list is **Robot**, an aristocratic ancient android from the celestial spheres, with a bare silver head, a stylish gold headband, sapphire eyes and a headset with a mic and rubies and topazes on his armour. It has plain average settings (most sliders at 50%), no arranging habits of its own, and it prefers game and ambient music: instead of home styles it has every **Gaming** and **Ambient** style, and its **Favourites** slider (60% at first) is the chance that it picks one of them when it plans a piece. You change its sliders and channels as for any DJ; they are saved in this browser.
 
-When the app starts it switches on the DJ that was on deck when you closed it. The first time, that is the Random DJ.
+When the app starts it switches on the DJ that was on deck when you closed it. The first time, that is the Robot DJ.
 
 The other eleven are fictional people, each drawn as a flat colour avatar with headphones, each from a country of their own:
 

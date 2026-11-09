@@ -5,10 +5,12 @@ import { customElement, property, state } from 'lit/decorators.js';
 const STORAGE_KEY_PRESETS = 'gamedj.djPresets.v3';
 const STORAGE_KEY_SELECTED = 'gamedj.djPresetSelected.v3';
 const STORAGE_KEY_APPLIED = 'gamedj.djPresetApplied.v3';
-/** The DJ on deck, by id (the index above is from before the Random DJ was added at the top of the list) */
+/** The DJ on deck, by id (the index above is from before the Robot DJ was added at the top of the list) */
 const STORAGE_KEY_ON_DECK = 'gamedj.djOnDeck';
-/** The Random DJ: a programmable android, first in the list and on deck the first time the app starts */
-export const RANDOM_DJ_ID = 'random';
+/** The Robot DJ: an android, first in the list, on deck the first time the app starts and after every dice roll */
+export const ROBOT_DJ_ID = 'robot';
+/** Its id before it was renamed (saved settings and the DJ on deck are carried over) */
+const OLD_ROBOT_ID = 'random';
 
 type ChannelMap = { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
 
@@ -56,8 +58,8 @@ const DEFAULT_DJS: DjConfig[] = [
   {
     // An aristocratic ancient android from the heavens (gold and silver, sapphire eyes): no country and no arranging
     // habits, average settings you can change. Its "home" is the music it prefers: every Gaming and Ambient style
-    id: RANDOM_DJ_ID, name: 'Random', gender: 'android', country: 'Android', age: 0,
-    tagline: 'An aristocratic ancient android from the celestial spheres, with a silver face, sapphire eyes behind a tech visor, a light gold DJ helmet and rubies and topazes on his armour. Plain average settings; it prefers game and ambient music.',
+    id: ROBOT_DJ_ID, name: 'Robot', gender: 'android', country: 'Android', age: 0,
+    tagline: 'An aristocratic ancient android from the celestial spheres, with a bare silver head, a stylish gold headband, sapphire eyes and a headset with a mic and rubies and topazes on his armour. Plain average settings; it prefers game and ambient music.',
     homeStyles: [['Gaming', '8-Bit Retro'], ['Gaming', 'Epic Boss'], ['Gaming', 'RPG Adventure'], ['Gaming', 'Cyberpunk'], ['Gaming', 'Stealth'], ['Gaming', 'Dungeon Crawler'], ['Gaming', 'Racing Arcade'], ['Gaming', 'Cozy Simulation'], ['Gaming', 'Platformer Bounce'], ['Gaming', 'Survival Horror'], ['Gaming', 'Victory Theme'], ['Ambient', 'Deep Space'], ['Ambient', 'Lofi Chill'], ['Ambient', 'Cinematic'], ['Ambient', 'Nature Soundscape'], ['Ambient', 'Dark Ambient'], ['Ambient', 'Arctic Tundra'], ['Ambient', 'Solar Wind'], ['Ambient', 'Industrial Decay'], ['Ambient', 'Deep Forest'], ['Ambient', 'Australian Desert'], ['Ambient', 'African Jungle'], ['Ambient', 'Vast Ocean']], homeBias: 60,
     arranging: [], habits: 50,
     channels: { ...ALL_CHANNELS }, eagerness: 50, diversity: 50, complexity: 50, energy: 50, atmosphere: 50, warmup: 5, temperature: 1.1, maxKnobs: 6
@@ -156,14 +158,14 @@ const SLIDERS: { key: keyof DjConfig; label: string; hint: string; min: number; 
 
 const NUMERIC_KEYS = ['eagerness', 'diversity', 'complexity', 'energy', 'atmosphere', 'warmup', 'temperature', 'maxKnobs', 'homeBias', 'habits'] as const;
 
-const isAndroid = (d: DjConfig) => d.id === RANDOM_DJ_ID;
+const isAndroid = (d: DjConfig) => d.id === ROBOT_DJ_ID;
 /** Under the name: where the DJ comes from and the age (the android has neither) */
 const origin = (d: DjConfig) => isAndroid(d) ? 'Celestial android' : `${d.country} · ${d.age}`;
 
 const clone = (list: DjConfig[]): DjConfig[] => list.map(d => ({ ...d, channels: { ...d.channels }, homeStyles: d.homeStyles.map(h => [...h] as [string, string]), arranging: [...d.arranging] }));
 
 /** Raise when a portrait is redrawn: browsers keep the old picture in their cache otherwise */
-const PORTRAIT_VERSION = 9;
+const PORTRAIT_VERSION = 11;
 /** The DJ's avatar (public/djs/<id>.jpg); the initial shows while it loads or when it is missing. */
 function portrait(d: DjConfig) {
   return html`<div class="portrait" data-initial=${d.name[0]}><img src="/djs/${d.id}.jpg?v=${PORTRAIT_VERSION}" alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
@@ -265,7 +267,7 @@ export class DjPresetDialog extends LitElement {
               const saved = JSON.parse(raw) as Partial<DjConfig>[];
               if (Array.isArray(saved)) {
                   this.presets = this.presets.map(def => {
-                      const s = saved.find(x => x && x.id === def.id);
+                      const s = saved.find(x => x && (x.id === def.id || (isAndroid(def) && x.id === OLD_ROBOT_ID)));
                       if (!s) return def;
                       const merged: DjConfig = { ...def, channels: { ...def.channels, ...(s.channels || {}) } };
                       NUMERIC_KEYS.forEach(k => { if (typeof s[k] === 'number') (merged as any)[k] = s[k]; });
@@ -273,14 +275,15 @@ export class DjPresetDialog extends LitElement {
                   });
               }
           }
-          // The DJ on deck when the app was closed; the first time, the Random DJ
+          // The DJ on deck when the app was closed; the first time, the Robot DJ
           let id = localStorage.getItem(STORAGE_KEY_ON_DECK);
+          if (id === OLD_ROBOT_ID) id = ROBOT_DJ_ID;
           if (!id && localStorage.getItem(STORAGE_KEY_APPLIED) === '1') {
-              // Saved before the Random DJ existed: the index counts the list without it
+              // Saved before the Robot DJ existed: the index counts the list without it
               const old = DEFAULT_DJS.filter(d => !isAndroid(d))[parseInt(localStorage.getItem(STORAGE_KEY_SELECTED) || '', 10)];
               id = old?.id ?? null;
           }
-          const idx = this.presets.findIndex(d => d.id === (id || RANDOM_DJ_ID));
+          const idx = this.presets.findIndex(d => d.id === (id || ROBOT_DJ_ID));
           this.appliedIndex = idx >= 0 ? idx : 0;
       } catch { /* localStorage unavailable or corrupt: keep defaults */ }
       this.draft = clone(this.presets);
@@ -378,7 +381,7 @@ export class DjPresetDialog extends LitElement {
     this.dispatchEvent(new CustomEvent('dj-dialog-applied', { bubbles: true, composed: true }));
   }
 
-  /** Put a DJ on deck without the dialog (the dice hand over to the Random DJ); saved like Apply. */
+  /** Put a DJ on deck without the dialog (the dice hand over to the Robot DJ); saved like Apply. */
   public putOnDeck(id: string) {
     const idx = this.presets.findIndex(d => d.id === id);
     if (idx < 0) return;
