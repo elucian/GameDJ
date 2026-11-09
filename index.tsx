@@ -25,6 +25,7 @@ import { DURATION_STEPS } from './components/MasterVolumePanel';
 import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseLyricsLanguage, djEvolutionFor, type DjPersonality } from './utils/LiveMusicHelper';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
+import { uiSounds } from './utils/UISounds';
 import { inject, track } from '@vercel/analytics';
 
 // Vercel Web Analytics: page views only (it does nothing on localhost)
@@ -477,10 +478,14 @@ function main() {
       liveMusicHelper.setMaxDuration(mins); timeline.maxDuration = mins * 60;
   };
 
-  (topToolbar as any).addEventListener('duration-changed-manually', ((e: Event) => {
+  // Dragging the timeline ruler sets the song length (minutes, in the Duration slider's steps); with the length
+  // locked on the mixer panel the length stays
+  (timeline as any).addEventListener('duration-changed-manually', ((e: Event) => {
       cancelAutoLoop();
-      const mins = (e as CustomEvent<number>).detail;
-      rightSidebar.setDuration(mins); liveMusicHelper.setMaxDuration(mins); timeline.maxDuration = mins * 60;
+      const mins = rightSidebar.setDuration((e as CustomEvent<number>).detail);
+      liveMusicHelper.setMaxDuration(mins); timeline.maxDuration = mins * 60;
+      syncBars();
+      uiSounds.playTick();
   }));
 
   (timeline as any).addEventListener('seek', ((e: Event) => {

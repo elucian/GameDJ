@@ -5,6 +5,12 @@
 */
 import { css, html, LitElement } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
+import { DURATION_STEPS } from './MasterVolumePanel';
+
+/** Song length range and step of the ruler drag (same as the Duration slider), in seconds */
+const MIN_SONG_SECS = DURATION_STEPS[0].value * 60;
+const MAX_SONG_SECS = DURATION_STEPS[DURATION_STEPS.length - 1].value * 60;
+const SONG_STEP_SECS = 10;
 
 interface TimeSegment {
   start: number;
@@ -352,6 +358,8 @@ export class Timeline extends LitElement {
   @state() private history: ChannelHistory = { lead: [], alto: [], harmonic: [], bass: [], rhythm: [], ghost: [] };
   private isDragging = false;
   private dragTarget: 'playhead' | 'fadeIn' | 'fadeOut' | 'duration' | null = null;
+  /** Ruler drag: where it started, the length then and the last length sent */
+  private durationDrag = { startX: 0, startSecs: 0, lastSecs: 0 };
 
   private _baseFadeIn = 5.0;
   private _baseFadeOut = 10.0;
@@ -468,7 +476,12 @@ export class Timeline extends LitElement {
 
   private handlePointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
-    if (target.closest('.ruler')) { this.isDragging = true; this.dragTarget = 'duration'; return; }
+    if (target.closest('.ruler')) {
+      // The song length, as the Duration slider: not while a take is being recorded
+      if (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading') return;
+      this.durationDrag = { startX: e.clientX, startSecs: this.maxDuration, lastSecs: this.maxDuration };
+      this.isDragging = true; this.dragTarget = 'duration'; return;
+    }
     if (target.closest('.fade-in')) { if (this.playbackState === 'recording' || this.playbackState === 'playing' || this.playbackState === 'warmup' || this.playbackState === 'preparing') return; this.dragTarget = 'fadeIn'; this.isDragging = true; }
     else if (target.closest('.fade-out')) { if (this.playbackState === 'playing') return; this.dragTarget = 'fadeOut'; this.isDragging = true; }
     else { 
@@ -496,11 +509,16 @@ export class Timeline extends LitElement {
       this.dispatchFade(); 
     }
     else if (this.dragTarget === 'duration') {
-        const rect = this.laneElement.getBoundingClientRect();
-        let x = e.clientX - rect.left - 20; 
-        const pct = Math.max(0.05, Math.min(1, x / (rect.width - 40)));
-        const finalSeconds = Math.max(1, Math.round(pct * 34));
-        (this as any).dispatchEvent(new CustomEvent('duration-changed-manually', { detail: finalSeconds }));
+        // Drag right for a longer song, left for a shorter one: the lane's width spans the whole range,
+        // in the Duration slider's 10 s steps (the app answers with the length it applied, the ruler redraws)
+        const width = Math.max(1, this.laneElement.getBoundingClientRect().width - 40);
+        const d = this.durationDrag;
+        const raw = d.startSecs + ((e.clientX - d.startX) / width) * (MAX_SONG_SECS - MIN_SONG_SECS);
+        const secs = Math.max(MIN_SONG_SECS, Math.min(MAX_SONG_SECS, Math.round(raw / SONG_STEP_SECS) * SONG_STEP_SECS));
+        if (secs !== d.lastSecs) {
+            d.lastSecs = secs;
+            (this as any).dispatchEvent(new CustomEvent('duration-changed-manually', { detail: secs / 60 }));
+        }
     } else if (this.dragTarget === 'playhead') {
       const bpmSnap = 60 / this.bpm;
       const playheadSnapped = Math.max(0, Math.min(Math.round(rawTime / bpmSnap) * bpmSnap, this.effectiveDuration));
@@ -588,7 +606,7 @@ export class Timeline extends LitElement {
     const bufferRegionWidthPct = Math.max(0, writeHeadPct - playbackHeadPct);
 
     return html`
-      <div class="ruler" @pointerdown=${this.handlePointerDown}>${this.renderRuler()}</div>
+      <div class="ruler" title="Drag left or right to change the song length" @pointerdown=${this.handlePointerDown}>${this.renderRuler()}</div>
       <div class="tracks">
         <div class="track-container">
            <div class="track-header">

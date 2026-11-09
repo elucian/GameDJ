@@ -51,7 +51,7 @@ The right sidebar has two tabs with five channels each:
 ## 5. Recording and playback
 
 - **Record** starts a new take (it overwrites the previous one). **Stop** ends it. **Play Recording** replays it, including the automation of knobs and channels. **Loop** replays automatically after 5 seconds, and a finished recording auto-loops after a 20-second countdown unless you touch something.
-- **Duration** sets the target length; **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
+- **Duration** sets the target length (you can also drag the time ruler at the top of the timeline: right for longer, left for shorter, from 1:00 to 3:00 in 10-second steps; not while recording, and not when the length is locked); **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
 - **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when you have songs left in your quota; with the DJ on, the DJ arranges it (see section 8). Vocalization is selected automatically when a voice channel is used.
 - **Export** downloads the recording (choose the format with the format button).
 
