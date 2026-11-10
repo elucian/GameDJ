@@ -37,6 +37,7 @@
   --tl-ghost-shadow: rgba(255,255,255,0.2);
   --tl-ghost-border: rgba(255,255,255,0.1);
   --tl-buffer-border: rgba(255,255,255,0.25);
+  --tl-row-border: #c0c0c0;   /* channel row outline, the same for every channel: silver */
   --tl-fade-color: #007bff;   /* fade handles and overlay, PREP status */
   --tl-warn: #ffdd28;         /* WARM-UP / WAITING status */
   --tl-playback: #00ff00;     /* green cursor: audible position */
@@ -80,6 +81,7 @@ body.light-theme {
   --tl-ghost-shadow: rgba(0,0,0,0.1);
   --tl-ghost-border: rgba(0,0,0,0.1);
   --tl-buffer-border: rgba(0,0,0,0.25);
+  --tl-row-border: #4a4a4a;   /* dark gray */
 }
 
 html, body {
@@ -106,7 +108,7 @@ body {
     "left header right"
     "left main right"
     "left timeline right";
-  grid-template-rows: 57px minmax(0, 1fr) 80px; 
+  grid-template-rows: 57px minmax(0, 1fr) 95px; /* timeline: 80px + 3px per channel row (5) for the row borders */
   grid-template-columns: 50px 1fr 290px;
 }
 
@@ -148,5 +150,5 @@ toast-message { z-index: 9999; }
     top-toolbar, left-sidebar, right-sidebar { display: contents; }
     prompt-dj-midi { order: 7; height: auto; }
     /* Same order as the master volume and later in the page, so it sits right below the volume meters */
-    bottom-timeline { order: 5; height: 80px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
+    bottom-timeline { order: 5; height: 95px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
 }

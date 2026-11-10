@@ -209,6 +209,8 @@ export class MasterVolumePanel extends LitElement {
     }
     .srow .value-display { text-align: right; font-size: 11.5px; }
     .tools-row { display: flex; align-items: center; justify-content: space-between; height: 18px; margin: 4px 0 6px; }
+    /* Volume panel: the meters sit right under the MONO/STEREO switch */
+    .tools-row.switch-row { margin: 2px 0 3px; }
 
     .meters-container {
       display: flex;
@@ -411,7 +413,7 @@ export class MasterVolumePanel extends LitElement {
               @input=${this.onWidthChange} tabindex=${this.isLocked || !this.isStereo ? '-1' : '0'} />
             <div class="value-display">${this.isStereo ? `${Math.round(this.stereoWidth * 100)}%` : '--'}</div>
           </div>
-          <div class="tools-row">
+          <div class="tools-row switch-row">
             <span></span>
             <div class="stereo-toggle ${this.isStereo ? 'on' : ''} ${this.isLocked ? 'disabled' : ''}" @click=${this.toggleStereo}>
               <span class="toggle-text ${!this.isStereo ? 'active' : ''}">MONO</span>

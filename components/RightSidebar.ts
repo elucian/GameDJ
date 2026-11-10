@@ -10,6 +10,7 @@ import type { PlaybackState, InstrumentSet, ChannelState } from '../types';
 import type { StyleMatrixUpdate } from './TopToolbar';
 import { uiSounds } from '../utils/UISounds';
 import { DURATION_STEPS, durationStepIndex } from '../constants/durations';
+import { CHANNEL_WEIGHT_MAX, clampChannelWeight } from '../constants/channelWeights';
 import './MasterVolumePanel'; // registers <master-volume-panel>
 import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
@@ -452,7 +453,7 @@ export class RightSidebar extends LitElement {
     /* The song manifest stays as it was when the lyrics were asked for (instruments can still be chosen) */
     :host([lyricsbusy]) master-volume-panel.manifest-box, :host([lyricsbusy]) .header-btns { pointer-events: none; opacity: 0.55; }
     master-volume-panel.manifest-box { height: 112px; border-bottom: 1px solid var(--border-color); }
-    master-volume-panel.volume-box { height: 112px; }
+    master-volume-panel.volume-box { height: 132px; } /* VOL, WID, the switch and both VU meters, with room below */
     .volume-header { border-top: 1px solid var(--border-color); }
     .header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
     .mini-label { font-size: 9px; font-weight: 800; letter-spacing: 0.5px; color: var(--text-muted); width: 24px; flex-shrink: 0; }
@@ -664,7 +665,7 @@ export class RightSidebar extends LitElement {
                   newSettings[ch].instrument = recommended;
                   newSettings[ch].active = true;
                   if (detail.weights && detail.weights[ch] !== undefined) {
-                      newSettings[ch].weight = detail.weights[ch];
+                      newSettings[ch].weight = clampChannelWeight(ch, detail.weights[ch]);
                   }
               }
           }
@@ -789,6 +790,8 @@ export class RightSidebar extends LitElement {
     SLOTS.forEach(ch => {
       const on = chosen.includes(ch);
       newSettings[ch] = { ...newSettings[ch], visible: on, active: on };
+      // The dice put the lead at the top of its range, above the other channels
+      if (on && ch === 'lead') newSettings[ch].weight = CHANNEL_WEIGHT_MAX.lead;
     });
     this.auditAndCommit(newSettings);
   }
@@ -1007,7 +1010,7 @@ export class RightSidebar extends LitElement {
           </div>
           <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Weight: how strongly this track is asked for">
             <span class="mini-label">WGT</span>
-            <input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: Event) => {
+            <input type="range" min="0" max=${CHANNEL_WEIGHT_MAX[key]} step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: Event) => {
               if (!isInteractionDisabled) {
                   const val = parseFloat((e.target as HTMLInputElement).value);
                   this.settings[key].weight = val;

@@ -164,9 +164,9 @@ export class Timeline extends LitElement {
       position: relative;
       width: 100%;
       flex: 1; 
-      /* Outlined in the channel colour with a transparent fill, so a silent channel is still visible; active time is solid */
+      /* Outlined in one colour for all channels (silver / dark gray) with a transparent fill, so a silent channel is still visible; active time is solid in the channel colour */
       background: transparent;
-      border: 1px solid var(--channel-color);
+      border: 1px solid var(--tl-row-border);
       box-sizing: border-box;
       border-radius: 1px;
       overflow: hidden;

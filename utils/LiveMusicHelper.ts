@@ -18,6 +18,7 @@ import { moodPhrase } from '../constants/moods';
 import { AUTO_PHRASE_BARS, FOLK_ARC, MODERN_ARC, PHRASE_CUES, applyArrangingHabits, formForLength, type ArcSection, type Formation, type PerformancePlanStage } from '../music/songForm';
 import { GENRE_SONG_BRIEF, NON_DIATONIC_GENRES, VOICE_PERSONAS, describeVoice, fidelityLines, fidelityTags, isTraditionalGenre, isVocalInstrument, pickOne, scaleForKey } from '../music/vocabulary';
 import { djKnobBias, getDjKnobLimit, type DjPersonality } from '../music/djRules';
+import { clampChannelWeight, stageChannelWeight } from '../constants/channelWeights';
 
 // Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
 // The Guidance knob is the single truth: guidance = knob value x 3 (knob 0..2 = guidance 0..6), so an unset knob means 0.
@@ -41,9 +42,19 @@ const FORMATION_SUPPORT_WEIGHT: Record<Formation, number> = { solo: 0, duet: 0.9
 // Prompt weights (Lyria normalises them, so only the proportions count). The genre + style prompt is the single
 // strongest one so it always shapes the music; the instrument list comes next, then each channel, then the knobs.
 const GENRE_PROMPT_WEIGHT = 3.5;
-const ENSEMBLE_PROMPT_WEIGHT = 2.5;
-// Per channel (multiplied by the channel slider): together they stay below genre + ensemble.
-const CHANNEL_PROMPT_WEIGHT: Record<ChannelKey, number> = { lead: 1.6, alto: 1.4, harmonic: 1.2, bass: 1.3, rhythm: 1.3 };
+// The instruments weigh as much as the genre: the ensemble line is level with it, and each channel adds its own prompt on top.
+const ENSEMBLE_PROMPT_WEIGHT = 3.5;
+// Per channel (multiplied by the channel slider, which runs to 1.5 for the lead): the lead is the strongest.
+const CHANNEL_PROMPT_WEIGHT: Record<ChannelKey, number> = { lead: 2.4, alto: 2.0, harmonic: 1.8, bass: 1.9, rhythm: 1.9 };
+// The genre's authenticity tags are colour: well under the genre and the instruments.
+const FIDELITY_TAG_WEIGHTS = [1.3, 1.0];
+// While the DJ performs live, Lyria gets fewer and steadier updates (it stutters when the prompts keep changing):
+// the slow drift of knobs and weights is sent at most this often (a new section still goes at once) ...
+const DJ_REFRESH_MS = 4000;
+// ... with only this many knob phrases beside the genre, the instruments and the mood ...
+const LEAN_MAX_KNOB_PROMPTS = 2;
+// ... and weights rounded to this step, so a tiny drift sends nothing.
+const LEAN_WEIGHT_STEP = 0.1;
 // Knob prompts are colour only: at full knob (2) they reach 1.0, never above the instruments.
 const KNOB_PROMPT_SCALE = 0.5;
 // Voice mode with a voice on stage: the singer is the main prompt and the instruments accompany it.
@@ -217,7 +228,9 @@ export class LiveMusicHelper extends EventTarget {
       let g = 0;
       for (const p of this.prompts.values()) if (isGuidanceKnob(p)) g = p.weight * 3;
       const floor = this.instrumentsLocked ? LOCKED_GUIDANCE_MIN : this.voiceMode && this.isVocalInstrumentActive() ? VOICE_GUIDANCE_FLOOR : GUIDANCE_FLOOR;
-      return Math.round(Math.max(floor, Math.min(LYRIA_GUIDANCE_MAX, g)) * 10) / 10;
+      const wanted = Math.max(floor, Math.min(LYRIA_GUIDANCE_MAX, g));
+      // While the DJ performs live the eased knob would send a new guidance every few seconds: half-steps instead
+      return this.leanPerformance ? Math.max(floor, Math.round(wanted * 2) / 2) : Math.round(wanted * 10) / 10;
   }
   private voiceIntensityPhrase(): string {
       const v = this.voiceIntensity;
@@ -516,7 +529,14 @@ export class LiveMusicHelper extends EventTarget {
       this.userInteractionCooldowns.set(id, Date.now()); 
   }
 
-  private scheduleRefresh = throttle(() => { this.refreshSessionPrompts(); }, 1000);
+  private scheduleRefreshNow = throttle(() => { this.refreshSessionPrompts(); }, 1000);
+  private scheduleRefreshSlow = throttle(() => { this.refreshSessionPrompts(); }, DJ_REFRESH_MS);
+  /** `drift`: a slow change the DJ makes while it performs (eased knobs and weights): sent at most every few seconds */
+  private scheduleRefresh = (drift = false) => { if (drift && this.leanPerformance) this.scheduleRefreshSlow(); else this.scheduleRefreshNow(); };
+  /** The DJ is performing live: Lyria gets the lean prompt set and slow updates */
+  private get leanPerformance() {
+      return this.conductorMode && (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing');
+  }
 
   /** The voice master mode: only in VOCALIZATION mode are voices, lyrics and vocal directions sent to Lyria. */
   private get voiceMode() { return this.generationMode === 'VOCALIZATION'; }
@@ -594,12 +614,19 @@ Prompt: ${text}`
       target.forEach(p => goals.set(p.text, (goals.get(p.text) ?? 0) + p.weight));
       // First payload of a session: no fade
       if (this.smoothedPrompts.size === 0) { goals.forEach((w, t) => this.smoothedPrompts.set(t, w)); return target; }
+      // The DJ performing live: the same prompts as before only moved a little (it eases them itself), so no extra steps are sent
+      const lean = this.leanPerformance;
+      if (lean && goals.size === this.smoothedPrompts.size && [...goals.keys()].every(t => this.smoothedPrompts.has(t))) {
+          if (this.crossfadeTimer) { clearTimeout(this.crossfadeTimer); this.crossfadeTimer = null; }
+          goals.forEach((w, t) => this.smoothedPrompts.set(t, w));
+          return target;
+      }
       const out: { text: string; weight: number }[] = [];
       let moving = false;
       new Set([...goals.keys(), ...this.smoothedPrompts.keys()]).forEach(text => {
           const goal = goals.get(text) ?? 0;
           const cur = this.smoothedPrompts.get(text) ?? 0;
-          let next = cur + (goal - cur) * 0.4;
+          let next = cur + (goal - cur) * (lean ? 0.6 : 0.4); // fewer, bigger steps while the DJ performs
           if (Math.abs(goal - next) < 0.06) next = goal;
           if (next !== goal) moving = true;
           if (next < 0.05 && goal === 0) { this.smoothedPrompts.delete(text); return; }
@@ -607,7 +634,7 @@ Prompt: ${text}`
           out.push({ text, weight: Math.round(next * 100) / 100 });
       });
       if (this.crossfadeTimer) clearTimeout(this.crossfadeTimer);
-      this.crossfadeTimer = moving ? window.setTimeout(() => { this.crossfadeTimer = null; this.refreshSessionPrompts(); }, 350) : null;
+      this.crossfadeTimer = moving ? window.setTimeout(() => { this.crossfadeTimer = null; this.refreshSessionPrompts(); }, lean ? 700 : 350) : null;
       return out;
   }
 
@@ -665,7 +692,8 @@ Prompt: ${text}`
     };
     // The Density and Brightness knobs drive the real Lyria parameters (0..1, live, no context reset)
     const knobValue = (name: string): number | undefined => {
-        for (const p of this.prompts.values()) if (p.text.trim().toLowerCase() === name && p.weight > 0.01) return Math.round(Math.min(1, p.weight / 2) * 100) / 100;
+        const steps = this.leanPerformance ? 20 : 100; // the DJ's slow drift moves these in 0.05 steps
+        for (const p of this.prompts.values()) if (p.text.trim().toLowerCase() === name && p.weight > 0.01) return Math.round(Math.min(1, p.weight / 2) * steps) / steps;
         return undefined;
     };
     const arrangement = this.autoArrangement();
@@ -675,7 +703,10 @@ Prompt: ${text}`
     const brightness = knobValue('brightness'); if (brightness !== undefined) config.brightness = brightness;
     // Variation widens the token sampling pool (topK 1..1000): more varied playing without touching the prompts
     const variation = knobValue('variation');
-    if (variation !== undefined) config.topK = Math.round(LYRIA_TOPK_DEFAULT + variation * (LYRIA_TOPK_KNOB_MAX - LYRIA_TOPK_DEFAULT));
+    if (variation !== undefined) {
+        const topK = Math.round(LYRIA_TOPK_DEFAULT + variation * (LYRIA_TOPK_KNOB_MAX - LYRIA_TOPK_DEFAULT));
+        config.topK = this.leanPerformance ? Math.round(topK / 10) * 10 : topK;
+    }
     // A repeatable take: the same seed with the same prompts gives a similar performance
     if (this.currentSeed !== null) config.seed = this.currentSeed;
     // Lyria renders one stereo mix (no separate stems), but it can drop the bass and the drums on request:
@@ -721,7 +752,8 @@ Prompt: ${text}`
 
     const styleTag = !this.style || this.style.toLowerCase().includes(this.genre.toLowerCase()) ? (this.style || this.genre) : `${this.style}, ${this.genre}`;
     const finalPayload: { text: string; weight: number }[] = [{ text: styleTag, weight: GENRE_PROMPT_WEIGHT }];
-    fidelityTags(this.genre, this.style).forEach((tag, i) => finalPayload.push({ text: tag, weight: i === 0 ? 2.0 : 1.5 }));
+    // With instruments on the channels the genre tags do not name any (they would compete with the chosen ones)
+    fidelityTags(this.genre, this.style, playingKeys.length > 0).forEach((tag, i) => finalPayload.push({ text: tag, weight: FIDELITY_TAG_WEIGHTS[i] ?? 1.0 }));
     finalPayload.push({ text: `${this.key}, ${this.bpm} BPM, ${this.meter} time`, weight: 0.8 });
     if (this.mood && this.mood !== 'None') finalPayload.push({ text: moodPhrase(this.mood), weight: 1.2 });
 
@@ -760,19 +792,30 @@ Prompt: ${text}`
         finalPayload.push({ text: arrangement.section.cue, weight: 1.0 });
         finalPayload.push({ text: arrangement.phraseCue, weight: 0.5 });
     }
-    if (this.evolutionValue > 0) finalPayload.push({ text: 'progressive, evolving arrangement', weight: 0.6 });
-    else if (this.evolutionValue < 0) finalPayload.push({ text: 'steady, minimal arrangement', weight: 0.6 });
-    finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix', weight: 0.6 });
+    const lean = this.leanPerformance;
+    // The DJ steers the evolution itself with the knobs, and a generic quality line says nothing about the music:
+    // during its live performance Lyria is not sent them
+    if (!lean) {
+        if (this.evolutionValue > 0) finalPayload.push({ text: 'progressive, evolving arrangement', weight: 0.6 });
+        else if (this.evolutionValue < 0) finalPayload.push({ text: 'steady, minimal arrangement', weight: 0.6 });
+        finalPayload.push({ text: 'high fidelity studio recording, clean balanced mix', weight: 0.6 });
+    }
 
     // Knobs colour the playing but never outweigh genre or instruments
     // (Density, Brightness, Variation and Guidance are sent as real config values, not as text)
-    Array.from(this.prompts.values())
+    const knobPrompts = Array.from(this.prompts.values())
         .filter(p => !['density', 'brightness', 'guidance', 'variation'].includes(p.text.trim().toLowerCase()))
         .map(p => ({ text: this.knobPhrase(p.text), weight: p.weight * KNOB_PROMPT_SCALE }))
-        .filter(p => p.weight > 0.05)
-        .forEach(p => finalPayload.push(p));
+        .filter(p => p.weight > (lean ? 0.2 : 0.05))
+        .sort((a, b) => b.weight - a.weight);
+    // Live DJ performance: only the strongest knobs are named
+    (lean ? knobPrompts.slice(0, LEAN_MAX_KNOB_PROMPTS) : knobPrompts).forEach(p => finalPayload.push(p));
 
-    const fadedPayload = this.crossfade(this.guard.apply(finalPayload));
+    // Live DJ performance: weights in coarse steps, so the slow drift of the knobs does not make Lyria restart on every change
+    const steady = lean
+        ? finalPayload.map(p => ({ text: p.text, weight: Math.round(Math.round(p.weight / LEAN_WEIGHT_STEP) * LEAN_WEIGHT_STEP * 10) / 10 })).filter(p => p.weight > 0)
+        : finalPayload;
+    const fadedPayload = this.crossfade(this.guard.apply(steady));
     if (JSON.stringify(fadedPayload) !== JSON.stringify(this.lastPrompts)) {
         try { await this.session.setWeightedPrompts({ weightedPrompts: fadedPayload }); this.lastPrompts = fadedPayload; this.dispatchEvent(new CustomEvent('prompts-sent', { detail: { prompts: fadedPayload, guidance: config.guidance } })); } catch (e) { console.error("setWeightedPrompts failed:", e); }
     }
@@ -1455,7 +1498,7 @@ Prompt: ${text}`
       // Featured voice at full weight, supporting players slightly under it so the formation stays readable
       lineup.forEach(k => {
           stage.activeChannels[k] = true;
-          stage.channelWeights[k] = k === featured ? 1.0 : FORMATION_SUPPORT_WEIGHT[formation];
+          stage.channelWeights[k] = stageChannelWeight(k, k === featured ? 1.0 : FORMATION_SUPPORT_WEIGHT[formation]);
       });
 
       const formationLabel = formation === 'solo'
@@ -1559,7 +1602,7 @@ Prompt: ${text}`
               guidanceKnob.weight = Math.max(0, Math.min(2, guidanceKnob.weight + Math.sign(diff) * Math.min(Math.abs(diff), 0.04)));
               guidanceKnob.volume = guidanceKnob.weight / 2;
               this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts }));
-              this.scheduleRefresh();
+              this.scheduleRefresh(true);
           }
       }
 
@@ -1617,7 +1660,7 @@ Prompt: ${text}`
               p.weight = Math.max(0, Math.min(2.0, p.weight + move));
               p.volume = p.weight / 2;
           });
-          if (hands.length > 0) { this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts })); this.scheduleRefresh(); }
+          if (hands.length > 0) { this.dispatchEvent(new CustomEvent('conductor-knobs-update', { detail: this.prompts })); this.scheduleRefresh(true); }
       }
 
       if (currentStage.channelWeights || currentStage.activeChannels) {
@@ -1636,7 +1679,7 @@ Prompt: ${text}`
                   return;
               }
 
-              let targetWeight = currentStage.channelWeights?.[ch] ?? 1.0;
+              let targetWeight = currentStage.channelWeights?.[ch] ?? stageChannelWeight(ch, 1.0);
               // The DJ's voice intensity scales how loud the voice channels are
               if (targetWeight > 0 && isVocalInstrument(this.instruments[ch].instrument)) targetWeight *= 0.35 + 0.65 * this.voiceIntensity;
               const currentWeight = this.instruments[ch].weight;
@@ -1646,7 +1689,7 @@ Prompt: ${text}`
                   // For DJ, if target is 0, cut faster
                   const cutBonus = (targetWeight === 0) ? 0.08 : 0;
                   const move = Math.sign(weightDiff) * Math.min(Math.abs(weightDiff), 0.05 + cutBonus); 
-                  this.instruments[ch].weight = Math.max(0, Math.min(2.0, currentWeight + move));
+                  this.instruments[ch].weight = clampChannelWeight(ch, currentWeight + move);
                   channelChanged = true;
               }
 
@@ -1658,7 +1701,7 @@ Prompt: ${text}`
           });
           if (channelChanged) { 
               this.dispatchEvent(new CustomEvent('conductor-instruments-update', { detail: this.instruments })); 
-              this.scheduleRefresh(); 
+              this.scheduleRefresh(true); 
           }
       }
   }
@@ -1786,6 +1829,10 @@ Prompt: ${text}`
     // Always use fallback/procedural routine for standalone conductor
     this.generatePerformancePlan();
 
+    // The DJ's first section is in place before the first prompts go out, so Lyria starts with the right
+    // instruments and is not steered to them after the music began
+    if (this.conductorMode) { this.currentPlanIdx = 0; this.synchronizeInstrumentsWithStage(); }
+
     this.setPlaybackState('loading');
     
     await this.connect();
@@ -1871,6 +1918,8 @@ Prompt: ${text}`
 
     // Set prompts and config before starting the stream
     await this.refreshSessionPrompts();
+    // Every recording starts from a clean context: nothing of the last take (or of the warm-up) is continued
+    try { this.session.resetContext(); } catch (e) { console.error("resetContext failed:", e); }
     // Start the music stream - required by Lyria API
     this.session.play();
     return this.session;

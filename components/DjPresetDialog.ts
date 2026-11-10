@@ -1,6 +1,6 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { djVotes, starsFor } from '../utils/DjRatings';
+import { djVotes, refreshRatings, starsFor } from '../utils/DjRatings';
 
 import type { NoDetail } from '../utils/events';
 // v3: the DJ roster changed (countries and portraits); settings saved for the old DJs no longer apply
@@ -11,6 +11,8 @@ const STORAGE_KEY_APPLIED = 'gamedj.djPresetApplied.v3';
 const STORAGE_KEY_ON_DECK = 'gamedj.djOnDeck';
 /** The Robot DJ: an android, first in the list, on deck the first time the app starts and after every dice roll */
 export const ROBOT_DJ_ID = 'robot';
+/** How often the open DJ dialog asks the server for everyone's new votes */
+const RATINGS_POLL_MS = 20_000;
 /** Its id before it was renamed (saved settings and the DJ on deck are carried over) */
 const OLD_ROBOT_ID = 'random';
 
@@ -226,13 +228,13 @@ export class DjPresetDialog extends LitElement {
     /* One column that scrolls: contain: size keeps the list from making the dialog taller (the settings panel sets the height) */
     .list { display: flex; flex-direction: column; contain: size; gap: 5px; padding: 10px; border-right: 1px solid var(--border-color); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--muted-teal) transparent; }
     .dj-item {
-      display: flex; flex: none; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; min-width: 0;
+      display: flex; flex: none; align-items: center; gap: 8px; padding: 4px 6px; cursor: pointer; min-width: 0; position: relative;
       border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-color); transition: background 0.2s;
     }
     .dj-item:hover { background: var(--surface-active); }
     .dj-item.selected { border-color: var(--muted-teal); box-shadow: 0 0 0 1px var(--muted-teal) inset; }
     .dj-item .thumb { width: 42px; height: 42px; border-radius: 50%; overflow: hidden; flex: none; }
-    .dj-item .nm { font-weight: bold; font-size: 13px; }
+    .dj-item .nm { font-weight: bold; font-size: 13px; padding-right: 58px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dj-item > div:last-child { min-width: 0; }
     .dj-item .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dj-item .sub { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -250,9 +252,11 @@ export class DjPresetDialog extends LitElement {
     .stars { position: relative; display: inline-block; line-height: 1; letter-spacing: 1px; font-size: 12px; vertical-align: middle; }
     .stars .bg { color: #555; }
     .stars .fg { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: #ffc940; }
-    .dj-item .stars { font-size: 10px; display: block; margin-top: 2px; width: max-content; }
-    .rating { margin-top: 6px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-    .rating .stars { font-size: 15px; }
+    /* Stars in the top-right corner: small on the list cards, large with the counts on the DJ's panel */
+    .dj-item .stars { font-size: 10px; position: absolute; top: 6px; right: 8px; }
+    .name-row { display: flex; align-items: flex-start; gap: 12px; }
+    .rating { margin-left: auto; font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; align-items: flex-end; gap: 3px; white-space: nowrap; }
+    .rating .stars { font-size: 17px; }
     .unrated { font-style: italic; }
     .label { font-size: 11px; color: var(--text-muted); font-weight: bold; margin-bottom: 2px; display: flex; justify-content: space-between; }
     .hint { font-size: 9px; color: var(--text-muted); opacity: 0.8; margin-top: 0; }
@@ -277,16 +281,22 @@ export class DjPresetDialog extends LitElement {
       window.addEventListener('keydown', this.handleKeyDown);
       window.addEventListener('dj-ratings-changed', this.onRatings);
       this.restoreFromStorage();
+      refreshRatings(); // everyone's stars, from the server
   }
 
   disconnectedCallback() {
       super.disconnectedCallback();
       window.removeEventListener('keydown', this.handleKeyDown);
       window.removeEventListener('dj-ratings-changed', this.onRatings);
+      this.stopRatingsPoll();
   }
 
   /** A new vote: the stars are drawn again */
   private onRatings = () => this.requestUpdate();
+
+  /** While the dialog is open the stars follow everyone's new votes */
+  private ratingsPoll: number | null = null;
+  private stopRatingsPoll() { if (this.ratingsPoll !== null) { clearInterval(this.ratingsPoll); this.ratingsPoll = null; } }
 
   /** The DJ on deck (the one a take is credited to) */
   public get onDeck(): { id: string; name: string } {
@@ -299,7 +309,11 @@ export class DjPresetDialog extends LitElement {
       if (changed.has('show') && this.show) {
           this.draft = clone(this.presets);
           this.selectedIndex = this.appliedIndex;
+          refreshRatings();
+          this.stopRatingsPoll();
+          this.ratingsPoll = window.setInterval(() => refreshRatings(), RATINGS_POLL_MS);
       }
+      if (changed.has('show') && !this.show) this.stopRatingsPoll();
   }
 
   // Each DJ keeps its own settings; they survive an app restart via localStorage.
@@ -358,15 +372,16 @@ export class DjPresetDialog extends LitElement {
               ${this.draft.map((d, i) => html`
                 <div class="dj-item ${i === this.selectedIndex ? 'selected' : ''}" @click=${() => { this.selectedIndex = i; }}>
                   <div class="thumb">${portrait(d)}</div>
-                  <div><div class="nm">${d.name}${stars(d, false)}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : origin(d)}</div></div>
+                  ${stars(d, false)}
+                  <div><div class="nm">${d.name}</div><div class="sub">${i === this.appliedIndex ? html`<span class="live">● On deck</span>` : origin(d)}</div></div>
                 </div>`)}
             </div>
             <div class="detail">
               <div class="head">
                 <div class="big">${portrait(p)}</div>
-                <div><h3>${p.name}</h3><p>${origin(p)}</p><p>${p.tagline}</p>
+                <div style="flex: 1; min-width: 0"><div class="name-row"><h3>${p.name}</h3><div class="rating">${stars(p, true)}</div></div><p>${origin(p)}</p><p>${p.tagline}</p>
                   <div class="home">${isAndroid(p) ? html`Studies: <b>every genre equally</b>` : html`Home styles: <b>${p.homeStyles.map(h => h[1]).join(', ')}</b>`}</div>
-                  <div class="rating">${stars(p, true)}</div></div>
+                </div>
               </div>
 
               <div>

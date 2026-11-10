@@ -126,11 +126,18 @@ export function isGenericStyle(genre: string, style: string): boolean {
     return !st || st === genre.toLowerCase() || GENERIC_STYLE_NAMES.includes(st);
 }
 
+/** Words that name an instrument in the genre text (to leave those parts out when the channels choose the instruments) */
+const INSTRUMENT_WORDS = /guitar|ukulele|violin|fiddle|tabla|sitar|balalaika|mandolin|drum|percussion|piano|flute|accordion|harp|banjo|bagpipe|pipes|whistle|bouzouki|\boud\b|dulcimer|zither|lute|bodhran|trumpet|horn|brass|organ|cello|bass|synth|marimba|xylophone|kora|djembe/i;
+
 /** Short tags for the live (Lyria RealTime) prompt: it reads tags, not sentences. */
-export function fidelityTags(genre: string, style: string): string[] {
+export function fidelityTags(genre: string, style: string, withoutInstruments = false): string[] {
     const name = style && !style.toLowerCase().includes(genre.toLowerCase()) ? `${genre} ${style}` : (style || genre);
     const tags: string[] = [];
-    if (GENRE_AUTHENTICITY[genre]) tags.push(`authentic traditional ${name} music, ${GENRE_AUTHENTICITY[genre].split(',').slice(0, 3).join(',')}`);
+    if (GENRE_AUTHENTICITY[genre]) {
+        // With instruments chosen on the channels the tag must not name others (a ukulele in the text competes with the chosen trumpet)
+        const parts = GENRE_AUTHENTICITY[genre].split(',').map(p => p.trim()).filter(p => !withoutInstruments || !INSTRUMENT_WORDS.test(p));
+        tags.push(`authentic traditional ${name} music${parts.length ? ', ' + parts.slice(0, 3).join(', ') : ''}`);
+    }
     if (isGenericStyle(genre, style)) tags.push(`classic typical ${genre} sound, true to the genre`);
     return tags;
 }
