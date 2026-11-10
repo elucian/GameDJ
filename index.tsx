@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, ChannelState } from './types';
+import type { Prompt, InstrumentSet, MusicGenerationMode, ChannelState } from './types';
 import { GoogleGenAI } from '@google/genai';
 import { PromptDjMidi } from './components/PromptDjMidi';
 import { ToastMessage } from './components/ToastMessage';
@@ -13,23 +13,26 @@ import { TopToolbar, MUSIC_DATA } from './components/TopToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { VocalDialog } from './components/VocalDialog';
-import { AboutDialog } from './components/AboutDialog';
 import { DjPresetDialog, ROBOT_DJ_ID } from './components/DjPresetDialog';
 import { Timeline } from './components/Timeline';
-import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage, refreshCredits, claimSupport, supportPending, clearSupportPending, supportIntent, getSupportEmail } from './utils/UserQuota';
-import { ThanksDialog } from './components/ThanksDialog';
-import { RatingDialog } from './components/RatingDialog';
-import { TakeRatingTracker } from './utils/TakeRating';
-import { recordVote } from './utils/DjRatings';
-import { SupportDialog } from './components/SupportDialog';
+import { getUserId, quotaStatus, recordUsage, reserveQuota, refundQuota, giveBackEarly, unrecordUsage } from './utils/UserQuota';
 import { DURATION_STEPS } from './constants/durations';
-import { LiveMusicHelper, STYLE_DESCRIPTORS, isVocalInstrument, chooseDjManifest, chooseLyricsLanguage, djEvolutionFor, type DjPersonality } from './utils/LiveMusicHelper';
+import { LiveMusicHelper } from './utils/LiveMusicHelper';
+import { STYLE_DESCRIPTORS, isVocalInstrument, chooseLyricsLanguage } from './music/vocabulary';
+import { chooseDjManifest, djEvolutionFor, type DjPersonality } from './music/djRules';
 import { LYRIA_VOICE_CHANNELS } from './constants/instruments';
 import { AudioAnalyser } from './utils/AudioAnalyser';
 import { uiSounds } from './utils/UISounds';
 import { on } from './utils/events';
+import type { App } from './app/context';
 import { loadStereoSettings, saveStereoSettings } from './utils/StereoStage';
-import { inject, track } from '@vercel/analytics';
+import { inject } from '@vercel/analytics';
+import { setupSupportDialogs } from './app/supportDialogs';
+import { setupExport } from './app/export';
+import { setupVoices } from './app/voices';
+import { setupStage } from './app/stage';
+import { setupChannels } from './app/channels';
+import { setupRating } from './app/rating';
 
 // Vercel Web Analytics: page views only (it does nothing on localhost)
 inject();
@@ -45,6 +48,24 @@ function main() {
   const djPresetDialog = new DjPresetDialog();
   const timeline = new Timeline();
   const pdjMidi = new PromptDjMidi();
+  // What the app's parts (app/*.ts) share. liveMusicHelper, toastMessage and the actions are made further down:
+  // the getters read them when a part uses them (in its event handlers), never at setup.
+  const app: App = {
+      topToolbar, leftSidebar, rightSidebar, vocalDialog, djPresetDialog, timeline, pdjMidi,
+      get liveMusicHelper() { return liveMusicHelper; },
+      get toastMessage() { return toastMessage; },
+      actions: {
+          get cancelAutoLoop() { return cancelAutoLoop; },
+          get syncVoiceBlocked() { return syncVoiceBlocked; },
+          get refreshPromptPanel() { return refreshPromptPanel; },
+          get replaceVocalInstruments() { return replaceVocalInstruments; },
+          get ensureVoiceChannels() { return ensureVoiceChannels; },
+          get songsAvailable() { return songsAvailable; },
+          get fallBackToLive() { return fallBackToLive; },
+          get djStepsDownForVoices() { return djStepsDownForVoices; },
+          get syncVoiceDialog() { return syncVoiceDialog; },
+      },
+  };
   
   let autoLoopCountdownTimer: number | null = null;
   let autoLoopSecondsRemaining = 20;
@@ -86,66 +107,7 @@ function main() {
   document.body.appendChild(djPresetDialog);
   document.body.appendChild(vocalDialog);
 
-  // Ko-fi "Unlock N songs": the item's custom URL is /thanks. The dialog shows the bought songs (the webhook may need
-  // a few seconds) and lets the buyer claim them with the Ko-fi e-mail.
-  const thanksDialog = new ThanksDialog();
-  document.body.appendChild(thanksDialog);
-  const showThanks = async () => {
-      thanksDialog.show = true; thanksDialog.waiting = true; thanksDialog.credits = null;
-      for (let i = 0; i < 8; i++) {
-          const credits = await refreshCredits();
-          if (credits !== null) thanksDialog.credits = credits;
-          if (credits) { syncVoiceBlocked(); break; }
-          await new Promise(r => setTimeout(r, 4000));
-      }
-      thanksDialog.waiting = false;
-      // Not credited to this browser (another browser paid, or no e-mail was given first): claim with the remembered e-mail
-      const email = getSupportEmail();
-      if (!thanksDialog.credits && email) {
-          const r = await claimSupport(email);
-          if (r) { thanksDialog.credits = r.credits; syncVoiceBlocked(); thanksDialog.claimResult(r); }
-      }
-  };
-  if (location.pathname.replace(/\/+$/, '') === '/thanks') showThanks();
-  on(thanksDialog, 'claim-support', async (e) => {
-      const r = await claimSupport(e.detail);
-      thanksDialog.claimResult(r);
-      if (r) { thanksDialog.credits = r.credits; syncVoiceBlocked(); }
-  });
-
-  // Ko-fi button: ask for the e-mail first, then open the shop item
-  const supportDialog = new SupportDialog();
-  document.body.appendChild(supportDialog);
-  window.addEventListener('show-support', () => { supportDialog.show = true; });
-  on(supportDialog, 'continue-support', (e) => {
-      supportIntent(e.detail);
-      window.open('https://ko-fi.com/s/3901d91669', '_blank', 'noopener');
-  });
-
-  // About dialog: opens when the GameDJ label is pressed, with this browser's quota counts
-  const aboutDialog = new AboutDialog();
-  document.body.appendChild(aboutDialog);
-  const fillAbout = () => {
-      const song = quotaStatus('song'), live = quotaStatus('live');
-      aboutDialog.songsUsed = song.used; aboutDialog.songsLimit = song.limit;
-      aboutDialog.liveUsed = live.used; aboutDialog.liveLimit = live.limit;
-  };
-  window.addEventListener('show-about', () => {
-      fillAbout();
-      aboutDialog.show = true;
-      // Songs bought on Ko-fi are kept on the server: ask for the current count when the dialog opens
-      refreshCredits().then(c => { if (c !== null) { fillAbout(); syncVoiceBlocked(); } });
-  });
-  // Back from Ko-fi after pressing Support: look for the new songs once
-  window.addEventListener('focus', async () => {
-      if (!supportPending()) return;
-      const c = await refreshCredits();
-      if (c) {
-          clearSupportPending();
-          syncVoiceBlocked(); fillAbout();
-          toastMessage.show(`Thank you! ${c} extra songs unlocked.`);
-      }
-  });
+  setupSupportDialogs(app);
   
   on(leftSidebar, 'toggle-vocal-dialog', () => {
     vocalDialog.show = !vocalDialog.show;
@@ -317,7 +279,6 @@ function main() {
   audioAnalyser.start();
 
   let djEngagingCountdown = false;
-  let warmupInterval: number | null = null;
   // Counts DJ activations so a stale async DJ setup can detect that a newer request superseded it
   let djRequest = 0;
 
@@ -759,32 +720,14 @@ function main() {
     liveMusicHelper.cancelSongRender();
     liveMusicHelper.stop();
     deactivateDj();
-    if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
+    stopWarmupCountdown();
   });
   on(leftSidebar, 'pause', () => { cancelAutoLoop(); liveMusicHelper.pause(); });
   on(leftSidebar, 'resume', () => { cancelAutoLoop(); liveMusicHelper.resume(); });
   on(leftSidebar, 'loop-changed', (e) => { cancelAutoLoop(); liveMusicHelper.setLoop(e.detail); });
   on(leftSidebar, 'play-recording', () => { cancelAutoLoop(); liveMusicHelper.playRecording(); });
   on(leftSidebar, 'back-to-start', () => { cancelAutoLoop(); liveMusicHelper.startRewind(); });
-  let exporting = false;
-  on(leftSidebar, 'download', (e) => {
-    cancelAutoLoop();
-    // Download counter in Vercel Web Analytics (custom event, no personal data), only when there is something to save
-    if (leftSidebar.hasRecording) track('download', { format: String(e.detail) });
-    // One export at a time: an MP3 is encoded in the background and takes a few seconds per minute of music
-    if (exporting) { pdjMidi.setMessage('EXPORT IN PROGRESS...', 'info'); return; }
-    const format = e.detail;
-    exporting = true;
-    if (format !== 'webm') pdjMidi.setMessage(`EXPORTING ${format.toUpperCase()}...`, 'info');
-    let shown = -1;
-    liveMusicHelper.download(format, vocalDialog.songName, done => {
-        const pct = Math.floor(done * 10) * 10; // every 10%
-        if (pct !== shown && pct < 100) { shown = pct; pdjMidi.setMessage(`EXPORTING ${format.toUpperCase()}... ${pct}%`, 'info'); }
-    }).then(r => {
-        if (r) pdjMidi.setMessage(`SAVED ${r.filename}${r.note ? ` (${r.note.toUpperCase()})` : ''}`, 'info');
-    }).catch(err => pdjMidi.setMessage(`EXPORT FAILED: ${String(err?.message || err).toUpperCase()}`, 'error'))
-      .finally(() => { exporting = false; });
-  });
+  setupExport(app);
   
   // Voice mode off: any voice instrument on a channel is swapped for a random non-voice instrument recommended for the genre
   // `keep` + `force`: also in voice mode, swap the voices on every channel except `keep` (locked voice settings)
@@ -907,119 +850,7 @@ function main() {
       refreshPromptPanel();
   }));
 
-  // === Voice dialog <-> voice channels ===
-  const VOICE_NAMES = ['Soprano', 'Alto', 'Tenor', 'Baritone'];
-  const CHOIR_CANDIDATES: Record<string, string[]> = {
-      Church: ['Gregorian Chant', 'Mixed Choir'], Gospel: ['Gospel Choir'], Chamber: ['Chamber Choir'], Military: ['Male Choir'],
-      Youth: ['Female Choir', 'Mixed Choir'], Children: ['Childrens Choir'], Mixed: ['Mixed Choir', 'Epic Choir', 'A Cappella Group']
-  };
-  let syncingFromDialog = false;
-
-  // What the voice channels say about the Voice dialog: choir kind, and how many solo voices (1 solo, 2 duet, 4 quartet).
-  // A choir gets an even number of solo voices. Keeps the voices already chosen when the count still fits.
-  const voicesFromChannels = (current: { solos: string[]; choir: string }) => {
-      const s = rightSidebar.settings;
-      let soloCount = 0; let choir = 'None';
-      const hints: string[] = [];
-      (['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const).forEach(ch => {
-          const c = s[ch];
-          if (c.visible === false || !c.active || !isVocalInstrument(c.instrument)) return;
-          const n = c.instrument.toLowerCase();
-          if (n.includes('quartet')) soloCount = Math.max(soloCount, 4);
-          else if (n.includes('duet')) soloCount = Math.max(soloCount, 2);
-          else if (n.includes('chamber')) choir = 'Chamber';
-          else if (n.includes('gospel')) choir = 'Gospel';
-          else if (n.includes('gregorian') || n.includes('chant')) choir = 'Church';
-          else if (n.includes('male choir') && !n.includes('female')) choir = 'Military';
-          else if (n.includes('child') && n.includes('choir')) choir = 'Children';
-          else if (n.includes('choir') || n.includes('cappella') || n.includes('ensemble')) choir = 'Mixed';
-          else {
-              soloCount = Math.max(soloCount, 1);
-              if (n.includes('female') || n.includes('soprano') || n.includes('girl') || n.includes('child')) hints.push('Soprano', 'Alto');
-              else if (n.includes('male') || n.includes('tenor') || n.includes('rapper') || n.includes('mc ')) hints.push('Tenor', 'Baritone');
-          }
-      });
-      if (soloCount === 0 && choir === 'None') return null;
-      if (choir !== 'None' && soloCount % 2 === 1) soloCount++;
-      const solos = current.solos.slice(0, soloCount);
-      [...hints, ...[...VOICE_NAMES].sort(() => Math.random() - 0.5)].forEach(v => { if (solos.length < soloCount && !solos.includes(v)) solos.push(v); });
-      return { solos, choir };
-  };
-
-  // Channel changed: mirror it in the Voice dialog (only when something actually differs)
-  const syncVoiceDialog = () => {
-      // Locked voice settings are the truth: the channels never rewrite them
-      if (syncingFromDialog || vocalDialog.locked) return;
-      const current = vocalDialog.getVoices();
-      const target = voicesFromChannels(current);
-      if (target && (target.choir !== current.choir || target.solos.length !== current.solos.length)) {
-          vocalDialog.setVoices(target.solos, target.choir);
-          liveMusicHelper.setVoiceCast(target.solos);
-          refreshPromptPanel();
-      }
-  };
-
-  // The Voice dialog's voices go onto the voice channels as a matching random voice instrument.
-  // Returns the channels that got a voice (empty when the dialog has none).
-  const applyDialogVoices = (solos: string[], choir: string): (keyof InstrumentSet)[] => {
-      // Solo voices on the lead (LEAD VOICE track), the choir on the alto (BACKGROUND CHOIR track), whatever the other tracks are
-      const soloCh: keyof InstrumentSet = LYRIA_VOICE_CHANNELS.solo;
-      const choirCh: keyof InstrumentSet = LYRIA_VOICE_CHANNELS.choir;
-      const pick: Partial<Record<keyof InstrumentSet, string[]>> = {};
-      if (choir !== 'None') pick[choirCh] = CHOIR_CANDIDATES[choir] || [];
-      const isFemale = (v: string) => v === 'Soprano' || v === 'Alto';
-      if (solos.length === 1) pick[soloCh] = [isFemale(solos[0]) ? 'Solo Female' : 'Solo Male'];
-      else if (solos.length === 2) pick[soloCh] = [solos.every(isFemale) ? 'Duet Female' : solos.some(isFemale) ? 'Duet Mix' : 'Duet Male'];
-      else if (solos.length >= 3) pick[soloCh] = ['Quartet Mix'];
-      if (!pick[soloCh] && !pick[choirCh]) return [];
-      if (!songsAvailable()) { pdjMidi.setMessage('NO SONGS LEFT: VOICES NEED A LYRIA 3.5 SONG', 'error'); return []; }
-      // Picking voices makes the voice the primary mode: without VOCALIZATION no voice reaches Lyria
-      // (and the channels would not even offer voice instruments)
-      if (liveMusicHelper.generationMode !== 'VOCALIZATION') {
-          liveMusicHelper.setGenerationMode('VOCALIZATION');
-          pdjMidi.setMessage('VOICES SELECTED: MODE VOCALIZATION', 'info');
-      }
-      syncingFromDialog = true;
-      try { rightSidebar.setVoiceInstruments(pick); } finally { syncingFromDialog = false; }
-      refreshPromptPanel();
-      return Object.keys(pick) as (keyof InstrumentSet)[];
-  };
-
-  // You picked voices or a choir in the dialog: the voice channels switch to a matching random voice instrument
-  on(vocalDialog, 'voices-applied', (e) => {
-      if (!songsAvailable()) { pdjMidi.setMessage('NO SONGS LEFT: VOICE MODE NOT AVAILABLE', 'error'); return; }
-      djStepsDownForVoices('THE DJ DOES NOT CONDUCT VOICES');
-      liveMusicHelper.setGenerationMode('VOCALIZATION');
-
-      rightSidebar.currentTab = 'Lyria';
-      applyDialogVoices(e.detail.solos, e.detail.choir);
-      // Never defined anywhere: the call threw on every Apply of the Voice dialog
-  });
-
-  // Dice in voice mode: locked voice settings put exactly the dialog's voices on stage (and no other voices);
-  // otherwise a voice is added only when no channel has one. The DJ never places voices.
-  const placeVoices = () => {
-      const { solos, choir } = vocalDialog.getVoices();
-      if (vocalDialog.locked && liveMusicHelper.generationMode === 'VOCALIZATION' && !rightSidebar.locks.channels && (solos.length > 0 || choir !== 'None')) {
-          const voiced = applyDialogVoices(solos, choir);
-          replaceVocalInstruments(voiced, true);
-          liveMusicHelper.setVoiceCast(solos);
-          return;
-      }
-      ensureVoiceChannels();
-  };
-
-  // Voice off and primary mode DIVERSITY (DJ activation, power button): voice instruments leave the channels,
-  // the voice tracks are no longer offered and the Voice dialog closes. Lyrics and song title are kept.
-  const voiceOffToDiversity = (ignoreLock = false, keepQuality = false) => {
-      const mode: MusicGenerationMode = keepQuality ? 'QUALITY' : 'DIVERSITY';
-      liveMusicHelper.setGenerationMode(mode);
-      leftSidebar.primaryMode = mode;
-      rightSidebar.voiceEnabled = false;
-      vocalDialog.show = false;
-      replaceVocalInstruments([], true, ignoreLock);
-      refreshPromptPanel();
-  };
+  const { applyDialogVoices, placeVoices, syncVoiceDialog, voiceOffToDiversity } = setupVoices(app);
 
   on(rightSidebar, 'tab-changed', (e) => {
       // The tab only changes the prompts (orchestra / voices or band). Live takes always stream from the realtime
@@ -1254,81 +1085,7 @@ function main() {
   on(rightSidebar, 'duration-changed', () => syncBars());
   setTimeout(() => { topToolbar.emitTempoState(); syncBars(); }, 0);
 
-  // While the DJ conducts a live recording it also works the master controls (volume, evolution) and the volume of
-  // each track — even though they are disabled for the user — and varies tempo, key and rhythm. It never touches
-  // manifest or instruments.
-  type Mix = [number, number, number, number, number]; // lead, alto, harmonic, bass, rhythm
-  const STAGE_MIX: Record<string, Mix> = {
-      intro: [0.6, 0.6, 0.9, 0.5, 0.4],  verse: [0.9, 0.7, 0.8, 0.8, 0.7],
-      main: [0.9, 0.9, 0.9, 0.9, 0.9],     build: [0.8, 0.8, 0.8, 0.9, 0.9],  chorus: [1, 0.9, 0.9, 1, 1],
-      climax: [1, 1, 1, 1, 1],             breakdown: [0.8, 0.6, 0.8, 0.5, 0.3], solo: [1, 0.5, 0.7, 0.8, 0.8],
-      outro: [0.6, 0.5, 0.8, 0.4, 0.3]
-  };
-  const STAGE_VOLUME: Record<string, number> = { intro: 0.5, outro: 0.5, breakdown: 0.6, build: 0.7, chorus: 0.9, climax: 0.9 };
-  const STAGE_EVOLUTION: Record<string, number> = { intro: -3, outro: -4, breakdown: 0, build: 2, verse: 1, main: 2, chorus: 5, climax: 6, solo: 3 };
-  const djStageControls = (type: string | undefined, index: number) => {
-      const t = type || 'main';
-      const volume = STAGE_VOLUME[t] ?? 0.7;
-      rightSidebar.volume = volume;
-      liveMusicHelper.setVolume(volume);
-
-      const evo = Math.max(-10, Math.min(10, (STAGE_EVOLUTION[t] ?? 1) + Math.round(Math.random() * 2 - 1)));
-      rightSidebar.setEvolution(evo);
-      liveMusicHelper.setEvolution(evo);
-
-      // The DJ mixes the tracks too: each stage has its balance, with a little variation
-      const mix = STAGE_MIX[t] ?? [0.85, 0.85, 0.85, 0.85, 0.85];
-      const keys = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
-      const vols: Partial<Record<keyof InstrumentSet, number>> = {};
-      keys.forEach((k, i) => { vols[k] = Math.max(0, Math.min(1, mix[i] + (Math.random() * 0.16 - 0.08))); });
-      rightSidebar.setChannelVolumes(vols);
-
-      if (index > 0 && Math.random() < 0.5) {
-          const change = topToolbar.djVary();
-          if (change) pdjMidi.setMessage(`DJ VARIATION: ${change}`, 'info');
-      }
-  };
-
-  on(liveMusicHelper, 'conductor-stage-changed', (e) => {
-      const { name, type, index } = e.detail;
-      pdjMidi.setMessage(`DJ: ${name}`, 'info');
-      if (type !== undefined && liveMusicHelper.conductorMode && liveMusicHelper.playbackState === 'recording') {
-          djStageControls(type, index ?? 0);
-      }
-  });
-  
-  on(liveMusicHelper, 'conductor-anticipation', (e) => {
-      const { msg } = e.detail;
-      pdjMidi.setMessage(msg, 'info');
-  });
-
-  on(liveMusicHelper, 'warmup-started', (e) => {
-      if (warmupInterval) clearInterval(warmupInterval);
-      const totalMs = e.detail.durationMs;
-      const warmupMs = e.detail.warmupMs;
-      let remainingMs = totalMs;
-
-      const updateMsg = () => {
-          const isTuning = remainingMs > (totalMs - warmupMs);
-          const displaySecs = Math.ceil(remainingMs / 1000);
-          if (isTuning) {
-              pdjMidi.setMessage(`ORCHESTRA TUNING: ${displaySecs}S...`, 'info');
-          } else {
-              pdjMidi.setMessage(`BATON RAISED: ${displaySecs}S...`, 'info');
-          }
-      };
-
-      updateMsg();
-      warmupInterval = window.setInterval(() => {
-          remainingMs -= 1000;
-          if (remainingMs > 0 && (liveMusicHelper.playbackState === 'warmup' || liveMusicHelper.playbackState === 'preparing')) {
-              updateMsg();
-          } else {
-              clearInterval(warmupInterval!);
-              warmupInterval = null;
-          }
-      }, 1000);
-  });
+  const { stopWarmupCountdown } = setupStage(app);
   
   on(leftSidebar, 'randomize', async () => {
       cancelAutoLoop();
@@ -1423,7 +1180,7 @@ function main() {
       giveBackTake();
       cancelAutoLoop();
       leftSidebar.isResetting = true;
-      if (warmupInterval) { clearInterval(warmupInterval); warmupInterval = null; }
+      stopWarmupCountdown();
       takeRating.cancel(); // Reset stops the music without asking
       ratingDialog.show = false;
       await liveMusicHelper.stop(true); 
@@ -1450,88 +1207,9 @@ function main() {
       setTimeout(() => { leftSidebar.isResetting = false; }, 800);
   });
 
-  let hadVoiceOnStage = false;
-  on(rightSidebar, 'channels-changed', ((e) => {
-      cancelAutoLoop();
-      const detail = e.detail;
-      
-      // The prompts name each channel by its role, which differs between the Band and Lyria tabs
-      liveMusicHelper.isLiraMode = rightSidebar.currentTab === 'Lyria';
-      // Each track's volume scales the weight the engine gets (Lyria mixes one stream: no separate gain per instrument)
-      const scaled = {} as InstrumentSet;
-      (Object.keys(detail) as Array<keyof InstrumentSet>).forEach(k => {
-          const ch = detail[k];
-          scaled[k] = { ...ch, weight: ch.weight * (ch.volume ?? 1) };
-      });
-      liveMusicHelper.setInstruments(scaled);
-      syncVoiceDialog();
-      
-      // ... rest of logic
-      
-      const vocalInManifest = (Object.values(detail) as ChannelState[]).some(ch => {
-          if (ch.visible === false) return false;
-          return isVocalInstrument(ch.instrument);
-      });
-      leftSidebar.hasVocalInstrument = vocalInManifest;
+  setupChannels(app);
 
-      // A voice just came on stage (preset, locked channels, Voice dialog): the voice becomes the primary mode.
-      // Only on the change, so switching the mode off yourself afterwards is respected.
-      const voiceOnStage = (Object.values(detail) as ChannelState[]).some(ch => ch.visible !== false && ch.active && isVocalInstrument(ch.instrument));
-      if (voiceOnStage && !songsAvailable()) {
-          // No songs left: a voice cannot be sung, it leaves the stage
-          hadVoiceOnStage = false;
-          if (liveMusicHelper.generationMode === 'VOCALIZATION') fallBackToLive(); else replaceVocalInstruments([], true);
-          pdjMidi.setMessage('NO SONGS LEFT: VOICES NOT AVAILABLE', 'error');
-      } else {
-          if (voiceOnStage && !hadVoiceOnStage) djStepsDownForVoices('A VOICE IS ON STAGE');
-          if (voiceOnStage && !hadVoiceOnStage && liveMusicHelper.generationMode !== 'VOCALIZATION') {
-              liveMusicHelper.setGenerationMode('VOCALIZATION');
-              pdjMidi.setMessage('VOICE ON STAGE: MODE VOCALIZATION', 'info');
-          }
-          hadVoiceOnStage = voiceOnStage;
-      }
-
-      timeline.visibleChannels = { 
-        lead: detail.lead?.visible !== false, 
-        alto: detail.alto?.visible !== false,
-        harmonic: detail.harmonic?.visible !== false, 
-        bass: detail.bass?.visible !== false, 
-        rhythm: detail.rhythm?.visible !== false 
-      };
-      
-      timeline.activeChannels = { 
-        lead: !!(detail.lead?.active && detail.lead?.weight > 0), 
-        alto: !!(detail.alto?.active && detail.alto?.weight > 0),
-        harmonic: !!(detail.harmonic?.active && detail.harmonic?.weight > 0), 
-        bass: !!(detail.bass?.active && detail.bass?.weight > 0), 
-        rhythm: !!(detail.rhythm?.active && detail.rhythm?.weight > 0) 
-      };
-  }));
-
-
-  on(rightSidebar, 'instrument-interacted', ((e) => {
-      cancelAutoLoop();
-      const ch = e.detail;
-      liveMusicHelper.notifyUserInteraction(ch);
-      pdjMidi.setMessage(`MIXER OVERRIDE: ${ch.toUpperCase()}`, "info");
-  }));
-
-  // "Like this?": when the music stops after a DJ's take was heard long enough, the listener rates it once (the take
-  // and all its playbacks); the vote counts for the DJ that conducted it (its stars) and for its genre and style
-  const ratingDialog = new RatingDialog();
-  document.body.appendChild(ratingDialog);
-  on(ratingDialog, 'take-rated', ((e) => {
-      const { take: t, like } = e.detail;
-      recordVote(t.djId, t.genre, t.style, like);
-      pdjMidi.setMessage(`${like ? '👍' : '👎'} DJ ${t.djName.toUpperCase()} ${like ? 'THANKS YOU' : 'WILL TRY HARDER'}`, 'info');
-  }));
-  const takeRating = new TakeRatingTracker();
-  const trackListening = (state: PlaybackState) => {
-      const toRate = takeRating.onState(state, Date.now(), () => leftSidebar.isConductorActive
-          ? { djId: djPresetDialog.onDeck.id, djName: djPresetDialog.onDeck.name, genre: topToolbar.genre, style: topToolbar.musicStyle }
-          : null);
-      if (toRate) { ratingDialog.take = toRate; ratingDialog.show = true; }
-  };
+  const { ratingDialog, takeRating, trackListening } = setupRating(app);
 
   on(liveMusicHelper, 'playback-state-changed', ((e) => {
     const playbackState = e.detail;

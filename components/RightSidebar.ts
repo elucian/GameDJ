@@ -6,7 +6,8 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
-import type { PlaybackState, InstrumentSet } from '../types';
+import type { PlaybackState, InstrumentSet, ChannelState } from '../types';
+import type { StyleMatrixUpdate } from './TopToolbar';
 import { uiSounds } from '../utils/UISounds';
 import { DURATION_STEPS, durationStepIndex } from '../constants/durations';
 import './MasterVolumePanel'; // registers <master-volume-panel>
@@ -14,7 +15,7 @@ import { MUSIC_DATA, getBandPool } from './TopToolbar';
 
 
 import { FALLBACK_POOLS, getLyriaPool, LYRIA_INSTRUMENTAL_POOLS, LEAD_VOICE_OPTIONS } from '../constants/instruments';
-import { isVocalInstrument, isTraditionalGenre } from '../utils/LiveMusicHelper';
+import { isVocalInstrument, isTraditionalGenre } from '../music/vocabulary';
 
 
 type Slot = keyof InstrumentSet;
@@ -634,11 +635,11 @@ export class RightSidebar extends LitElement {
 
       this.settings = { ...newSettings };
       
-      (this as any).requestUpdate();
+      this.requestUpdate();
       this.dispatchChannelsChanged();
   }
 
-  private validateCurrentInstrument(channel: keyof InstrumentSet, st: any, all?: Record<string, any>) {
+  private validateCurrentInstrument(channel: keyof InstrumentSet, st: ChannelState, all?: InstrumentSet) {
       if (!st.instrument) return;
       const recommended = this.getRecommendedInstruments(channel);
 
@@ -652,7 +653,7 @@ export class RightSidebar extends LitElement {
       if (pool.length > 0) st.instrument = pool[Math.floor(Math.random() * pool.length)];
   }
 
-  public applyMatrixUpdate(detail: { manifest: any, instruments: any, weights?: any, style: string, pools: any }) {
+  public applyMatrixUpdate(detail: StyleMatrixUpdate) {
       
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
       const newSettings = { ...this.settings };
@@ -676,7 +677,7 @@ export class RightSidebar extends LitElement {
       const i = durationStepIndex(mins);
       if (this.manifestLocked && !force) return DURATION_STEPS[this.durationIndex].value;
       this.durationIndex = i;
-      (this as any).requestUpdate();
+      this.requestUpdate();
       return DURATION_STEPS[i].value;
   }
 
@@ -697,7 +698,7 @@ export class RightSidebar extends LitElement {
 
   public setEvolution(val: number) {
       this.evolution = val;
-      (this as any).requestUpdate();
+      this.requestUpdate();
   }
 
   private toggleChannelsLock() { 
@@ -1006,9 +1007,9 @@ export class RightSidebar extends LitElement {
           </div>
           <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Weight: how strongly this track is asked for">
             <span class="mini-label">WGT</span>
-            <input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => {
+            <input type="range" min="0" max="1.0" step="0.01" .value=${ch.weight} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: Event) => {
               if (!isInteractionDisabled) {
-                  const val = parseFloat(e.target.value);
+                  const val = parseFloat((e.target as HTMLInputElement).value);
                   this.settings[key].weight = val;
                   if (val > 0) this.savedWeights[key] = val;
                   uiSounds.playTick();
@@ -1019,9 +1020,9 @@ export class RightSidebar extends LitElement {
           </div>
           <div class="weight-slider ${isInteractionDisabled ? 'blocked' : ''}" title="Volume: how loud this track is in the mix">
             <span class="mini-label">VOL</span>
-            <input type="range" min="0" max="1.0" step="0.01" .value=${ch.volume ?? 1} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: any) => {
+            <input type="range" min="0" max="1.0" step="0.01" .value=${ch.volume ?? 1} tabindex=${isInteractionDisabled ? '-1' : '0'} @input=${(e: Event) => {
               if (!isInteractionDisabled) {
-                  this.settings[key].volume = parseFloat(e.target.value);
+                  this.settings[key].volume = parseFloat((e.target as HTMLInputElement).value);
                   uiSounds.playTick();
                   this.dispatchChannelsChanged();
                   this.dispatch('instrument-interacted', key);
@@ -1063,16 +1064,16 @@ export class RightSidebar extends LitElement {
       </div>
       <master-volume-panel class="manifest-box" mode="manifest"
           .bpm=${this.bpm} .bpmMin=${this.bpmMin} .bpmMax=${this.bpmMax}
-          @bpm-input=${(e: any) => this.dispatch('bpm-input', e.detail)}
+          @bpm-input=${(e: CustomEvent<number>) => this.dispatch('bpm-input', e.detail)}
           .evolution=${this.evolution}
           .durationIndex=${this.durationIndex}
           .isLocked=${isEvolutionLocked}
           .seed=${this.seed}
           .bars=${this.bars}
           .seedLocked=${this.seedLocked}
-          @seed-lock-changed=${(e: any) => this.dispatch('seed-lock-changed', e.detail)}
-          @duration-changed=${(e: any) => { this.durationIndex = DURATION_STEPS.findIndex(s => s.value === e.detail); this.dispatch('duration-changed', e.detail); }}
-          @evolution-changed=${(e: any) => { this.evolution = e.detail; this.dispatch('evolution-changed', e.detail); }}>
+          @seed-lock-changed=${(e: CustomEvent<boolean>) => this.dispatch('seed-lock-changed', e.detail)}
+          @duration-changed=${(e: CustomEvent<number>) => { this.durationIndex = DURATION_STEPS.findIndex(s => s.value === e.detail); this.dispatch('duration-changed', e.detail); }}
+          @evolution-changed=${(e: CustomEvent<number>) => { this.evolution = e.detail; this.dispatch('evolution-changed', e.detail); }}>
       </master-volume-panel>
 
       <div class="sidebar-tabs-container">
@@ -1115,7 +1116,7 @@ export class RightSidebar extends LitElement {
           .isStereo=${this.isStereo}
           .stereoWidth=${this.stereoWidth}
           .isLocked=${isEvolutionLocked}
-          @volume-changed=${(e: any) => { this.volume = e.detail; this.dispatch('volume-changed', this.volume); }}
+          @volume-changed=${(e: CustomEvent<number>) => { this.volume = e.detail; this.dispatch('volume-changed', this.volume); }}
           @stereo-changed=${(e: CustomEvent<boolean>) => { this.isStereo = e.detail; this.dispatch('stereo-changed', e.detail); }}
           @width-changed=${(e: CustomEvent<number>) => { this.stereoWidth = e.detail; this.dispatch('width-changed', e.detail); }}>
       </master-volume-panel>

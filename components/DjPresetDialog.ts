@@ -148,7 +148,7 @@ const DEFAULT_DJS: DjConfig[] = [
   }
 ];
 
-const SLIDERS: { key: keyof DjConfig; label: string; hint: string; min: number; max: number; step?: number; unit?: string }[] = [
+const SLIDERS: { key: NumericKey; label: string; hint: string; min: number; max: number; step?: number; unit?: string }[] = [
   { key: 'eagerness', label: 'Eagerness', hint: 'How fast the DJ turns knobs', min: 0, max: 100, unit: '%' },
   { key: 'diversity', label: 'Diversity', hint: 'Solos, duets and trios instead of the full band', min: 0, max: 100, unit: '%' },
   { key: 'complexity', label: 'Complexity', hint: 'Bigger ensembles, ornaments, rich arrangements', min: 0, max: 100, unit: '%' },
@@ -162,6 +162,8 @@ const SLIDERS: { key: keyof DjConfig; label: string; hint: string; min: number; 
 ];
 
 const NUMERIC_KEYS = ['eagerness', 'diversity', 'complexity', 'energy', 'atmosphere', 'warmup', 'temperature', 'maxKnobs', 'homeBias', 'habits'] as const;
+/** The DJ settings that are numbers (the sliders) */
+type NumericKey = typeof NUMERIC_KEYS[number];
 
 const isAndroid = (d: DjConfig) => d.id === ROBOT_DJ_ID;
 /** Under the name: where the DJ comes from and the age (the android has neither) */
@@ -311,7 +313,7 @@ export class DjPresetDialog extends LitElement {
                       const s = saved.find(x => x && (x.id === def.id || (isAndroid(def) && x.id === OLD_ROBOT_ID)));
                       if (!s) return def;
                       const merged: DjConfig = { ...def, channels: { ...def.channels, ...(s.channels || {}) } };
-                      NUMERIC_KEYS.forEach(k => { if (typeof s[k] === 'number') (merged as any)[k] = s[k]; });
+                      NUMERIC_KEYS.forEach(k => { const v = s[k]; if (typeof v === 'number') merged[k] = v; });
                       return merged;
                   });
               }
@@ -394,7 +396,7 @@ export class DjPresetDialog extends LitElement {
     return html`<div class='control'>
       <span class='label'>${android ? 'Curiosity' : s.label}<span>${step < 1 ? val.toFixed(1) : val}${s.unit ?? ''}</span></span>
       <input type='range' .min=${String(s.min)} .max=${String(s.max)} .step=${String(step)} .value=${String(val)}
-        @input=${(e: any) => this.updateValue(s.key, step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value))}>
+        @input=${(e: Event) => { const v = (e.target as HTMLInputElement).value; this.updateValue(s.key, step < 1 ? parseFloat(v) : parseInt(v)); }}>
       <span class="hint">${android ? 'Chance to study a random genre, all equally' : s.hint}</span>
     </div>`;
   }
@@ -406,7 +408,7 @@ export class DjPresetDialog extends LitElement {
   }
 
   private toggleChan(chan: keyof ChannelMap) { this.mutateSelected(d => { d.channels[chan] = !d.channels[chan]; }); }
-  private updateValue(key: keyof DjConfig, val: number) { this.mutateSelected(d => { (d as any)[key] = val; }); }
+  private updateValue(key: NumericKey, val: number) { this.mutateSelected(d => { d[key] = val; }); }
 
   private cancelSelection() {
     this.show = false;

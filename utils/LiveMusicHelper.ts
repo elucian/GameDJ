@@ -3,124 +3,22 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, PlaybackSnapshot } from '../types';
-import { AudioChunk, GoogleGenAI, LiveMusicSession, type LiveMusicFilteredPrompt } from '@google/genai';
+import type { PlaybackState, Prompt, InstrumentSet, MusicGenerationMode, PlaybackSnapshot, ChannelKey } from '../types';
+import { AudioChunk, GoogleGenAI, LiveMusicSession, MusicGenerationMode as SdkMusicGenerationMode, type LiveMusicFilteredPrompt, type LiveMusicGenerationConfig, type WeightedPrompt } from '@google/genai';
 import { decode, decodeAudioData } from './audio';
 import { throttle } from './throttle';
 import { PromptGuard, type PromptImprovement } from './PromptGuard';
 import type { NoDetail } from './events';
 import { uiSounds } from './UISounds';
 import { StereoStage } from './StereoStage';
+import { SafetyLimiter } from './SafetyLimiter';
 import { channelsOf, encodeMp3InWorker, encodeWav, planExport, type ExportFormat } from './AudioExport';
 import { takeSongTicket } from './UserQuota';
 import { moodPhrase } from '../constants/moods';
+import { AUTO_PHRASE_BARS, FOLK_ARC, MODERN_ARC, PHRASE_CUES, applyArrangingHabits, formForLength, type ArcSection, type Formation, type PerformancePlanStage } from '../music/songForm';
+import { GENRE_SONG_BRIEF, NON_DIATONIC_GENRES, VOICE_PERSONAS, describeVoice, fidelityLines, fidelityTags, isTraditionalGenre, isVocalInstrument, pickOne, scaleForKey } from '../music/vocabulary';
+import { djKnobBias, getDjKnobLimit, type DjPersonality } from '../music/djRules';
 
-type ChannelKey = keyof InstrumentSet;
-type Formation = 'solo' | 'duet' | 'trio' | 'quartet' | 'full';
-
-interface PerformancePlanStage {
-    stageName: string;
-    stageStartTimeSec: number;
-    activeChannels: { lead: boolean; alto: boolean; harmonic: boolean; bass: boolean; rhythm: boolean };
-    targets: { parameterName: string; targetValue: number }[];
-    channelWeights: { lead: number; alto: number; harmonic: number; bass: number; rhythm: number };
-    formation: Formation;
-    featured: ChannelKey | null;
-    type?: string;
-    /** What the DJ asks of this section (its arranging habits); written into the Lyria 3.5 song plan */
-    cue?: string;
-}
-type StorySection = { name: string; type: string; durationPct: number; cue?: string };
-
-/**
- * A DJ's arranging habits reshape the narrative before the stages are built: they add, replace or rename sections and
- * attach cues (the song plan for Lyria 3.5 reads them; the live conductor follows the sections). Each habit shows up
- * with the DJ's Signature chance (default 80%), not always, so two takes by the same DJ differ.
- */
-function applyArrangingHabits(story: StorySection[], habits: string[] | undefined, instrumental: boolean, chance = 80): StorySection[] {
-    if (!habits?.length || story.length === 0) return story;
-    const out = story.map(s => ({ ...s }));
-    const has = (h: string) => habits.includes(h) && Math.random() * 100 < chance;
-    const addCue = (s: StorySection | undefined, cue: string) => { if (s) s.cue = s.cue ? `${s.cue}; ${cue}` : cue; };
-    const first = () => out[0];
-    const last = () => out[out.length - 1];
-    const climax = () => [...out].reverse().find(s => s.type === 'climax') ?? out[Math.max(0, out.length - 2)];
-    const middleIdx = () => {
-        const mids = out.map((s, i) => ({ s, i })).filter(({ s, i }) => i > 0 && i < out.length - 1 && ['main', 'groove', 'verse', 'duet', 'trio'].includes(s.type));
-        return mids.length ? mids[Math.floor(mids.length / 2)].i : Math.floor(out.length / 2);
-    };
-    const insertBefore = (target: StorySection, sec: StorySection) => { out.splice(Math.max(1, out.indexOf(target)), 0, sec); };
-
-    // Openings (one at most)
-    if (has('a cappella opening') || has('unaccompanied verse')) {
-        Object.assign(first(), { name: instrumental ? 'Unaccompanied Opening' : 'A Cappella Opening', type: 'solo' });
-        addCue(first(), instrumental ? 'the lead instrument alone, unaccompanied, free and expressive' : 'voice alone, no instruments');
-    } else if (has('free rubato opening')) {
-        Object.assign(first(), { name: 'Rubato Opening', type: 'solo' });
-        addCue(first(), 'free time (rubato), no steady beat, the tempo sets in only at the next section');
-    } else if (has('hook first')) {
-        Object.assign(first(), { name: 'Hook Up Front', type: 'chorus' });
-        addCue(first(), 'open straight on the main hook, no intro');
-    } else if (has('layers enter one by one')) {
-        out.splice(1, 0, { name: 'Layers Enter', type: 'build', durationPct: 0.15, cue: 'instruments enter one at a time, every two bars a new layer' });
-    } else if (has('long intro')) {
-        first().durationPct *= 1.7;
-        addCue(first(), 'long, patient intro, nothing hurried');
-    }
-    if (has('slow build')) addCue(out[Math.min(1, out.length - 1)], 'a slow, gradual build, each phrase a little fuller than the last');
-
-    // Middle: dialogs and solo turns
-    if (has('call and response')) {
-        Object.assign(out[middleIdx()], { name: 'Call & Response', type: 'duet' });
-        addCue(out[middleIdx()], 'two-bar calls answered by a second instrument');
-    } else if (has('instrument dialog')) {
-        Object.assign(out[middleIdx()], { name: 'Instrument Dialog', type: 'duet' });
-        addCue(out[middleIdx()], 'two instruments in conversation, each phrase answered by the other');
-    } else if (has('instrument trading')) {
-        Object.assign(out[middleIdx()], { name: 'Trading Licks', type: 'duet' });
-        addCue(out[middleIdx()], 'two lead instruments trade four-bar solo breaks');
-    }
-    if (has('solo turns')) {
-        const i = middleIdx(); const share = out[i].durationPct / 3;
-        out.splice(i, 1, ...[1, 2, 3].map(n => ({ name: `Solo Turn ${n}`, type: 'solo', durationPct: share, cue: 'one instrument takes its turn alone, the others listen' })));
-    }
-    if (has('surprise solo')) insertBefore(climax(), { name: 'Surprise Solo', type: 'solo', durationPct: 0.1, cue: 'the band drops out suddenly, one unexpected instrument solos' });
-    if (has('tune set')) {
-        let n = 0;
-        out.forEach(s => { if (['main', 'groove', 'verse', 'chorus', 'climax'].includes(s.type)) { n++; s.name = `Tune ${n}`; } });
-        addCue(climax(), 'a change of tune, the set lifts');
-    }
-
-    // Breaks before the peak
-    if (has('percussion break')) insertBefore(climax(), { name: 'Percussion Break', type: 'percussion', durationPct: 0.1, cue: 'percussion only, hand claps and accents' });
-    else if (has('stop-time break')) insertBefore(climax(), { name: 'Stop-Time Break', type: 'trio', durationPct: 0.1, cue: 'stop-time: the band hits only beat one while the lead plays the gaps' });
-    if (has('build and drop')) {
-        insertBefore(climax(), { name: 'The Rise', type: 'build', durationPct: 0.12, cue: 'tension rises, filtered and thinning, then a short silence' });
-        Object.assign(climax(), { name: 'The Drop' });
-        addCue(climax(), 'the drop: everything hits at once');
-    }
-    if (has('stabs')) addCue(climax(), 'short accented ensemble stabs on the off-beats');
-    if (has('cinematic swell')) addCue(climax(), 'a long cinematic swell to the peak');
-    if (has('key lift')) addCue(climax(), 'key change: lift the key up a whole step');
-    if (has('grand finale')) { climax().name = 'Grand Finale'; addCue(climax(), 'everyone at full strength, broad and triumphant'); }
-
-    // Endings
-    if (has('accelerando ending')) addCue(last(), 'accelerando: the tempo speeds up to a fiery finish');
-    else if (has('tag ending')) addCue(last(), 'tag ending: the last phrase repeated three times, then one final hit');
-    else if (has('fade out')) addCue(last(), 'a slow fade out');
-    if (has('soft dynamics')) addCue(first(), 'soft dynamics throughout, never loud');
-
-    const total = out.reduce((sum, s) => sum + s.durationPct, 0);
-    out.forEach(s => { s.durationPct /= total; });
-    return out;
-}
-
-// === DJ RULES ===
-// The DJ may hold only a limited number of knobs above zero at any moment; every other knob is driven to 0.
-// The limit depends on the genre family: modern = 6, traditional = 4, regional = 2.
-const DJ_KNOBS_MODERN = 6;
-const DJ_KNOBS_TRADITIONAL = 4;
-const DJ_KNOBS_REGIONAL = 2;
 // Lyria guidance ranges from 0 to 6 (higher = follows the prompts more strictly, but transitions get abrupt).
 // The Guidance knob is the single truth: guidance = knob value x 3 (knob 0..2 = guidance 0..6), so an unset knob means 0.
 // While the DJ conducts it turns that knob itself (up to 6 for solos and duets), so the knob always shows the real value.
@@ -194,380 +92,24 @@ interface RecordingSegment {
     buffer: AudioBuffer;
 }
 
-export const VOCAL_STRINGS = [
-  'Solo Female', 'Solo Male', 'Solo Boy', 'Solo Girl', 'Solo Soprano', 'Solo Tenor', 'Operatic Soloist', 'Soloist',
-  'Mixed Choir', 'Male Choir', 'Female Choir', 'Childrens Choir', 'Epic Choir', 'Gregorian Chant', 'Gospel Choir', 'A Cappella Group', 'Chamber Choir', 'Vocal Ensemble',
-  'Male Rapper', 'Female Rapper', 'MC Vocals', 'Duet Voices', 'Quartet Voices',
-  'Duet Male', 'Duet Female', 'Duet Mix', 'Quartet Mix', 'Solo Child', 'Duet Children',
-  'Soprano Voice', 'Coral Voices', 'Coral Bass', 'Solo Voice', 'Vocal Chops', 
-  'Male Monastic Choir', 'Powerhouse Soloist', 'Bright Female Vocals', 
-  'Processed Vocals', 'Children\'s Choir', 'Gospel Vocals', 'Distant Female Voice', 
-  'Backing Choir', 'Soprano Choir', 'Tenor/Alto Choir', 'Bass Choir', 'Deep Vocal Drone',
-  'Alto Choir', 'Choir'
-];
-
-export function isVocalInstrument(instrumentName: string | undefined | null): boolean {
-    if (!instrumentName) return false;
-    const inst = instrumentName.toLowerCase().trim();
-    if (!inst || inst === 'none' || inst === 'n/a') return false;
-    
-    // Core voice channels: Match specific vocal instrument patterns
-    if (inst.includes('choir')) return true;
-    if (inst.includes('voice')) return true;
-    if (inst.includes('vocal')) return true;
-    if (inst.includes('solo female') || inst.includes('solo male') || inst.includes('solo girl') || inst.includes('solo boy')) return true;
-    
-    // Fallback to explicit list for others
-    return VOCAL_STRINGS.some(v => inst.includes(v.toLowerCase()));
-}
-
-// Descriptive style tags used by the dice roll. Lyria's safety filter rejects artist and band names ("... style",
-// "... vibe") and sometimes song titles, so these describe the sound instead. Never put names in here.
-export const STYLE_DESCRIPTORS: Record<string, string[]> = {
-  'Hip Hop': ['dusty boom bap drums with jazzy sampled loops', 'hard-hitting 808 bass and crisp hi-hats', 'laid-back synth whine and a deep groove', 'raw cypher energy with punchy drums'],
-  'Pop': ['bright polished pop production with a catchy hook', 'shimmering synths and a driving four on the floor beat', 'warm radio-friendly pop with layered harmonies'],
-  'R&B': ['smooth neo-soul chords with a slow groove', 'silky late-night r&b with warm bass', 'sensual slow jam with electric piano and soft drums'],
-  'Jazz': ['relaxed modal jazz with walking bass and brushed drums', 'swinging bebop energy with lively improvisation', 'smoky late-night jazz lounge feel'],
-  'Electronic': ['pulsing analog synth arpeggios and a steady kick', 'hypnotic four on the floor groove with evolving pads', 'intricate glitchy electronica textures'],
-  'Rock': ['driving guitar riffs with a big live drum sound', 'anthemic rock with soaring guitar leads', 'gritty garage rock energy'],
-  'Blues': ['slow twelve bar blues with expressive bending guitar', 'smoky shuffle groove with soulful call and response', 'gritty delta blues feel'],
-  'Ambient': ['slowly evolving atmospheric pads with deep space', 'weightless drifting textures and soft reverb', 'meditative calm soundscape'],
-  'Gaming': ['epic heroic adventure score with sweeping melodies', 'playful chiptune flavoured game soundtrack', 'tense cinematic boss battle energy'],
-  'Classic': ['elegant romantic era orchestral writing', 'expressive piano and strings with graceful phrasing', 'dramatic symphonic build with rich harmony'],
-  'Opera': ['grand dramatic operatic orchestration', 'sweeping romantic orchestra supporting expressive voices', 'theatrical tension and release'],
-  'Marching': ['crisp parade snare rhythm with bold brass', 'disciplined martial pulse with fanfare', 'stirring military band energy'],
-  'Renascentist': ['gentle renaissance consort with lute and recorder', 'polyphonic early music with delicate ornaments', 'courtly dance rhythm'],
-  'Victorian': ['refined parlour music with graceful piano', 'ornate romantic salon melody', 'stately nineteenth century orchestral colour'],
-  'Spiritual': ['reverent sacred atmosphere with slow harmony', 'uplifting gospel warmth and call and response', 'peaceful contemplative chant-like phrases'],
-  'Traditional': ['timeless folk feel with organic acoustic instruments', 'warm rustic traditional melody', 'heartfelt traditional dance rhythm'],
-  'Spanish': ['passionate flamenco guitar with rhythmic handclaps', 'warm nylon string guitar and lively Latin rhythm', 'fiery Spanish dance energy'],
-  'African': ['vibrant polyrhythmic percussion with a joyful groove', 'interlocking highlife style guitar lines', 'lively afrobeat groove with call and response'],
-  'Indian': ['raga inspired melody with drone and tabla rhythm', 'rich Indian classical ornamentation with sitar', 'lively Bollywood style orchestral colour'],
-  'Irish': ['spirited Irish folk with fiddle and tin whistle', 'lilting jig and reel rhythm', 'wistful Celtic melody'],
-  'Oriental': ['delicate pentatonic melody with plucked strings', 'flowing East Asian instrumental colour', 'serene traditional oriental atmosphere'],
-  'European': ['heartfelt European folk with accordion and strings', 'lively village dance with mandolin and tambourine', 'nostalgic old-world street melody'],
-  'Romanian': ['lively Balkan folk with fast violin and accordion', 'nostalgic folk melody with cimbalom shimmer', 'energetic hora dance rhythm'],
-  'Western': ['dusty frontier ballad with acoustic guitar and harmonica', 'lonesome prairie atmosphere with twangy guitar', 'steady trail riding rhythm'],
-  'Hawaiian': ['gentle island slack key guitar and ukulele', 'sunny tropical lilt with warm steel guitar', 'relaxed ocean breeze feel']
-};
-/**
- * What makes a song of each genre a song of that genre, for the full-song prompt (Lyria 3.5): how it is built
- * (`form`, used when Lyria writes its own words), how the vocals are delivered and how it should sound (`sound`).
- * Plain descriptions only: no artist, band or song names (the safety filter rejects them).
- */
-export const GENRE_SONG_BRIEF: Record<string, { form: string; vocals: string; sound: string }> = {
-  'Hip Hop': { form: '[Intro] -> [Verse 1] -> [Hook] -> [Verse 2] -> [Hook] -> [Outro]', vocals: 'rhythmic rapped verses with a sung, catchy hook', sound: 'punchy drums, deep sub bass, tight pocket groove, space in the beat for the rapper' },
-  'Pop': { form: '[Intro] -> [Verse 1] -> [Pre-Chorus] -> [Chorus] -> [Verse 2] -> [Pre-Chorus] -> [Chorus] -> [Bridge] -> [Final Chorus] -> [Outro]', vocals: 'clear lead vocal, memorable hook, stacked harmonies on the chorus', sound: 'polished modern production, big chorus lift, bright and wide mix' },
-  'R&B': { form: '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Chorus] -> [Outro]', vocals: 'smooth melismatic lead vocal with soft harmonies', sound: 'warm bass, laid-back groove, lush chords, intimate mix' },
-  'Jazz': { form: '[Intro] -> [Head: Verse 1] -> [Instrumental Solo] -> [Head: Verse 2] -> [Outro]', vocals: 'relaxed, behind-the-beat phrasing with a little improvisation', sound: 'swinging rhythm, walking bass, brushed drums, instrumental solos between the vocal choruses' },
-  'Blues': { form: 'Twelve-bar blues form: [Intro] -> [Verse 1] -> [Verse 2] -> [Guitar Solo] -> [Verse 3] -> [Outro], each verse a statement, a repeat and an answer line', vocals: 'gritty, expressive vocal with call and response against the guitar', sound: 'shuffle groove, bending guitar, raw live feel' },
-  'Electronic': { form: '[Intro] -> [Build] -> [Drop] -> [Breakdown] -> [Build] -> [Final Drop] -> [Outro]', vocals: 'sparse, processed vocal hooks and short phrases', sound: 'steady kick, evolving synth layers, tension and release, clean club mix' },
-  'Rock': { form: '[Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Guitar Solo] -> [Final Chorus] -> [Outro]', vocals: 'strong, energetic lead vocal with shouted group backing on the chorus', sound: 'driving drums, crunchy guitars, big open chorus, live band energy' },
-  'Ambient': { form: 'one slowly evolving piece: [Intro] -> [Section 1] -> [Section 2] -> [Fade Out], no hard drops', vocals: 'few or no words, floating wordless voices', sound: 'long soft pads, wide reverb, no drums or very gentle pulse' },
-  'Gaming': { form: '[Intro] -> [Main Theme] -> [Action Section] -> [Theme Returns, Bigger] -> [Outro]', vocals: 'heroic, anthemic voices only when the theme peaks', sound: 'adventurous melodic theme, rhythmic drive, cinematic layering' },
-  'Classic': { form: '[Introduction] -> [Theme A] -> [Theme B] -> [Development] -> [Theme A Returns] -> [Coda]', vocals: 'elegant, trained classical voice or wordless vocalise', sound: 'natural acoustic orchestral balance, expressive dynamics, graceful phrasing' },
-  'Opera': { form: '[Orchestral Prelude] -> [Aria: Verse 1] -> [Aria: Verse 2] -> [Dramatic Climax] -> [Final Cadence]', vocals: 'powerful trained operatic voice with wide vibrato and big high notes', sound: 'full dramatic orchestra, rubato, hall reverb' },
-  'Marching': { form: '[Fanfare] -> [Main March] -> [Trio Section] -> [Main March Returns] -> [Final Flourish]', vocals: 'unison male voices chanting or singing in a steady march rhythm', sound: 'crisp snare cadence, bold brass, strong downbeat' },
-  'Renascentist': { form: '[Instrumental Intro] -> [Verse 1] -> [Verse 2] -> [Dance Interlude] -> [Verse 3]', vocals: 'clear, unforced early-music voices in gentle polyphony', sound: 'lute, recorder and viol consort, light hand percussion, dry intimate room' },
-  'Victorian': { form: '[Introduction] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Coda]', vocals: 'refined, sincere parlour singing with clear diction', sound: 'parlour piano and strings, graceful rubato, salon room' },
-  'Spiritual': { form: '[Quiet Opening] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain, Everyone Joins] -> [Amen]', vocals: 'warm, devotional voices with call and response and rising harmony', sound: 'slow reverent pulse, handclaps or soft organ, church acoustics' },
-  'African': { form: '[Intro: Percussion] -> [Verse: Call] -> [Response] -> [Chorus] -> [Interlude] -> [Chorus]', vocals: 'call and response between a lead singer and a group', sound: 'interlocking polyrhythmic percussion, bright highlife guitar, joyful dance groove' },
-  'Indian': { form: '[Alaap: Free Intro] -> [Verse (Mukhda)] -> [Interlude] -> [Verse (Antara)] -> [Refrain]', vocals: 'expressive melodic ornaments (gamaka), emotional phrasing', sound: 'tabla rhythm, drone, sitar and strings, raga-based melody' },
-  'Irish': { form: '[Intro: Fiddle] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Instrumental Reel] -> [Final Refrain]', vocals: 'plain, heartfelt storytelling voice with group refrain', sound: 'fiddle, tin whistle, bodhran and acoustic guitar, lilting dance rhythm' },
-  'Spanish': { form: '[Guitar Intro] -> [Verse 1] -> [Estribillo (Refrain)] -> [Verse 2] -> [Estribillo] -> [Guitar Falseta] -> [Final Refrain]', vocals: 'passionate, ornamented cante with rhythmic handclaps (palmas)', sound: 'nylon-string guitar rasgueado, compás rhythm, fiery and dramatic' },
-  'Oriental': { form: '[Quiet Intro] -> [Verse 1] -> [Interlude] -> [Verse 2] -> [Closing Phrase]', vocals: 'gentle, delicate sung melody on a pentatonic scale', sound: 'plucked zither and flute, sparse space, flowing dynamics' },
-  'Romanian': { form: '[Slow Doina Intro] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Fast Hora Dance] -> [Refrain]', vocals: 'heartfelt folk voice that opens into group singing', sound: 'fast violin, accordion, cimbalom, quick accelerating dance' },
-  'European': { form: '[Instrumental Intro] -> [Verse 1] -> [Refrain] -> [Verse 2] -> [Refrain] -> [Dance Interlude] -> [Final Refrain]', vocals: 'warm, open-throated folk voice with the whole room joining the refrain', sound: 'accordion, mandolin or balalaika, fiddle, double bass and tambourine, acoustic village-hall feel' },
-  'Western': { form: '[Guitar Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Harmonica Solo] -> [Last Chorus]', vocals: 'plainspoken storytelling voice with a twang, sing-along chorus', sound: 'acoustic guitar, steady trail rhythm, harmonica and fiddle, open spaces' },
-  'Hawaiian': { form: '[Ukulele Intro] -> [Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Outro]', vocals: 'sweet, relaxed voice with gentle falsetto turns and group harmony', sound: 'ukulele, slack-key guitar, soft steel guitar, easy island sway' }
-};
-
-/**
- * What "authentic" means for each folk, regional and traditional genre: the real scales, rhythms and ornaments of the
- * tradition. Used to keep Lyria from turning folk music into pop with a folk instrument on top.
- * Plain descriptions only: no artist, band or song names.
- */
-export const GENRE_AUTHENTICITY: Record<string, string> = {
-  'African': 'polyrhythmic interlocking percussion, call and response singing, pentatonic and modal melodies, cyclical grooves',
-  'Indian': 'raga-based melody with microtonal ornaments called gamaka, tala rhythm cycles, a steady drone, tabla',
-  'Irish': 'modal melodies with traditional ornaments such as cuts and rolls, jig, reel and slow air forms, plain unaccompanied-style singing',
-  'Spanish': 'Phrygian flamenco mode, compas rhythm cycles, rasgueado guitar, ornamented cante and palmas',
-  'Oriental': 'traditional pentatonic or maqam scales, plucked and bowed traditional instruments, sparse space, no Western harmony',
-  'Romanian': 'doina-style free rubato, lautareasca violin ornaments, hora and sarba dance rhythms, Balkan modes',
-  'European': 'living European folk traditions: Russian minor-key songs with balalaika tremolo, French bal-musette waltzes, Southern Italian tarantella in fast 6/8, Neapolitan serenades with mandolin tremolo',
-  'Western': 'American frontier and country tradition: simple I-IV-V chords, open fifths, steady train-beat rhythm, storytelling melody',
-  'Hawaiian': 'slack key guitar and ukulele strumming, steel guitar glides, gentle falsetto leaps, relaxed hula sway',
-  'Spiritual': 'sacred tradition: modal chant lines, call and response, plain reverent harmony, church acoustics',
-  'Renascentist': 'modal early music, polyphonic lines, dance forms such as pavane and galliard, period instruments',
-  'Victorian': 'nineteenth-century parlour and music-hall tradition: waltz and polka forms, plain diatonic harmony, refined phrasing',
-  'Blues': 'twelve-bar form, blue notes and bent pitches, shuffle rhythm, call and response between voice and instrument',
-  'Marching': 'regimental march form with a steady two-beat cadence, bold brass melody, snare roll patterns',
-  'Classic': 'authentic classical-period craft: clear themes, functional harmony, natural dynamics, no pop rhythms',
-  'Opera': 'authentic operatic tradition: trained voices, recitative and aria forms, full dramatic orchestral support'
-};
-
-// Styles too broad to define a sound by themselves: these get the stronger "typical of the genre" push.
-const GENERIC_STYLE_NAMES = ['folk', 'traditional', 'guitar', 'classic', 'modern', 'world', 'instrumental', 'standard', 'general', 'mix'];
-
-/** True when the style says little (none, the genre's own name, or a catch-all word), so the genre must do the work. */
-export function isGenericStyle(genre: string, style: string): boolean {
-    const st = (style || '').trim().toLowerCase();
-    return !st || st === genre.toLowerCase() || GENERIC_STYLE_NAMES.includes(st);
-}
-
-/** Short tags for the live (Lyria RealTime) prompt: it reads tags, not sentences. */
-export function fidelityTags(genre: string, style: string): string[] {
-    const name = style && !style.toLowerCase().includes(genre.toLowerCase()) ? `${genre} ${style}` : (style || genre);
-    const tags: string[] = [];
-    if (GENRE_AUTHENTICITY[genre]) tags.push(`authentic traditional ${name} music, ${GENRE_AUTHENTICITY[genre].split(',').slice(0, 3).join(',')}`);
-    if (isGenericStyle(genre, style)) tags.push(`classic typical ${genre} sound, true to the genre`);
-    return tags;
-}
-
-/** Sentences for the full-song prompt (Lyria 3.5): stay in the genre, and sound authentic for folk and traditional genres. */
-export function fidelityLines(genre: string, style: string): string[] {
-    const name = style && !style.toLowerCase().includes(genre.toLowerCase()) ? `${genre} ${style}` : (style || genre);
-    const lines = [`Stay strictly within ${name}: no crossover with other genres.`];
-    if (isGenericStyle(genre, style)) lines.push(`The style is broad, so use the most typical, recognizable conventions of ${genre}.`);
-    if (GENRE_AUTHENTICITY[genre]) {
-        lines.push(`Authenticity: play it as real traditional ${name} music, true to the tradition: ${GENRE_AUTHENTICITY[genre]}.`);
-        lines.push('Avoid modern pop, electronic or generic world-music fusion arrangements; no pop chord loops.');
-    }
-    return lines;
-}
-
-/**
- * The story of a live performance when the DJ is off. Lyria RealTime has no memory of where it is in a piece: with
- * fixed prompts it settles into a short loop. So the app walks the prompts through an arc, the way a folk tune is
- * played: state the tune, repeat it with ornaments, a contrasting part, the return, a closing statement. Each cue is a
- * plain description of the music (never an instrument), `density` shifts Lyria's density (-1..+1 around its middle).
- */
-interface ArcSection { until: number; name: string; cue: string; density: number }
-const FOLK_ARC: ArcSection[] = [
-    { until: 0.08, name: 'Opening', cue: 'opening: a single melodic line states the main tune, sparse and spacious', density: -0.35 },
-    { until: 0.28, name: 'Theme', cue: 'the main tune played in full, clear, simple and singable', density: -0.05 },
-    { until: 0.48, name: 'Varied repeat', cue: 'the main tune repeats with new ornaments and a fuller accompaniment', density: 0.1 },
-    { until: 0.62, name: 'Contrast', cue: 'a contrasting second part with a new melody that answers the first', density: 0.0 },
-    { until: 0.85, name: 'Return', cue: 'the main tune returns fuller and more energetic, building to a peak', density: 0.25 },
-    { until: 1.01, name: 'Close', cue: 'a final embellished statement of the tune, then a gentle slowing close', density: -0.2 }
-];
-const MODERN_ARC: ArcSection[] = [
-    { until: 0.08, name: 'Intro', cue: 'intro: sparse, setting the groove and the key', density: -0.35 },
-    { until: 0.30, name: 'Verse', cue: 'verse: steady groove with a clear melodic hook', density: -0.05 },
-    { until: 0.45, name: 'Lift', cue: 'chorus: bigger, fuller and brighter, the hook returns', density: 0.25 },
-    { until: 0.58, name: 'Break', cue: 'breakdown: stripped back, a new melodic idea, tension building', density: -0.25 },
-    { until: 0.85, name: 'Final push', cue: 'final chorus: the full groove at its peak with extra variations', density: 0.3 },
-    { until: 1.01, name: 'Outro', cue: 'outro: winding down, resolving to the tonic', density: -0.3 }
-];
-// Two-bar-pair phrasing inside a section: a rising question, then a falling answer (breaks up "ta ti ta ti" loops)
-const PHRASE_CUES = ['melody phrase rises and ends open, like a question', 'answering phrase falls and resolves, like a reply'];
-const AUTO_PHRASE_BARS = 8;
-// Genres whose scales are mostly not major/minor-pair material (raga, maqam, pentatonic, microtonal)
-const NON_DIATONIC_GENRES = ['Indian', 'Oriental'];
-
-/** The form line for a song with no given lyrics, trimmed to its length: short songs lose repeats, long ones get an extra verse. */
-function formForLength(form: string, minutes: number): string {
-    const parts = form.split('->').map(p => p.trim());
-    if (parts.length <= 4) return form;
-    if (minutes <= 1.25) {
-        // intro, first verse, the first hook-like section after it, and the outro
-        const verseAt = Math.max(1, parts.findIndex((_, k) => k > 0 && k < parts.length - 1));
-        const hookAt = parts.findIndex((p, k) => k > verseAt && /^\[(final )?(chorus|hook|refrain|drop|estribillo)|theme b|main march/i.test(p));
-        const keep = [parts[0], parts[verseAt], ...(hookAt > 0 ? [parts[hookAt]] : []), parts[parts.length - 1]];
-        return [...new Set(keep)].join(' -> ');
-    }
-    if (minutes <= 2.25) return parts.filter((p, i) => !/pre-chorus|bridge|interlude|solo|falseta/i.test(p) || i === parts.length - 2).join(' -> ');
-    return form;
-}
-
-export const TRADITIONAL_GENRES = ['Classic', 'Renascentist', 'Victorian', 'Spiritual', 'African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian', 'Marching', 'Blues', 'Traditional'];
-
-export function isTraditionalGenre(genre: string): boolean {
-    return TRADITIONAL_GENRES.includes(genre);
-}
-
-export const REGIONAL_GENRES = ['African', 'Indian', 'Irish', 'Spanish', 'Oriental', 'Romanian', 'European', 'Western', 'Hawaiian'];
-const TRADITIONAL_KNOB_GENRES = ['Classic', 'Opera', 'Marching', 'Renascentist', 'Victorian', 'Spiritual', 'Blues', 'Traditional'];
-
-/**
- * How many knobs the DJ may hold at once. `maxKnobs` is the DJ preset's setting for modern genres (default 6).
- * Up to 6 the other families keep their own limits (4 traditional, 2 regional); at 7 to 10 they get 1 to 3 more.
- * Below 6, modern genres lose knobs first (limit = maxKnobs) and the others follow once it drops under their limit, down to 0.
- */
-export function getDjKnobLimit(genre: string, maxKnobs = DJ_KNOBS_MODERN): number {
-    const max = Math.max(0, Math.min(10, Math.round(maxKnobs)));
-    const extra = Math.min(3, Math.max(0, max - DJ_KNOBS_MODERN));
-    if (REGIONAL_GENRES.includes(genre)) return Math.min(DJ_KNOBS_REGIONAL, max) + extra;
-    if (TRADITIONAL_KNOB_GENRES.includes(genre)) return Math.min(DJ_KNOBS_TRADITIONAL, max) + extra;
-    return max;
-}
-
-// Lyrics language for the Voice dialog (Auto, and its dice): the native language for regional genres,
-// classical/liturgical languages for traditional ones, and the popular languages of the charts for modern music.
-const GENRE_LANGUAGES: Record<string, string[]> = {
-    'African': ['Swahili', 'Zulu'], 'Indian': ['Hindi'], 'Irish': ['Irish Gaelic', 'English'], 'Spanish': ['Spanish'],
-    'Oriental': ['Mandarin Chinese', 'Japanese'], 'Romanian': ['Romanian'], 'European': ['Russian', 'French', 'Italian'], 'Western': ['English'], 'Hawaiian': ['Hawaiian'],
-    'Classic': ['Italian', 'German', 'Latin'], 'Opera': ['Italian', 'German', 'French'], 'Renascentist': ['Latin', 'Italian'],
-    'Victorian': ['English'], 'Spiritual': ['Latin', 'English'], 'Marching': ['English', 'German'], 'Blues': ['English']
-};
-// A style tied to one culture sings in that culture's language, whatever the genre's general list says
-// (Oriental / Japanese Folk is Japanese, never Chinese; Spanish / Bossa Nova is Portuguese). Checked before GENRE_LANGUAGES.
-const STYLE_LANGUAGES: Record<string, string[]> = {
-    // Oriental
-    'Japanese Folk': ['Japanese'], 'Chinese Traditional': ['Mandarin Chinese'], 'Arabic Classical': ['Arabic'],
-    'Turkish Folk': ['Turkish'], 'Balinese Gamelan': ['Indonesian'], 'Korean Folk': ['Korean'],
-    // European
-    'Russian Folk': ['Russian'], 'French Musette': ['French'], 'Tarantella': ['Italian'], 'Neapolitan Song': ['Italian'],
-    // Indian
-    'Hindustani': ['Hindi'], 'Bollywood': ['Hindi'], 'Bhangra': ['Punjabi'], 'Carnatic': ['Tamil'], 'Tabla Solo/Raga': ['Hindi'],
-    // African
-    'Afrobeats': ['Yoruba', 'English'], 'Highlife': ['English'], 'Malian Blues': ['French'], 'Desert Rock': ['French'], 'Marabi/Soweto': ['Zulu'],
-    // Spanish genre: Brazil sings in Portuguese
-    'Bossa Nova': ['Portuguese'],
-    // Irish
-    'Celtic Punk/Rock': ['English'],
-    // Hawaiian
-    'Island Reggae': ['English', 'Hawaiian'],
-    // Classical and sacred
-    'Viennese Waltz': ['German'], 'Baroque Opera': ['Italian'], 'Contemporary Opera': ['English'],
-    'Gregorian Chant': ['Latin'], 'Byzantine Chant': ['Greek'], 'Gospel': ['English'], 'Christmas Carols': ['English', 'Latin'],
-    'Cathedral': ['Latin'], 'Royal Court': ['English', 'Italian'], 'Minstrel Ballad': ['English'], 'Tudor Dance': ['English'], 'Village Festival': ['English']
-};
-const POPULAR_LANGUAGES: Array<[string, number]> = [['English', 60], ['Spanish', 12], ['French', 8], ['Portuguese', 8], ['Korean', 6], ['Italian', 6]];
-
-export function chooseLyricsLanguage(genre: string, style?: string): string {
-    const fixed = (style && STYLE_LANGUAGES[style]) || GENRE_LANGUAGES[genre];
-    let language: string;
-    if (fixed) language = fixed[Math.floor(Math.random() * fixed.length)];
-    else {
-        let roll = Math.random() * 100;
-        language = 'English';
-        for (const [lang, w] of POPULAR_LANGUAGES) { if ((roll -= w) < 0) { language = lang; break; } }
-    }
-    return language;
-}
-
-
-// Lyria takes a scale as a relative major/minor pair; index = pitch class of the major key.
-const LYRIA_SCALES = ['C_MAJOR_A_MINOR', 'D_FLAT_MAJOR_B_FLAT_MINOR', 'D_MAJOR_B_MINOR', 'E_FLAT_MAJOR_C_MINOR', 'E_MAJOR_D_FLAT_MINOR', 'F_MAJOR_D_MINOR',
-    'G_FLAT_MAJOR_E_FLAT_MINOR', 'G_MAJOR_E_MINOR', 'A_FLAT_MAJOR_F_MINOR', 'A_MAJOR_G_FLAT_MINOR', 'B_FLAT_MAJOR_G_MINOR', 'B_MAJOR_A_FLAT_MINOR'];
-const NOTE_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-
-/** Maps a key such as "F# Minor" or "Bb Major" to the Lyria scale enum (all 12 pairs). */
-export function scaleForKey(key: string): string | null {
-    const m = key.trim().match(/^([A-G])([#b]?)\s+(major|minor)/i);
-    if (!m) return null;
-    let pc = NOTE_PC[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
-    if (m[3].toLowerCase() === 'minor') pc += 3; // relative major
-    return LYRIA_SCALES[((pc % 12) + 12) % 12];
-}
-
-// Lyria has no lyrics input and only understands short descriptive prompts: vocals are just another instrument
-// (VOCALIZATION mode + a prompt that names the voice), so instrument names are turned into plain voice descriptions.
-export function describeVoice(instrument: string): string {
-    const n = instrument.toLowerCase();
-    if (n.includes('rapper') || n.includes('mc ')) return 'rap vocals, rhythmic spoken flow';
-    if (n.includes('quartet')) return 'four human voices singing in harmony';
-    if (n.includes('duet')) return 'two human voices singing in harmony';
-    if (n.includes('solo') || n.includes('soprano') || n.includes('tenor') || n.includes('soloist')) return 'solo human singing voice';
-    if (n.includes('chamber')) return 'chamber choir vocals, ooh and aah harmonies';
-    if (n.includes('choir') || n.includes('chant') || n.includes('cappella') || n.includes('ensemble')) return `${instrument} vocals, ooh and aah harmonies`;
-    if (n.includes('boy') || n.includes('girl') || n.includes('female') || n.includes('male')) return `${instrument} singing voice`;
-    return `${instrument}, human vocals`;
-}
-
-// Artistic singer profiles, written the way the Lyria prompt guide describes voices (gender, range, timbre, delivery).
-// One is picked at random per voice, so every song gets its own singer.
-const VOICE_PERSONAS: Record<string, string[]> = {
-    Soprano: ['female soprano lead vocal, clear crystalline timbre, agile soaring delivery', 'female soprano lead vocal, airy breathy tone, gentle vibrato',
-        'female soprano lead vocal, bright bell-like voice, expressive phrasing'],
-    Alto: ['female alto lead vocal, rich warm husky lower range', 'female alto lead vocal, smoky velvet tone, soulful phrasing',
-        'female mezzo lead vocal, dark warm voice, intimate delivery'],
-    Tenor: ['male tenor lead vocal, bright energetic voice, ringing high notes', 'male tenor lead vocal, smooth lyrical tone, tender falsetto',
-        'male tenor lead vocal, open passionate voice, clear diction'],
-    Baritone: ['male baritone lead vocal, deep velvet-smooth chest voice', 'male baritone lead vocal, warm resonant tone, relaxed delivery',
-        'male baritone lead vocal, raspy gritty timbre, raw emotion'],
-    Rap: ['rap vocal, confident rhythmic flow, clear diction, on-beat delivery', 'rap vocal, laid-back smooth flow, deep voice',
-        'rap vocal, fast punchy delivery, sharp rhymes'],
-    Girl: ['young girl lead vocal, pure clear innocent tone'],
-    Boy: ['boy treble lead vocal, pure bell-like tone'],
-};
-const pickOne = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
-
-export interface DjPersonality {
-    name: string;
-    eagerness: number;
-    maxKnobs?: number;
-    channels: Record<ChannelKey, boolean>;
-    /** 0-100: solos, duets and trios instead of the full band. */
-    diversity?: number;
-    /** 0-100: bigger ensembles, ornamentation and complexity knobs. */
-    complexity?: number;
-    /** 0-100: evolution slider and dynamics / brightness / groove knobs. */
-    energy?: number;
-    /** 0-100: space, texture, organic colour. */
-    atmosphere?: number;
-    /** Seconds the band is warmed up slowly after the DJ takes over. */
-    warmup?: number;
-    /** Where the DJ comes from */
-    country?: string;
-    /** Folk styles of the DJ's own country ([genre, style]) and the chance (0-100) to play one */
-    homeStyles?: [string, string][];
-    homeBias?: number;
-    /** The Robot DJ studies humanity: instead of home styles, homeBias is the chance to pick any genre (all equally) and a style of it */
-    curious?: boolean;
-    /** How the DJ likes to arrange a piece (solo turns, dialogs, stabs, breaks...) */
-    arranging?: string[];
-    /** 0-100: how often each arranging habit shows up in a plan */
-    habits?: number;
-}
-
-/** How a DJ personality leans on each knob (added to the genre value, in knob units; 50 = neutral). */
-export function djKnobBias(p: DjPersonality | null | undefined, knob: string): number {
-    if (!p) return 0;
-    const lean = (v: number | undefined) => ((v ?? 50) - 50) / 50; // -1..+1
-    const groups: Record<string, [number, number | undefined]> = {
-        Complexity: [0.5, p.complexity], Ornamentation: [0.5, p.complexity], Variation: [0.4, p.diversity], Glide: [0.25, p.diversity],
-        Dynamics: [0.4, p.energy], Brightness: [0.35, p.energy], Groove: [0.35, p.energy], Attack: [0.3, p.energy], Density: [0.3, p.energy],
-        Organic: [0.35, p.atmosphere], Space: [0.4, p.atmosphere], Atmosphere: [0.45, p.atmosphere], Texture: [0.35, p.atmosphere], Width: [0.3, p.atmosphere]
-    };
-    const g = groups[knob];
-    return g ? g[0] * lean(g[1]) : 0;
-}
-
-/** Evolution the DJ aims for: its energy sets the base (-1..+5), diversity adds some randomness. */
-export function djEvolutionFor(p: DjPersonality | null | undefined): number {
-    if (!p) return Math.floor(Math.random() * 7) - 1;
-    const base = -1 + ((p.energy ?? 50) / 100) * 6;
-    const jitter = (Math.random() - 0.5) * 2 * ((p.diversity ?? 50) / 100) * 1.5;
-    return Math.max(-2, Math.min(7, Math.round(base + jitter)));
-}
-
-/**
- * DJ "manifesto": decides which channels stay in the manifest. The DJ may switch channels off completely
- * to work with a smaller ensemble (3-5 channels). Always keeps one melodic voice.
- */
-export function chooseDjManifest(genre: string, allowed?: Partial<Record<ChannelKey, boolean>>, complexity = 50): ChannelKey[] {
-    const all: ChannelKey[] = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'];
-    const pool = all.filter(k => allowed?.[k] !== false);
-    if (pool.length <= 3) return pool;
-    // Complex DJs lean to bigger ensembles, simple ones to small ones
-    const roll = Math.max(0, Math.min(1, Math.random() - ((complexity - 50) / 100) * 0.6));
-    const size = Math.min(pool.length, roll < 0.35 ? 5 : roll < 0.7 ? 4 : 3);
-    const shuffle = <T>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
-    const melodic = shuffle(pool.filter(k => k === 'lead' || k === 'alto'));
-    const chosen: ChannelKey[] = melodic.length ? [melodic[0]] : [];
-    // Groove genres lean on bass + drums; traditional/regional ones on harmony
-    const groove = !isTraditionalGenre(genre) && !TRADITIONAL_KNOB_GENRES.includes(genre);
-    const priority: ChannelKey[] = groove ? ['bass', 'rhythm', 'harmonic'] : ['harmonic', 'bass', 'rhythm'];
-    [...shuffle(priority.slice(0, 2)), ...priority.slice(2), ...shuffle(pool)].forEach(k => {
-        if (pool.includes(k) && !chosen.includes(k) && chosen.length < size) chosen.push(k);
-    });
-    return chosen;
-}
-
-/** A weighted prompt as sent to Lyria */
 export interface SentPrompt { text: string; weight: number }
+
+/** The app's generation modes as the SDK's enum (same names) */
+const SDK_MODE: Record<MusicGenerationMode, SdkMusicGenerationMode> = {
+  QUALITY: SdkMusicGenerationMode.QUALITY, DIVERSITY: SdkMusicGenerationMode.DIVERSITY, VOCALIZATION: SdkMusicGenerationMode.VOCALIZATION,
+};
+
+/** What the main bar tells the engine (each field only when it changes) */
+export interface GlobalSettings { genre?: string; style?: string; key?: string; mode?: 'Natural' | 'Minor'; bpm?: number; meter?: string }
+
+/** A Lyria 3 interaction as /api/song returns it: the audio and text may sit in steps, outputs or output_audio */
+interface SongContentBlock { type?: string; data?: string; mime_type?: string; mimeType?: string; text?: string }
+interface SongInteraction {
+  steps?: { type?: string; content?: SongContentBlock[] }[];
+  outputs?: SongContentBlock[];
+  output_audio?: SongContentBlock;
+  output_text?: string;
+}
 
 export interface LiveMusicHelperEvents {
   'playback-state-changed': PlaybackState;
@@ -784,10 +326,12 @@ export class LiveMusicHelper extends EventTarget {
     this.rawGain = this.audioContext.createGain(); this.masterGain = this.audioContext.createGain(); 
     this.masterGain.gain.value = this.userVolume;
     this.recordingDestination = this.audioContext.createMediaStreamDestination();
-    // raw mix -> stereo stage -> recording (before the volume) and master volume -> speakers
+    // raw mix -> stereo stage -> safety limiter -> recording (before the volume) and master volume -> speakers
     this.stereo = new StereoStage(this.audioContext);
+    const limiter = new SafetyLimiter(this.audioContext);
     this.rawGain.connect(this.stereo.input);
-    this.stereo.output.connect(this.recordingDestination); this.stereo.output.connect(this.masterGain);
+    this.stereo.output.connect(limiter.input);
+    limiter.output.connect(this.recordingDestination); limiter.output.connect(this.masterGain);
     this.masterGain.connect(this.audioContext.destination);
   }
 
@@ -860,7 +404,7 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh(); 
   }
   
-  public setToolbarLocks(locks: any) {
+  public setToolbarLocks(locks: Partial<typeof this.toolbarLocks>) {
       this.toolbarLocks = { ...this.toolbarLocks, ...locks };
       this.scheduleRefresh();
   }
@@ -888,7 +432,7 @@ export class LiveMusicHelper extends EventTarget {
       this.scheduleRefresh();
   }
 
-  public setGlobalSettings(settings: any) {
+  public setGlobalSettings(settings: GlobalSettings) {
     if (settings.bpm !== undefined) this.bpm = settings.bpm;
     if (settings.key !== undefined) this.key = settings.key;
     let knobsStale = false;
@@ -1013,7 +557,7 @@ export class LiveMusicHelper extends EventTarget {
       this.contextResetTimer = window.setTimeout(() => {
           this.contextResetTimer = null;
           if (this.session && (this.playbackState === 'recording' || this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'playing')) {
-              try { (this.session as any).resetContext(); } catch (e) { console.error("resetContext failed:", e); }
+              try { this.session.resetContext(); } catch (e) { console.error("resetContext failed:", e); }
           }
       }, 800);
   }
@@ -1030,14 +574,14 @@ export class LiveMusicHelper extends EventTarget {
   private async aiRewritePrompt(text: string): Promise<string | null> {
       if (!this.ai) return null;
       try {
-          const request = (this.ai as any).models.generateContent({
+          const request = this.ai.models.generateContent({
               model: 'gemini-3.1-flash-lite',
               contents: `Rewrite this text prompt for a music generation model so that its safety filter accepts it. Remove every artist, band, producer, song and brand name and anything that could be seen as copyrighted, sensitive or violent. Keep the musical meaning and use short descriptive tags (instruments, genre, era, mood, tempo). Maximum 25 words. Return only the rewritten prompt, nothing else.
 
 Prompt: ${text}`
           });
-          const result = await Promise.race([request, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))]) as any;
-          const better = String(result?.text || '').trim().replace(/^["']|["']$/g, '');
+          const result = await Promise.race([request, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))]);
+          const better = String(result.text || '').trim().replace(/^["']|["']$/g, '');
           return better && better.length < 300 ? better : null;
       } catch (e) {
           console.warn('Prompt rewrite failed:', e);
@@ -1067,8 +611,8 @@ Prompt: ${text}`
       return out;
   }
 
-  private lastConfig: any = null;
-  private lastPrompts: any = null;
+  private lastConfig: LiveMusicGenerationConfig | null = null;
+  private lastPrompts: WeightedPrompt[] | null = null;
 
   // --- Self-arranging live performance (DJ off) ---
   /** Turn off to keep the live prompts fixed while the DJ is off. */
@@ -1113,8 +657,8 @@ Prompt: ${text}`
     if (!this.session) return;
     
     // 1. Set Native API Config
-    const config: any = {
-        musicGenerationMode: this.generationMode,
+    const config: LiveMusicGenerationConfig = {
+        musicGenerationMode: SDK_MODE[this.generationMode],
         bpm: Math.max(60, Math.min(200, Math.round(this.bpm))), // API range 60-200
         guidance: this.effectiveGuidance(),
         temperature: this.temperature,
@@ -1288,7 +832,6 @@ Prompt: ${text}`
           return isVocalInstrument(ch.instrument);
       });
   }
-
 
   /**
    * Dice roll: instead of clearing the knobs, set them to what the genre and style on the main bar call for.
@@ -2285,7 +1828,7 @@ Prompt: ${text}`
   private async connect(): Promise<LiveMusicSession> {
     // Ensure any stale session is closed before reconnecting
     if (this.session) {
-        try { (this.session as any).close(); } catch(e) {}
+        try { this.session.close(); } catch(e) {}
         this.session = null;
     }
     
@@ -2306,7 +1849,7 @@ Prompt: ${text}`
           if (e.filteredPrompt) this.dispatchEvent(new CustomEvent('prompt-filtered', { detail: { ...e.filteredPrompt, payload: this.lastPrompts, config: this.lastConfig } }));
           if (currentSessionId === this.sessionCounter && e.serverContent?.audioChunks) await this.processAudioChunks(e.serverContent.audioChunks); 
         }, 
-        onerror: (err: any) => { 
+        onerror: (err: ErrorEvent) => { 
           this.stop(); 
           const errStr = err?.message || err?.toString() || 'API connection error';
           this.dispatchEvent(new CustomEvent('dj-vocal-message', { detail: { text: `API Error: ${errStr}.`, type: 'error' } })); 
@@ -2448,7 +1991,7 @@ Prompt: ${text}`
               // A model that never answers must not hang the UI: give up after 15 s and try the next one
               let timer: ReturnType<typeof setTimeout> | undefined;
               const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${model} timed out`)), 15000); });
-              const result: any = await Promise.race([(this.ai as any).models.generateContent({ model, contents: prompt, config }), timeout])
+              const result = await Promise.race([this.ai.models.generateContent({ model, contents: prompt, config }), timeout])
                   .finally(() => clearTimeout(timer));
               const text = (result.text || '').trim();
               if (text) return text;
@@ -2509,7 +2052,7 @@ Prompt: ${text}`
     this.isLooping = false; this.dispatchEvent(new CustomEvent('loop-changed-internal', { detail: false }));
     if (this.loopWaitTimer) { clearTimeout(this.loopWaitTimer); this.loopWaitTimer = null; }
     if (this.rewindFrame) cancelAnimationFrame(this.rewindFrame); this.isRewinding = false;
-    if (this.autoStopTimer) clearTimeout(this.autoStopTimer); if (this.session) { try { (this.session as any).close(); } catch(e) {} }
+    if (this.autoStopTimer) clearTimeout(this.autoStopTimer); if (this.session) { try { this.session.close(); } catch(e) {} }
     if (this.mediaRecorder?.state !== 'inactive') this.mediaRecorder?.stop();
     this.activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
     this.activeSources.clear();
@@ -2807,7 +2350,7 @@ Prompt: ${text}`
   }
 
   /** Asks the server to render the song (Lyria 3.5, then Lyria 3 Pro) and returns the interaction. */
-  private static async fetchSong(prompt: string): Promise<any> {
+  private static async fetchSong(prompt: string): Promise<SongInteraction> {
       const devSecret = import.meta.env.VITE_DEV_SONG_SECRET;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), SONG_RENDER_TIMEOUT_MS);
@@ -2826,9 +2369,9 @@ Prompt: ${text}`
   }
 
   /** Pulls the audio (base64 + mime type) and the text parts out of a Lyria 3 interaction, whatever the response shape. */
-  private static readSongResponse(interaction: any): { audio: string | null; mime: string; text: string } {
-      const blocks: any[] = [];
-      (interaction?.steps || []).forEach((s: any) => { if (s?.type === 'model_output') blocks.push(...(s.content || [])); });
+  private static readSongResponse(interaction: SongInteraction | null): { audio: string | null; mime: string; text: string } {
+      const blocks: SongContentBlock[] = [];
+      (interaction?.steps || []).forEach(s => { if (s?.type === 'model_output') blocks.push(...(s.content || [])); });
       blocks.push(...(interaction?.outputs || []));
       if (interaction?.output_audio) blocks.push({ type: 'audio', ...interaction.output_audio });
       const audioBlock = [...blocks].reverse().find(b => b?.type === 'audio' && b.data);

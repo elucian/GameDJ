@@ -8,7 +8,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { pickAnyStyle, pickHomeStyle } from '../utils/DjPicks';
 import { live } from 'lit/directives/live.js';
 import type { PlaybackState, InstrumentSet } from '../types';
-import { isVocalInstrument } from '../utils/LiveMusicHelper';
+import { isVocalInstrument } from '../music/vocabulary';
 import { FALLBACK_POOLS, getLyriaPool } from '../constants/instruments';
 import { MOODS, canonicalMood } from '../constants/moods';
 import { STYLE_MOODS, moodsFor, pickStyleMood } from '../constants/styleMoods';
@@ -1355,7 +1355,7 @@ export class TopToolbar extends LitElement {
     }
     
     saveCachedGenreAndStyle(this.genre, this.musicStyle);
-    (this as any).requestUpdate();
+    this.requestUpdate();
   }
 
   /** DJ picks the master mood before the baton is raised (respects the mood lock). */
@@ -1442,7 +1442,7 @@ export class TopToolbar extends LitElement {
       const sig = genreDef.styles[this.musicStyle];
       if (!sig) return;
 
-      const chosenInstruments: any = {};
+      const chosenInstruments: Record<string, string> = {};
       const channels = ['lead', 'alto', 'harmonic', 'bass', 'rhythm'] as const;
       const usedInstruments = new Set<string>();
 

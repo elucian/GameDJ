@@ -84,7 +84,7 @@ export function getUserId(): string {
     try {
         let id = localStorage.getItem(USER_ID_KEY);
         if (!id) {
-            id = (crypto as any).randomUUID ? crypto.randomUUID() : `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+            id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
             localStorage.setItem(USER_ID_KEY, id);
         }
         return id;

@@ -41,3 +41,6 @@ export interface PlaybackSnapshot {
   statusMessage?: string;
   isAiPhase?: boolean;
 }
+
+/** One of the five channels of the band */
+export type ChannelKey = keyof InstrumentSet;

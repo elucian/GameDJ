@@ -150,4 +150,3 @@ toast-message { z-index: 9999; }
     /* Same order as the master volume and later in the page, so it sits right below the volume meters */
     bottom-timeline { order: 5; height: 80px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
 }
-}

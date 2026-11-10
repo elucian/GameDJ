@@ -428,7 +428,7 @@ export class Timeline extends LitElement {
       if (!forceEmpty && this.playbackState === 'recording') {
           this.initHistorySegments(0);
       }
-      (this as any).requestUpdate();
+      this.requestUpdate();
   }
 
   private initHistorySegments(startTime: number) {
@@ -467,7 +467,7 @@ export class Timeline extends LitElement {
               }
           }
       });
-      if (segmentModified) (this as any).requestUpdate();
+      if (segmentModified) this.requestUpdate();
   }
 
   private getTimeFromEvent(e: PointerEvent): number {
@@ -521,7 +521,7 @@ export class Timeline extends LitElement {
         const secs = dragSongSeconds(d.startSecs, e.clientX - d.startX, width);
         if (secs !== d.lastSecs) {
             d.lastSecs = secs;
-            (this as any).dispatchEvent(new CustomEvent('duration-changed-manually', { detail: secs / 60 }));
+            this.dispatchEvent(new CustomEvent('duration-changed-manually', { detail: secs / 60 }));
         }
     } else if (this.dragTarget === 'playhead') {
       const bpmSnap = 60 / this.bpm;
@@ -530,7 +530,7 @@ export class Timeline extends LitElement {
       if (this.recordedDuration > 0) {
           targetTime = Math.min(playheadSnapped, this.recordedDuration);
       }
-      (this as any).dispatchEvent(new CustomEvent('seek', { detail: targetTime }));
+      this.dispatchEvent(new CustomEvent('seek', { detail: targetTime }));
     }
   }
 
@@ -539,7 +539,7 @@ export class Timeline extends LitElement {
     this.dragTarget = null;
   }
 
-  private dispatchFade() { (this as any).dispatchEvent(new CustomEvent('fade-changed', { detail: { fadeIn: this.fadeIn, fadeOut: this.fadeOut } })); }
+  private dispatchFade() { this.dispatchEvent(new CustomEvent('fade-changed', { detail: { fadeIn: this.fadeIn, fadeOut: this.fadeOut } })); }
   private formatTime(seconds: number): string { const m = Math.floor(seconds / 60); const s = Math.floor(seconds % 60); return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; }
   
   private renderStatus() {

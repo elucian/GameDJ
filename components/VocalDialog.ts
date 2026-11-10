@@ -1,7 +1,7 @@
 import { css, html, LitElement } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
-import { chooseLyricsLanguage } from '../utils/LiveMusicHelper';
+import { chooseLyricsLanguage } from '../music/vocabulary';
 
 import type { NoDetail } from '../utils/events';
 export interface VocalDialogEvents {
@@ -207,7 +207,7 @@ export class VocalDialog extends LitElement {
             <h3>Voice Configuration</h3>
             <div class="slider-container">
               <label class="label">SONG TITLE</label>
-              <input type="text" .value=${this.songName} @input=${(e: any) => this.songName = e.target.value} style="width:100%; box-sizing:border-box; padding:4px;">
+              <input type="text" .value=${this.songName} @input=${(e: Event) => this.songName = (e.target as HTMLInputElement).value} style="width:100%; box-sizing:border-box; padding:4px;">
             </div>
 
             ${this.renderSolo()}
@@ -305,7 +305,7 @@ export class VocalDialog extends LitElement {
   private renderLyrics() {
     return html`
       <div class="lyrics-tools">
-          <select @change=${(e: any) => this.lyricsLang = e.target.value} title="Language of the lyrics">
+          <select @change=${(e: Event) => this.lyricsLang = (e.target as HTMLSelectElement).value} title="Language of the lyrics">
               ${this.languages.map(l => html`<option value=${l} .selected=${live(l === this.lyricsLang)}>${l === 'Auto' ? 'Auto (by style)' : l}</option>`)}
           </select>
           <button class="lang-lock ${this.langLocked ? 'active' : ''}" @click=${() => this.langLocked = !this.langLocked}
@@ -315,7 +315,7 @@ export class VocalDialog extends LitElement {
       </div>
       <textarea rows="7" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
                 placeholder="Write your own lyrics or generate them. Lyria treats them as a hint for the language and mood of the vocals."
-                .value=${this.vocalText} @input=${(e: any) => this.vocalText = e.target.value}></textarea>`;
+                .value=${this.vocalText} @input=${(e: Event) => this.vocalText = (e.target as HTMLTextAreaElement).value}></textarea>`;
   }
 
   private requestGeneration() {

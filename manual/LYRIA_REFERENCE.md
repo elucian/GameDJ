@@ -2,7 +2,7 @@
 
 Adapted from Google's Lyria RealTime documentation and the installed `@google/genai` 1.52 typings.
 Sources: <https://ai.google.dev/gemini-api/docs/realtime-music-generation> and <https://ai.google.dev/gemini-api/docs/lyria-prompt-guide>.
-Read this before changing anything that talks to Lyria (`utils/LiveMusicHelper.ts`). Section 7 lists the rules to follow.
+Read this before changing anything that talks to Lyria (`utils/LiveMusicHelper.ts`, and the prompt vocabulary and DJ rules it uses in `music/`). Section 7 lists the rules to follow.
 
 ## 1. What Lyria RealTime is
 
@@ -112,7 +112,7 @@ Lyria RealTime drops prompts that trigger its safety filter and reports them in 
 | The old long single narrative prompt | accepted, but a filtered one would have lost the whole prompt |
 
 What GameDJ does about it:
-- **No names.** The dice roll used artist and song references; they are replaced by descriptive style tags (`STYLE_DESCRIPTORS` in `LiveMusicHelper.ts`). Never put artist, band, producer or song names in a prompt.
+- **No names.** The dice roll used artist and song references; they are replaced by descriptive style tags (`STYLE_DESCRIPTORS` in `music/vocabulary.ts`). Never put artist, band, producer or song names in a prompt.
 - **Several short prompts instead of one narrative:** core (genre, style, key, bpm, meter, mood), arrangement, special instruction, vocal direction and evolution are separate prompts, so if one is dropped the rest still play.
 - **Rejected prompts are remembered** for the session and not sent again.
 - **Dev mode logging:** in `npm run dev` every rejection is logged to the browser console (`[Lyria] prompt filtered`) and appended to `window.__lyriaFiltered` with the whole payload and config it belonged to. Production builds only show `PROMPT FILTERED` in the message log.

@@ -308,14 +308,14 @@ export class MasterVolumePanel extends LitElement {
 
   private toggleSeedLock() {
     uiSounds.playSwitch();
-    (this as any).dispatchEvent(new CustomEvent('seed-lock-changed', { detail: !this.seedLocked }));
+    this.dispatchEvent(new CustomEvent('seed-lock-changed', { detail: !this.seedLocked }));
   }
 
   private toggleStereo() {
     if (this.isLocked) return;
     uiSounds.playSwitch();
     this.isStereo = !this.isStereo;
-    (this as any).dispatchEvent(new CustomEvent('stereo-changed', { detail: this.isStereo }));
+    this.dispatchEvent(new CustomEvent('stereo-changed', { detail: this.isStereo }));
   }
 
   private onWidthChange(e: Event) {
@@ -337,8 +337,8 @@ export class MasterVolumePanel extends LitElement {
     if (oldVal !== snappedValue) {
         uiSounds.playTick();
         this.volume = snappedValue / 100;
-        (this as any).dispatchEvent(new CustomEvent('volume-changed', { detail: this.volume }));
-        (this as any).requestUpdate();
+        this.dispatchEvent(new CustomEvent('volume-changed', { detail: this.volume }));
+        this.requestUpdate();
     }
   }
 
@@ -347,7 +347,7 @@ export class MasterVolumePanel extends LitElement {
     if (val === this.bpm) return;
     uiSounds.playTick();
     this.bpm = val;
-    (this as any).dispatchEvent(new CustomEvent('bpm-input', { detail: val }));
+    this.dispatchEvent(new CustomEvent('bpm-input', { detail: val }));
   }
 
   private onEvolutionChange(e: Event) {
@@ -357,8 +357,8 @@ export class MasterVolumePanel extends LitElement {
     if (val !== this.evolution) {
         uiSounds.playTick();
         this.evolution = val;
-        (this as any).dispatchEvent(new CustomEvent('evolution-changed', { detail: this.evolution }));
-        (this as any).requestUpdate();
+        this.dispatchEvent(new CustomEvent('evolution-changed', { detail: this.evolution }));
+        this.requestUpdate();
     }
   }
 
@@ -370,8 +370,8 @@ export class MasterVolumePanel extends LitElement {
           uiSounds.playTick();
           this.durationIndex = idx;
           const mins = DURATION_STEPS[idx].value;
-          (this as any).dispatchEvent(new CustomEvent('duration-changed', { detail: mins }));
-          (this as any).requestUpdate();
+          this.dispatchEvent(new CustomEvent('duration-changed', { detail: mins }));
+          this.requestUpdate();
       }
   }
 

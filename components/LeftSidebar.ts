@@ -600,7 +600,7 @@ export class LeftSidebar extends LitElement {
             <span class="icon-span"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></span>
         </button>
 
-        <button class="theme-btn mic-btn ${this.voiceBlocked ? 'no-songs' : ''}" ?disabled=${isRecording || this.voiceBlocked} @click=${() => (this as any).dispatchEvent(new CustomEvent('toggle-vocal-dialog', { bubbles: true, composed: true }))} title=${this.voiceBlocked ? "No songs left this month: voices need a Lyria 3.5 song" : "Vocal Commands"}>
+        <button class="theme-btn mic-btn ${this.voiceBlocked ? 'no-songs' : ''}" ?disabled=${isRecording || this.voiceBlocked} @click=${() => this.dispatchEvent(new CustomEvent('toggle-vocal-dialog', { bubbles: true, composed: true }))} title=${this.voiceBlocked ? "No songs left this month: voices need a Lyria 3.5 song" : "Vocal Commands"}>
           <span class="icon-span"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></span>
         </button>
         <button class="kofi-btn" @click=${() => this.dispatchEvent(new CustomEvent('show-support', { bubbles: true, composed: true }))} title="Support GameDJ on Ko-fi">

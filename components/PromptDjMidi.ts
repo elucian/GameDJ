@@ -265,7 +265,7 @@ export class PromptDjMidi extends LitElement {
 
   public setPrompts(prompts: Map<string, Prompt>) {
     this.prompts = prompts;
-    (this as any).requestUpdate();
+    this.requestUpdate();
   }
 
   public reset() {
@@ -277,7 +277,7 @@ export class PromptDjMidi extends LitElement {
     this.prompts = newPrompts;
     this.messageType = 'info';
     this.log = [{ text: 'SYSTEM READY', type: 'info' }];
-    (this as any).requestUpdate();
+    this.requestUpdate();
 
     (this as unknown as HTMLElement).dispatchEvent(
       new CustomEvent('prompts-changed', { detail: this.prompts }),
@@ -311,7 +311,7 @@ export class PromptDjMidi extends LitElement {
     newPrompts.set(promptId, prompt);
 
     this.prompts = newPrompts;
-    (this as any).requestUpdate();
+    this.requestUpdate();
 
     (this as unknown as HTMLElement).dispatchEvent(
       new CustomEvent('prompts-changed', { detail: this.prompts }),
