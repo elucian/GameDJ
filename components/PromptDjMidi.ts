@@ -198,13 +198,18 @@ export class PromptDjMidi extends LitElement {
       }
     }
 
-    /* Phones: only the two displays show; the knob panel is hidden (the knobs keep their values) */
+    /* Phones: only a one-line status strip (the newest message) shows; the knob panel and the prompt display are hidden */
     @media (max-width: 700px) {
-      :host { height: auto; overflow: visible; padding: 6px 0; }
-      .grid-container { display: none; }
-      /* The two displays stack: flex-basis 0 would collapse them to nothing in a column */
-      .bezel { flex-direction: column; }
-      .display-box, .prompt-box { flex: 0 0 auto; }
+      :host { height: auto; overflow: visible; padding: 0; background: var(--surface-color); border-bottom: 1px solid var(--border-color); }
+      .grid-container, .prompt-box { display: none; }
+      .display-panel { padding: 0; }
+      .bezel { padding: 0; gap: 0; border: none; border-radius: 0; background: none; box-shadow: none; }
+      .display-box {
+        flex: 0 0 auto; height: 24px; padding: 3px 10px; border: none; border-radius: 0; box-shadow: none;
+        font-size: 11px; line-height: 18px; letter-spacing: 0.5px; overflow: hidden; background: #000;
+      }
+      .log-line:not(.latest) { display: none; }
+      .log-line.latest { min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     }
   `;
 

@@ -255,6 +255,8 @@ export class LeftSidebar extends LitElement {
 
     /* Recording button is disabled while recording: let the forbidden cursor show */
     button.record-btn.active-recording { pointer-events: auto; }
+    .busy-spin { animation: busy-spin 1s linear infinite; }
+    @keyframes busy-spin { to { transform: rotate(360deg); } }
 
     button.active-recording,
     button.active-red {
@@ -431,7 +433,7 @@ export class LeftSidebar extends LitElement {
       :host { display: contents; }
       .button-group {
         flex-direction: row; flex-wrap: wrap; justify-content: center;
-        --s: 36px; --g: 10px; padding: 6px 4px; box-sizing: border-box;
+        --s: 32px; --g: 10px; padding: 3px 4px; box-sizing: border-box;
         background: var(--surface-color); border-bottom: 1px solid var(--border-color);
       }
       .group-session { order: 2; }
@@ -527,6 +529,7 @@ export class LeftSidebar extends LitElement {
     const isRecording = this.playbackState === 'recording';
     const isSongRendering = this.playbackState === 'warmup' || this.playbackState === 'preparing' || this.playbackState === 'loading';
     const active = isRecording || isSongRendering;
+    const busy = isSongRendering || this.lyricsBusy; // a spinner shows while the app works
     return html`
       <button 
         class="record-btn ${active ? 'active-recording' : ''}"
@@ -534,9 +537,9 @@ export class LeftSidebar extends LitElement {
         ?disabled=${(isRecording && !isSongRendering) || this.lyricsBusy}
         title=${this.lyricsBusy ? 'Lyrics are being written' : 'Record (Overwrite)'}>
         <span class="icon-span">
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="${isSongRendering ? 6 : 6}" fill="currentColor"/>
-            </svg>
+            ${busy
+              ? html`<svg class="busy-spin" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="26 25" stroke-linecap="round"/></svg>`
+              : html`<svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></svg>`}
         </span>
       </button>`;
   }

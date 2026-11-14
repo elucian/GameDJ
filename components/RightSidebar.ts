@@ -507,12 +507,20 @@ export class RightSidebar extends LitElement {
       .section-header:not(.volume-header), master-volume-panel.manifest-box { order: 8; }
       .sidebar-tabs-container, .content { order: 9; }
       master-volume-panel, .content { background: var(--surface-color); }
-      .volume-header { border-top: none; }
-      master-volume-panel.volume-box { border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+      /* The volume panel needs no title on a phone (the VOL and WID sliders say what it is) */
+      .volume-header { display: none; }
+      master-volume-panel.volume-box { border-bottom: 1px solid var(--border-color); flex-shrink: 0; height: 116px; }
       master-volume-panel.manifest-box { flex-shrink: 0; }
       .content { flex: 0 0 auto; overflow: visible; }
       /* One screen, no scrolling: the sound tracks (instruments) are not shown on a phone */
       .sidebar-tabs-container, .content { display: none; }
+    }
+    @media (max-width: 700px) and (max-height: 700px) {
+      master-volume-panel.manifest-box { height: 86px; }
+    }
+    @media (max-width: 700px) and (max-height: 600px) {
+      master-volume-panel.volume-box { height: 70px; }
+      master-volume-panel.manifest-box { height: 76px; }
     }
   `;
 

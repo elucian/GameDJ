@@ -148,8 +148,8 @@ toast-message { z-index: 9999; }
     html { height: 100%; overflow: hidden; }
     body { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
     top-toolbar, left-sidebar, right-sidebar { display: contents; }
-    /* One screen, no scrolling: the text panels (and the instrument knobs) are not shown on a phone */
-    prompt-dj-midi { display: none; }
+    /* One screen, no scrolling: only a one-line status strip is shown of the text panels; the instrument knobs are not shown on a phone */
+    prompt-dj-midi { order: 7; height: auto; flex-shrink: 0; }
     /* Same order as the master volume and later in the page, so it sits right below the volume meters */
     bottom-timeline { order: 5; height: 95px; flex-shrink: 0; border-bottom: 1px solid var(--border-color); }
 }

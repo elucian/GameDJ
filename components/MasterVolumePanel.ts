@@ -212,6 +212,19 @@ export class MasterVolumePanel extends LitElement {
     /* Volume panel: the meters sit right under the MONO/STEREO switch */
     .tools-row.switch-row { margin: 2px 0 3px; }
 
+    /* Phones: tighter, so the whole page fits one screen */
+    @media (max-width: 700px) {
+      :host { padding-top: 3px; padding-bottom: 4px; }
+      .tools-row { margin: 2px 0 2px; }
+    }
+    /* Short phones: the BARS / SEED row goes; very short ones lose the VU meters too */
+    @media (max-width: 700px) and (max-height: 700px) {
+      :host([mode=manifest]) .tools-row { display: none; }
+    }
+    @media (max-width: 700px) and (max-height: 600px) {
+      .meters-container { display: none; }
+    }
+
     .meters-container {
       display: flex;
       flex-direction: column;

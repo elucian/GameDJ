@@ -1178,7 +1178,7 @@ export class TopToolbar extends LitElement {
       .divider { display: none; }
       .logo-stack {
         order: 1; flex-direction: row; justify-content: space-between; align-items: center; align-self: stretch;
-        padding: 6px 10px; background: var(--surface-color); border-bottom: 1px solid var(--border-color);
+        padding: 3px 10px; background: var(--surface-color); border-bottom: 1px solid var(--border-color);
       }
       .logo-stack .logo { flex: 0 0 auto; }
       .brand-text { display: block; }
@@ -1186,13 +1186,18 @@ export class TopToolbar extends LitElement {
       .control-group.group-genre, .control-group.group-style, .control-group.group-mood,
       .control-group.group-key, .control-group.group-meter {
         order: 3; flex: 0 0 auto; width: 100%; min-width: 0; max-width: none;
-        flex-direction: row; align-items: center; gap: 8px; padding: 5px 10px; margin: 0;
+        flex-direction: row; align-items: center; gap: 8px; padding: 2px 10px; margin: 0;
         background: var(--surface-color);
       }
       .control-group.group-meter { border-bottom: 1px solid var(--border-color); }
       .label-row { width: 92px; flex: 0 0 92px; margin: 0; }
       .row { flex: 1; min-width: 0; }
-      select { height: 32px; }
+      select { height: 28px; }
+    }
+    @media (max-width: 700px) and (max-height: 640px) {
+      select { height: 24px; }
+      .control-group, .control-group.fixed, .control-group.group-genre, .control-group.group-style, .control-group.group-mood,
+      .control-group.group-key, .control-group.group-meter { padding-top: 1px; padding-bottom: 1px; }
     }
   `;
 

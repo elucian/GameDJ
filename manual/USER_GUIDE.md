@@ -18,7 +18,7 @@ GameDJ is a live AI music workstation built on Google's Lyria. You choose a genr
 | Right sidebar | Channels (instruments), Manifest switches, Duration, Evolution, Volume |
 | Bottom | Timeline with fades and seeking |
 
-On a phone (screens up to 700 px wide) the page is one column that fits the screen, with no scrolling: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record); the master volume meters and the timeline; the Mode, Export format and Download buttons; and the song manifest. The two text displays, the knob panel and the sound tracks are hidden on phones (the DJ can still turn the knobs and set the channels).
+On a phone (screens up to 700 px wide) the page is one column that fits the screen, with no scrolling: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record); the master volume meters and the timeline; the Mode, Export format and Download buttons; a one-line status strip with the newest message (errors too); and the song manifest. While lyrics are written or the music warms up, the Record button shows a spinner. The prompt display, the knob panel and the sound tracks are hidden on phones (the DJ can still turn the knobs and set the channels). On short phones the page tightens (the BARS and SEED row goes, and under about 600 px high the VU meters go too) so it always fits.
 
 ## 3. Choosing the music
 
