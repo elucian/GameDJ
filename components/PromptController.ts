@@ -175,17 +175,6 @@ export class PromptController extends LitElement {
       }
     }
 
-    @media (max-width: 600px) {
-      :host([busy]) #text { font-size: 0; pointer-events: none; cursor: wait; }
-      :host([busy]) #text::after {
-        content: '\\231B';
-        font-size: 11px;
-        line-height: 1;
-        animation: busy-pulse 1s ease-in-out infinite;
-      }
-    }
-    @keyframes busy-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
     :host([filtered]) { opacity: 0.4; }
     :host([filtered]) #text { background: #300; }
     :host([readonly]) .control-area { opacity: 0.7; pointer-events: none; filter: grayscale(0.5); }
@@ -199,8 +188,6 @@ export class PromptController extends LitElement {
   @property({ type: String }) color = '';
   @property({ type: Boolean, reflect: true }) filtered = false;
   @property({ type: Boolean, reflect: true }) readonly = false;
-  /** The app is busy (writing lyrics, warming up): on mobile the prompt name turns into an hourglass. */
-  @property({ type: Boolean, reflect: true }) busy = false;
   @property({ type: Boolean }) isActive = true;
   @property({ type: String }) playbackState: PlaybackState = 'stopped';
 

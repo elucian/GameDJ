@@ -426,7 +426,7 @@ export class LeftSidebar extends LitElement {
 
     /* Phones: the sidebar dissolves into the page column (display: contents) and its three groups are
        placed apart (orders match index.css): the session buttons under the logo, the transport where it
-       was (pinned while scrolling), mode/format/download under the timeline */
+       was, mode/format/download under the timeline */
     @media (max-width: 700px) {
       :host { display: contents; }
       .button-group {
@@ -435,7 +435,7 @@ export class LeftSidebar extends LitElement {
         background: var(--surface-color); border-bottom: 1px solid var(--border-color);
       }
       .group-session { order: 2; }
-      .group-transport { order: 4; position: sticky; top: 0; z-index: 20; }
+      .group-transport { order: 4; }
       .group-export { order: 6; }
       .spacer-group { display: none; }
     }

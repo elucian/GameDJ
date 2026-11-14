@@ -29,6 +29,8 @@ export class VocalDialog extends LitElement {
   /** Lyrics you typed or generated for this song: real words in the chosen language, or open vowels. */
   @property({ type: String }) vocalText = '';
   @property({ type: Boolean }) generating = false;
+  /** Why the last lyrics request failed: shown in the lyrics tab in place of the lyrics hint. */
+  @property({ type: String }) lyricsError = '';
   /** The song's name: becomes the file name when the song is downloaded. */
   @property({ type: String }) songName = '';
   @state() private tab: 'voices' | 'lyrics' = 'voices';
@@ -179,8 +181,13 @@ export class VocalDialog extends LitElement {
       padding: 0;
       font-size: 14px;
     }
+    /* Header row: the title on the left, the tool buttons on the right (the close button sits in the corner) */
+    .head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-right: 32px; margin-bottom: 6px; }
+    .head-row h3 { margin: 0; }
+    .tools { display: flex; gap: 6px; }
+    .tools .close-x-btn { position: static; }
     .close-x-btn:hover { background: var(--accent-color); color: #000; }
-    .lock-btn { right: 40px; font-size: 12px; }
+    .lock-btn { font-size: 12px; }
     .lock-btn.active { border-color: var(--accent-color); background: var(--accent-color); color: #000; }
     .random-dice-btn {
       width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-color);
@@ -199,17 +206,23 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
-            <button class="close-x-btn" style="right: 190px" @click=${() => this.wipeAll()} title="Clear: remove the lyrics and the song title, unselect all voices">🧽</button>
-            <button class="close-x-btn" style="right: 160px" @click=${() => this.rollDice()} title="Pick voices that suit the genre and style (unless locked). With no lyrics yet, also writes lyrics and a song title">🎲</button>
-            <button class="close-x-btn" style="right: 130px" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
-            <button class="close-x-btn" style="right: 100px" @click=${this.saveSongFile} title="Download Settings">⬇</button>
-            <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" style="right: 70px" @click=${() => this.toggleLock()}
-                    title=${this.locked ? 'Voice settings locked: the dice put exactly these voices on stage' : 'Lock the voice settings so the dice use exactly these voices'}>${this.locked ? '🔒' : '🔓'}</button>
-            <input type="file" id="uploadInput" style="display:none" @change=${this.loadSongFile} accept=".json">
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
-            <h3>Song</h3>
+            <input type="file" id="uploadInput" style="display:none" @change=${this.loadSongFile} accept=".json">
+            <div class="head-row">
+              <h3>Song Setup</h3>
+              <div class="tools">
+            <button class="close-x-btn" @click=${() => this.wipeAll()} title="Clear: remove the lyrics and the song title, unselect all voices">🧽</button>
+            <button class="close-x-btn" @click=${() => this.rollDice()} title="Pick voices that suit the genre and style (unless locked). With no lyrics yet, also writes lyrics and a song title">🎲</button>
+            <button class="close-x-btn" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
+            <button class="close-x-btn" @click=${this.saveSongFile} title="Download Settings">⬇</button>
+            <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" @click=${() => this.toggleLock()}
+                    title=${this.locked ? 'Voice settings locked: the dice put exactly these voices on stage' : 'Lock the voice settings so the dice use exactly these voices'}>${this.locked ? '🔒' : '🔓'}</button>
+
+              </div>
+            </div>
             <div class="slider-container">
-              <input type="text" placeholder="Song title" aria-label="Song title" .value=${this.songName} @input=${(e: Event) => this.songName = (e.target as HTMLInputElement).value} style="width:100%; box-sizing:border-box; padding:4px;">
+              <label class="label">Title</label>
+              <input type="text" aria-label="Title" .value=${this.songName} @input=${(e: Event) => this.songName = (e.target as HTMLInputElement).value} style="width:100%; box-sizing:border-box; padding:4px;">
             </div>
 
             ${this.renderSolo()}
@@ -283,6 +296,7 @@ export class VocalDialog extends LitElement {
   private wipeAll() {
       this.vocalText = '';
       this.songName = '';
+      this.lyricsError = '';
       this.setVoices([], 'None');
       this.dispatchEvent(new CustomEvent('lyrics-cleared', { bubbles: true, composed: true }));
   }
@@ -340,8 +354,9 @@ export class VocalDialog extends LitElement {
           <button class="generate-btn" ?disabled=${this.generating} @click=${() => this.requestGeneration()}>${this.generating ? 'Writing...' : 'Generate'}</button>
           <button class="copy-btn" ?disabled=${!this.vocalText.trim()} @click=${this.copyLyrics}>Copy</button>
       </div>
-      <textarea rows="7" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid var(--border-color);border-radius:6px;padding:6px;font-size:12px;resize:vertical"
-                placeholder="Write your own lyrics or generate them. Lyria treats them as a hint for the language and mood of the vocals."
+      ${this.lyricsError ? html`<div style="color:#ff3b30;font-size:12px;font-weight:700;margin-bottom:4px;overflow-wrap:anywhere">FAILED: ${this.lyricsError}</div>` : ''}
+      <textarea rows="7" style="width:100%;box-sizing:border-box;background:var(--bg-color);color:var(--text-color);border:1px solid ${this.lyricsError ? '#ff3b30' : 'var(--border-color)'};border-radius:6px;padding:6px;font-size:12px;resize:vertical"
+                placeholder=${this.lyricsError ? `FAILED: ${this.lyricsError}` : 'Write your own lyrics or generate them. Lyria treats them as a hint for the language and mood of the vocals.'}
                 .value=${this.vocalText} @input=${(e: Event) => this.vocalText = (e.target as HTMLTextAreaElement).value}></textarea>`;
   }
 

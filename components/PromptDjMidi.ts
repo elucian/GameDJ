@@ -211,7 +211,6 @@ export class PromptDjMidi extends LitElement {
   private prompts: Map<string, Prompt> = new Map();
 
   @property({ type: String }) public playbackState: PlaybackState = 'stopped';
-  @property({ type: Boolean }) public lyricsBusy = false;
   @state() public audioLevel = 0;
   @state() private messageType: 'info' | 'error' = 'info';
   @state() private log: { text: string; type: 'info' | 'error' }[] = [{ text: 'SYSTEM READY', type: 'info' }];
@@ -340,7 +339,6 @@ export class PromptDjMidi extends LitElement {
   }
 
   private renderPrompts() {
-    const busy = this.lyricsBusy || ['warmup', 'preparing', 'loading'].includes(this.playbackState);
     return [...this.prompts.values()].map((prompt) => {
       return html`<prompt-controller
         promptId=${prompt.promptId}
@@ -351,7 +349,6 @@ export class PromptDjMidi extends LitElement {
         color=${prompt.color}
         audioLevel=${this.audioLevel}
         ?readonly=${!this.interactionEnabled}
-        ?busy=${busy}
         ?isActive=${true}
         @prompt-changed=${this.handlePromptChanged}>
       </prompt-controller>`;

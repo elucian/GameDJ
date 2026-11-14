@@ -122,12 +122,14 @@ export class Timeline extends LitElement {
     .status-text {
       font-size: 10.5px;
       font-weight: bold;
-      letter-spacing: 1.5px;
+      letter-spacing: 1px;
       text-transform: uppercase;
       margin-top: 6px;
       line-height: 1;
       text-align: center;
+      white-space: nowrap; /* RECORDING, GENERATE and WORKING fit the 100px panel on one line */
     }
+    .status-fail { color: var(--accent-secondary); } /* steady: nothing is running */
     .status-rec { color: var(--accent-secondary); animation: blink 1s infinite; }
     .status-warm { color: var(--tl-warn); animation: blink 0.5s infinite; }
     .status-prep { color: var(--tl-fade-color); animation: blink 0.2s infinite; }
@@ -360,6 +362,8 @@ export class Timeline extends LitElement {
   @property({ type: Boolean }) isRewinding = false;
   @property({ type: String }) playbackState: string = 'stopped';
   @property({ type: Boolean }) lyricsBusy = false;
+  /** The last lyrics request failed: the status says FAILED until the next try. */
+  @property({ type: Boolean }) lyricsFailed = false;
 
   @state() private history: ChannelHistory = { lead: [], alto: [], harmonic: [], bass: [], rhythm: [], ghost: [] };
   private isDragging = false;
@@ -544,12 +548,13 @@ export class Timeline extends LitElement {
   private formatTime(seconds: number): string { const m = Math.floor(seconds / 60); const s = Math.floor(seconds % 60); return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; }
   
   private renderStatus() {
-    if (this.lyricsBusy) return html`<div class="status-text status-warm">WORKING</div>`;
+    if (this.lyricsFailed) return html`<div class="status-text status-fail">FAILED</div>`;
+    if (this.lyricsBusy) return html`<div class="status-text status-warm">LYRICS</div>`;
     switch (this.playbackState) {
-      case 'recording': return html`<div class="status-text status-rec">REC</div>`;
+      case 'recording': return html`<div class="status-text status-rec">RECORDING</div>`;
       case 'warmup':
       case 'loading': return html`<div class="status-text status-warm">WORKING</div>`;
-      case 'preparing': return html`<div class="status-text status-warm">WORKING</div>`;
+      case 'preparing': return html`<div class="status-text status-prep">GENERATE</div>`;
       case 'playing': return html`<div class="status-text status-play">PLAY</div>`;
       case 'loop-waiting': return html`<div class="status-text status-waiting">LOOP</div>`;
       case 'paused': return html`<div class="status-text">PAUSE</div>`;

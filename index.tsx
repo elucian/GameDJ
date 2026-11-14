@@ -152,7 +152,8 @@ function main() {
   on(vocalDialog, 'vocal-dialog-cancelled', () => { lyricsRun++; });
   const setLyricsBusy = (busy: boolean) => {
       lyricsBusy = busy;
-      pdjMidi.lyricsBusy = busy; timeline.lyricsBusy = busy;
+      if (busy) { timeline.lyricsFailed = false; vocalDialog.lyricsError = ''; } // a new try clears the last failure
+      timeline.lyricsBusy = busy;
       topToolbar.lyricsBusy = busy; rightSidebar.lyricsBusy = busy; leftSidebar.lyricsBusy = busy;
       if (busy) pdjMidi.setMessage('WORKING: WRITING LYRICS...', 'info'); else updatePlayerStatus();
   };
@@ -177,9 +178,14 @@ function main() {
     }
     if (run !== lyricsRun) return; // cancelled meanwhile: the lyrics are thrown away
     if (lyrics.startsWith('Error') || lyrics.startsWith('Could not')) {
-      pdjMidi.setMessage('LYRICS FAILED: TRY AGAIN', 'error');
+      // The dialog shows the error itself where the lyrics would be; the timeline status says FAILED
+      const reason = lyrics.replace(/^Error:\s*/i, '').trim();
+      vocalDialog.lyricsError = reason || 'Lyrics generation failed';
+      timeline.lyricsFailed = true;
+      pdjMidi.setMessage(`LYRICS FAILED: ${(reason || 'TRY AGAIN').toUpperCase()}`, 'error');
       return;
     }
+    vocalDialog.lyricsError = '';
     vocalDialog.vocalText = lyrics;
     if (title) vocalDialog.songName = title;
     liveMusicHelper.setLyrics(lyrics, lang, false);
@@ -218,6 +224,7 @@ function main() {
 
   on(vocalDialog, 'lyrics-cleared', () => {
     lyricsRun++; // lyrics still being written are thrown away
+    timeline.lyricsFailed = false;
     liveMusicHelper.setLyrics('', undefined, false);
     updateSongDuration();
     refreshPromptPanel();

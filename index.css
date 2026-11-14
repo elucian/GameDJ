@@ -139,12 +139,12 @@ prompt-dj-midi {
 }
 toast-message { z-index: 9999; }
 
-/* Phones: one scrolling column. The toolbars and the right sidebar use display: contents here, so their
+/* Phones: one column that fits the screen (no scrolling). The toolbars and the right sidebar use display: contents here, so their
    parts take part in this column and are placed with "order":
-   1 logo, 2 session buttons, 3 song controls, 4 transport (sticky), 5 master volume + timeline,
+   1 logo, 2 session buttons, 3 song controls, 4 transport, 5 master volume + timeline,
    6 mode/format/download, 7 displays and knobs, 8 song manifest, 9 sound tracks. */
 @media (max-width: 700px) {
-    /* The page (html) scrolls; body must not be a scroll container or the sticky transport would not stick */
+    /* The page is exactly the screen high and does not scroll */
     html { height: 100%; overflow: hidden; }
     body { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
     top-toolbar, left-sidebar, right-sidebar { display: contents; }

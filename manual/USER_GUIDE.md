@@ -18,7 +18,7 @@ GameDJ is a live AI music workstation built on Google's Lyria. You choose a genr
 | Right sidebar | Channels (instruments), Manifest switches, Duration, Evolution, Volume |
 | Bottom | Timeline with fades and seeking |
 
-On a phone (screens up to 700 px wide) the page is one scrolling column: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record), which stay at the top while you scroll; the master volume meters and the timeline; the Mode, Export format and Download buttons; the two displays; the song manifest; and the sound tracks. The knob panel is hidden on phones (the DJ can still turn the knobs).
+On a phone (screens up to 700 px wide) the page is one column that fits the screen, with no scrolling: the logo; the Theme, Power, Dice, DJ, Voice and Ko-fi (support) buttons; the song controls stacked one under the other; the transport buttons (Stop, Back to Start, Loop, Play, Record); the master volume meters and the timeline; the Mode, Export format and Download buttons; and the song manifest. The two text displays, the knob panel and the sound tracks are hidden on phones (the DJ can still turn the knobs and set the channels).
 
 ## 3. Choosing the music
 
@@ -50,6 +50,7 @@ The right sidebar has two tabs with five channels each:
 
 ## 5. Recording and playback
 
+- **Status label** (bottom right of the timeline bar): **LYRICS** (blinking) while lyrics are being written, **FAILED** (steady red) when the last lyrics try failed, **WORKING** (blinking) while the engine warms up or loads, **GENERATE** when the music is prepared, **PLAY** while playing and **RECORDING** while recording.
 - **Record** starts a new take (it overwrites the previous one). **Stop** ends it. **Play Recording** replays it, including the automation of knobs and channels. **Loop** replays automatically after 5 seconds, and a finished recording auto-loops after a 20-second countdown unless you touch something.
 - **Duration** sets the target length (you can also drag the time ruler at the top of the timeline: right for longer, left for shorter, from 1:00 to 3:00 in 10-second steps; not while recording, and not when the length is locked); **BARS** under EVL shows that length in bars at the current tempo and meter (a read-out, not a control). **Evolution** (−10 to +10) sets how much the music changes: negative is steady, positive is progressive and quick to change.
 - **Mode**: Diversity (the default), Quality or Vocalization, in the order the knob cycles. Quality renders a finished Lyria 3.5 song when you have songs left in your quota; with the DJ on, the DJ arranges it (see section 8). Vocalization is selected automatically when a voice channel is used.
@@ -58,7 +59,7 @@ The right sidebar has two tabs with five channels each:
 
 ## 6. The Dice (Random)
 
-The dice button (only while stopped) hands the music to the **Robot DJ** (the label under the logo reads **Active: Robot**), which conducts what the dice rolled from the next Record. The dice then pick genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
+The dice button (only while stopped) hands the music to the **Robot DJ** (the label under the logo reads **Active: Robot**), which conducts what the dice rolled from the next Record. The dice then pick genre, style, mood, key, tempo and meter (except locked ones), chooses Lyria or Band, fills all channels with instruments, switches every channel on and resets the knobs to zero. The Band tab is used most of the time for modern genres. The dice never switch the voice on or off and never touch the lyrics or the song title; in Vocalization mode they may change the voices (unless the Voice dialog is locked, then they and the DJ leave it alone), and when no channel sings they turn the lead into a Lead Voice track, so the take always has a singer (unless the channels are locked).
 
 ## 7. The knobs
 
@@ -92,7 +93,10 @@ Anything you have locked (channels, manifest, mood) is left alone.
 ## 9. Voices and lyrics
 
 - The **Voice** button opens the Voice dialog (with no songs left this month it shows a greyed mic struck through in red and cannot be pressed): the SOLO voices (Soprano, Alto, Tenor, Baritone) are always at the top; below them the **CHOIR** and **LYRICS** tabs switch between the choir kind (Church, Chamber, Gospel, Military, Youth, Children, Mixed) and the lyrics editor with its Generate Lyrics button.
-- The dialog's dice (🎲) randomize what is not locked: the voices (unless the dialog's lock is on) and the language (unless its own lock is on). They keep the lyrics and the song title, and only reach the channels when you press Apply.
+- The dialog's dice (🎲) pick voices and a choir that suit the genre and style (rap gets Baritone or Tenor, opera a quartet with a church or chamber choir, gospel a gospel choir...) unless the dialog's lock is on, and the language unless its own lock is on. When there are no lyrics yet, they also write lyrics and a song title. The voices only reach the channels when you press Apply.
+- The sponge (🧽) removes the lyrics and the song title and unselects all voices and the choir.
+- If writing the lyrics fails, the Lyrics tab shows the error in red (`FAILED: ...`) instead of the lyrics; the lyrics you already had are kept.
+- **Locked** voice settings are left alone by the dialog's dice, the toolbar dice and the DJ (voices, lyrics and title).
 - The lyrics language has its own lock next to the dropdown. Unlocked, the dialog's dice pick a language that suits the style (Japanese for Japanese Folk) and show it in the dropdown; locked, the dice keep your language. Generate never changes the dropdown: it writes in the language shown (with Auto, a language that suits the style).
 - **The DJ and voices.** What the DJ does depends on the primary mode:
   - **Diversity:** the DJ conducts live, without voices. Voice channels get instruments that suit the genre.
