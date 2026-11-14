@@ -177,6 +177,12 @@ const clone = (list: DjConfig[]): DjConfig[] => list.map(d => ({ ...d, channels:
 const PORTRAIT_VERSION = 11;
 export const djPortraitUrl = (id: string) => `/djs/${id}.jpg?v=${PORTRAIT_VERSION}`;
 /** The DJ's avatar (public/djs/<id>.jpg); the initial shows while it loads or when it is missing. */
+/** The built-in DJ with this name (for the About dialog: portrait, country, age, tagline, votes) */
+export function djProfile(name: string | undefined): Pick<DjConfig, 'id' | 'name' | 'country' | 'age' | 'tagline'> | null {
+  const d = DEFAULT_DJS.find(x => x.name === name);
+  return d ? { id: d.id, name: d.name, country: d.country, age: d.age, tagline: d.tagline } : null;
+}
+
 function portrait(d: DjConfig) {
   return html`<div class="portrait" data-initial=${d.name[0]}><img src=${djPortraitUrl(d.id)} alt="Portrait of DJ ${d.name}" loading="lazy" @error=${(e: Event) => ((e.target as HTMLElement).style.display = 'none')}></div>`;
 }

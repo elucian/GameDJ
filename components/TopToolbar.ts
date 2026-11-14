@@ -1613,7 +1613,7 @@ export class TopToolbar extends LitElement {
       <div class="logo-stack">
         <div class="logo" title="About" @click=${() => this.dispatchEvent(new CustomEvent('show-about', { bubbles: true, composed: true }))}>
           <span class="brand-text">GameDJ</span>
-          <span class="version-badge">V29</span>
+          <span class="version-badge">V3.0</span>
         </div>
         <div class="dj-name"><span class="dj-tag">Active:</span> ${this.djName || 'Robot'}</div>
       </div>

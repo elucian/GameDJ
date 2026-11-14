@@ -1,4 +1,5 @@
 import { AboutDialog } from '../components/AboutDialog';
+import { djProfile } from '../components/DjPresetDialog';
 import { SupportDialog } from '../components/SupportDialog';
 import { ThanksDialog } from '../components/ThanksDialog';
 import { claimSupport, clearSupportPending, getSupportEmail, quotaStatus, refreshCredits, supportIntent, supportPending } from '../utils/UserQuota';
@@ -51,6 +52,7 @@ export function setupSupportDialogs(app: App) {
       const song = quotaStatus('song'), live = quotaStatus('live');
       aboutDialog.songsUsed = song.used; aboutDialog.songsLimit = song.limit;
       aboutDialog.liveUsed = live.used; aboutDialog.liveLimit = live.limit;
+      aboutDialog.dj = djProfile(app.liveMusicHelper.djPersonalityInfo?.name);
   };
   window.addEventListener('show-about', () => {
       fillAbout();
