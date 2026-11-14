@@ -13,6 +13,8 @@ export interface VocalDialogEvents {
   'voices-applied': { solos: string[]; choir: string };
   'send-vocal-command': string;
   'lyrics-set': string;
+  /** The sponge wiped the lyrics, the title and the voices. */
+  'lyrics-cleared': NoDetail;
 }
 
 @customElement('vocal-dialog')
@@ -197,17 +199,17 @@ export class VocalDialog extends LitElement {
     return html`
       <div class="modal-backdrop" @click=${(e: Event) => { if (e.target === e.currentTarget) this.show = false; }}>
         <div class="vocal-prompt-overlay">
-            <button class="close-x-btn" style="right: 160px" @click=${() => this.randomizeFormation()} title="Randomize what is not locked (voices, language); keeps lyrics and title">🎲</button>
+            <button class="close-x-btn" style="right: 190px" @click=${() => this.wipeAll()} title="Clear: remove the lyrics and the song title, unselect all voices">🧽</button>
+            <button class="close-x-btn" style="right: 160px" @click=${() => this.rollDice()} title="Pick voices that suit the genre and style (unless locked). With no lyrics yet, also writes lyrics and a song title">🎲</button>
             <button class="close-x-btn" style="right: 130px" @click=${this.triggerUpload} title="Upload Settings">⬆</button>
             <button class="close-x-btn" style="right: 100px" @click=${this.saveSongFile} title="Download Settings">⬇</button>
             <button class="close-x-btn lock-btn ${this.locked ? 'active' : ''}" style="right: 70px" @click=${() => this.toggleLock()}
                     title=${this.locked ? 'Voice settings locked: the dice put exactly these voices on stage' : 'Lock the voice settings so the dice use exactly these voices'}>${this.locked ? '🔒' : '🔓'}</button>
             <input type="file" id="uploadInput" style="display:none" @change=${this.loadSongFile} accept=".json">
             <button class="close-x-btn" @click=${() => this.show = false}>✕</button>
-            <h3>Voice Configuration</h3>
+            <h3>Song</h3>
             <div class="slider-container">
-              <label class="label">SONG TITLE</label>
-              <input type="text" .value=${this.songName} @input=${(e: Event) => this.songName = (e.target as HTMLInputElement).value} style="width:100%; box-sizing:border-box; padding:4px;">
+              <input type="text" placeholder="Song title" aria-label="Song title" .value=${this.songName} @input=${(e: Event) => this.songName = (e.target as HTMLInputElement).value} style="width:100%; box-sizing:border-box; padding:4px;">
             </div>
 
             ${this.renderSolo()}
@@ -246,25 +248,50 @@ export class VocalDialog extends LitElement {
    * voice mode is not switched on or off (the formation only reaches the channels with Apply).
    */
   /** The DJ found no voices: it rolls the whole dialog (voices, choir, language), also when the settings are locked. */
-  public randomizeForDj() { this.randomizeFormation(true); }
+  public randomizeForDj() { if (!this.locked) this.randomizeFormation(true); }
 
   /** Voices or a choir are chosen in the dialog. */
   public get hasVoiceSetup() { const v = this.getVoices(); return v.solos.length > 0 || v.choir !== 'None'; }
 
+  /** A random formation that suits the genre and the style (rap gets male voices, opera a quartet and a church choir...). */
+  private suggestVoices(): { solos: string[]; choir: string } {
+      const t = `${this.genre} ${this.musicStyle}`.toLowerCase();
+      const has = (...w: string[]) => w.some(k => t.includes(k));
+      const one = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+      const chance = (p: number) => Math.random() < p;
+      if (has('child', 'lullaby', 'nursery', 'kids')) return { solos: ['Soprano'], choir: chance(0.6) ? 'Children' : 'None' };
+      if (has('gospel')) return { solos: one([['Soprano', 'Tenor'], ['Alto'], ['Soprano', 'Alto', 'Tenor']]), choir: 'Gospel' };
+      if (has('opera', 'classical', 'baroque', 'choral', 'sacred', 'gregorian', 'church', 'medieval', 'requiem', 'orchestral'))
+          return { solos: one([['Soprano', 'Tenor'], ['Soprano', 'Alto', 'Tenor', 'Baritone'], ['Soprano']]), choir: one(['Church', 'Chamber', 'Mixed']) };
+      if (has('military', 'march', 'anthem', 'sea shanty', 'shanty')) return { solos: ['Baritone', 'Tenor'], choir: 'Military' };
+      if (has('rap', 'hip hop', 'hip-hop', 'trap', 'drill', 'grime', 'reggaeton')) return { solos: one([['Baritone'], ['Tenor'], ['Baritone', 'Tenor']]), choir: 'None' };
+      if (has('metal', 'rock', 'punk', 'grunge', 'hardcore', 'emo')) return { solos: one([['Baritone'], ['Tenor'], ['Tenor', 'Baritone']]), choir: chance(0.2) ? 'Mixed' : 'None' };
+      if (has('folk', 'country', 'bluegrass', 'blues', 'celtic', 'acoustic', 'singer')) return { solos: one([['Alto'], ['Baritone'], ['Alto', 'Baritone']]), choir: 'None' };
+      if (has('jazz', 'soul', 'r&b', 'rnb', 'funk', 'bossa', 'swing', 'lounge')) return { solos: one([['Alto'], ['Soprano'], ['Tenor'], ['Alto', 'Tenor']]), choir: chance(0.2) ? 'Gospel' : 'None' };
+      if (has('pop', 'dance', 'disco', 'k-pop', 'j-pop', 'synth', 'house', 'edm', 'trance', 'electro', 'techno', 'indie'))
+          return { solos: one([['Soprano'], ['Alto'], ['Soprano', 'Tenor'], ['Alto', 'Baritone']]), choir: 'None' };
+      return { solos: one([['Soprano'], ['Alto'], ['Tenor'], ['Baritone'], ['Alto', 'Tenor']]), choir: chance(0.25) ? 'Mixed' : 'None' };
+  }
+
+  /** The dice button: re-rolls what is not locked, and writes lyrics and a title when there are no lyrics yet. */
+  private rollDice() {
+      this.randomizeFormation();
+      if (!this.vocalText.trim() && !this.generating) this.requestGeneration();
+  }
+
+  /** The sponge: wipes the lyrics and the song title and unselects every voice and choir. */
+  private wipeAll() {
+      this.vocalText = '';
+      this.songName = '';
+      this.setVoices([], 'None');
+      this.dispatchEvent(new CustomEvent('lyrics-cleared', { bubbles: true, composed: true }));
+  }
+
   private randomizeFormation(force = false) {
       if (!this.locked || force) {
-          // Randomize individual voices (the grid items), at least one selected
-          const voices = Object.keys(this.activeSoloVoices) as (keyof typeof this.activeSoloVoices)[];
-          const next = { ...this.activeSoloVoices };
-          let anySelected = false;
-          voices.forEach(v => {
-              next[v] = Math.random() > 0.5;
-              if (next[v]) anySelected = true;
-          });
-          if (!anySelected) next[voices[Math.floor(Math.random() * voices.length)]] = true;
-          this.activeSoloVoices = next;
-          // Randomize choir
-          this.selectedChoir = this.choirOptions[Math.floor(Math.random() * this.choirOptions.length)];
+          // Voices and choir that suit the genre and the style
+          const pick = this.suggestVoices();
+          this.setVoices(pick.solos, pick.choir);
       }
 
       // Language unlocked: the dice pick one that suits the style (then the genre) and show it in the dropdown

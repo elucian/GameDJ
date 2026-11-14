@@ -511,6 +511,8 @@ export class RightSidebar extends LitElement {
       master-volume-panel.volume-box { border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
       master-volume-panel.manifest-box { flex-shrink: 0; }
       .content { flex: 0 0 auto; overflow: visible; }
+      /* One screen, no scrolling: the sound tracks (instruments) are not shown on a phone */
+      .sidebar-tabs-container, .content { display: none; }
     }
   `;
 

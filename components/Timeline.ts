@@ -359,6 +359,7 @@ export class Timeline extends LitElement {
   @property({ type: Number }) elapsedSeconds = 0;
   @property({ type: Boolean }) isRewinding = false;
   @property({ type: String }) playbackState: string = 'stopped';
+  @property({ type: Boolean }) lyricsBusy = false;
 
   @state() private history: ChannelHistory = { lead: [], alto: [], harmonic: [], bass: [], rhythm: [], ghost: [] };
   private isDragging = false;
@@ -543,11 +544,12 @@ export class Timeline extends LitElement {
   private formatTime(seconds: number): string { const m = Math.floor(seconds / 60); const s = Math.floor(seconds % 60); return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; }
   
   private renderStatus() {
+    if (this.lyricsBusy) return html`<div class="status-text status-warm">WORKING</div>`;
     switch (this.playbackState) {
       case 'recording': return html`<div class="status-text status-rec">REC</div>`;
       case 'warmup':
-      case 'loading': return html`<div class="status-text status-warm">WAIT</div>`;
-      case 'preparing': return html`<div class="status-text status-prep">PREP</div>`;
+      case 'loading': return html`<div class="status-text status-warm">WORKING</div>`;
+      case 'preparing': return html`<div class="status-text status-warm">WORKING</div>`;
       case 'playing': return html`<div class="status-text status-play">PLAY</div>`;
       case 'loop-waiting': return html`<div class="status-text status-waiting">LOOP</div>`;
       case 'paused': return html`<div class="status-text">PAUSE</div>`;

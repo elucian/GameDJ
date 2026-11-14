@@ -152,6 +152,7 @@ function main() {
   on(vocalDialog, 'vocal-dialog-cancelled', () => { lyricsRun++; });
   const setLyricsBusy = (busy: boolean) => {
       lyricsBusy = busy;
+      pdjMidi.lyricsBusy = busy; timeline.lyricsBusy = busy;
       topToolbar.lyricsBusy = busy; rightSidebar.lyricsBusy = busy; leftSidebar.lyricsBusy = busy;
       if (busy) pdjMidi.setMessage('WORKING: WRITING LYRICS...', 'info'); else updatePlayerStatus();
   };
@@ -213,6 +214,14 @@ function main() {
     if (e.detail && e.detail.trim()) liveMusicHelper.setLyrics(e.detail, lang !== 'Auto' ? lang : undefined, false);
     updateSongDuration();
     refreshPromptPanel();
+  });
+
+  on(vocalDialog, 'lyrics-cleared', () => {
+    lyricsRun++; // lyrics still being written are thrown away
+    liveMusicHelper.setLyrics('', undefined, false);
+    updateSongDuration();
+    refreshPromptPanel();
+    pdjMidi.setMessage('LYRICS, TITLE AND VOICES CLEARED', 'info');
   });
 
   on(vocalDialog, 'voice-lock-changed', (e) => {
@@ -901,7 +910,8 @@ function main() {
   const djSetsUpVoiceSong = async (superseded: () => boolean) => {
       const dj = liveMusicHelper.djPersonalityInfo;
       const rsLocks = rightSidebar.locks;
-      const newSong = !vocalDialog.hasVoiceSetup;
+      // Locked voice settings: the DJ leaves the dialog (voices, lyrics, title) alone
+      const newSong = !vocalDialog.hasVoiceSetup && !vocalDialog.locked;
       if (newSong && !rsLocks.channels) djPicksOwnStyle(dj);
       if (newSong) {
           vocalDialog.randomizeForDj();
